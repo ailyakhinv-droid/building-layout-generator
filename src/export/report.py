@@ -13,6 +13,7 @@ from src.models.building import Building
 from src.models.site import Site
 from src.models.tep import TEP
 from src.core.tep_calculator import check_normatives, format_normative_check
+from src.core.territory_balance import TerritoryBalanceResult
 
 
 def generate_report(
@@ -21,6 +22,7 @@ def generate_report(
     tep: TEP,
     config: dict[str, Any],
     filepath: str | Path | None = None,
+    balance: TerritoryBalanceResult | None = None,
 ) -> str:
     """Сгенерировать текстовый отчёт.
 
@@ -52,6 +54,19 @@ def generate_report(
     checks = check_normatives(tep, config)
     lines.append(format_normative_check(checks))
     lines.append("")
+
+    # Баланс территории (если рассчитан)
+    if balance is not None:
+        lines.append("=" * 60)
+        lines.append(f"  БАЛАНС ТЕРРИТОРИИ И ПАРКОВОК ({balance.regional_norm_name})")
+        lines.append("=" * 60)
+        for k, v in balance.to_dict().items():
+            lines.append(f"  {k:<38}: {v}")
+        if balance.warnings:
+            lines.append("\n  Особые отметки и дефициты:")
+            for w in balance.warnings:
+                lines.append(f"    • {w}")
+        lines.append("")
 
     # Квартирография по зданиям
     lines.append("=" * 60)

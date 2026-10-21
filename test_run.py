@@ -24,6 +24,8 @@ from src.core.buildable_area import compute_buildable_area, get_obb_dimensions
 from src.core.placement import PlacementConfig, PlacementEngine
 from src.core.tep_calculator import calculate_tep, check_normatives, format_normative_check
 from src.core.optimizer import Optimizer
+from src.core.regional_norms import get_regional_norm
+from src.core.territory_balance import calculate_territory_balance
 from src.library.section_library import SectionLibrary
 from src.visualization.plotter import plot_site_plan
 from src.export.report import generate_report
@@ -89,8 +91,27 @@ def main():
     )
     print(f"\n✓ План сохранён: {output_dir / 'test_plan.png'}")
 
-    # 10. Отчёт
-    report = generate_report(site, buildings, tep, config, output_dir / "test_report.txt")
+    # 10. Градостроительный баланс территории и отчёт
+    reg_norm = get_regional_norm("russia_sp42")
+    balance = calculate_territory_balance(
+        site_area=site.area,
+        building_footprint_area=tep.building_area,
+        population=tep.population,
+        residential_area=tep.residential_area,
+        apartments_total=tep.apartments_total,
+        regional_norm=reg_norm,
+    )
+    print(f"\n✓ Градостроительный баланс территории ({balance.regional_norm_name}):")
+    print(f"  • Машиномест по норме:      {balance.parking.required_total} м/м")
+    print(f"  • Наземная емкость участка: {balance.parking.ground_capacity} м/м")
+    print(f"  • Дефицит (в подземный):    {balance.parking.underground_deficit} м/м (~{balance.parking.underground_area_est:,.0f} м²)")
+    print(f"  • Дворовые площадки всего:  {balance.playgrounds.total:,.0f} м² (дети: {balance.playgrounds.children:,.0f} м², спорт: {balance.playgrounds.sport:,.0f} м²)")
+
+    report = generate_report(
+        site, buildings, tep, config,
+        output_dir / "test_report.txt",
+        balance=balance,
+    )
     print(f"✓ Отчёт сохранён: {output_dir / 'test_report.txt'}")
 
     # 11. Оптимизация — максимизация

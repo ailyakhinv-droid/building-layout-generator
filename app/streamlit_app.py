@@ -27,6 +27,8 @@ from src.models.tep import TEP
 from src.visualization.plotter import plot_site_plan
 from src.export.geojson_export import export_geojson
 from src.export.report import generate_report
+from src.core.regional_norms import load_regional_norms, RegionalNorm
+from src.core.territory_balance import calculate_territory_balance, TerritoryBalanceResult
 
 
 # ─── Настройка страницы ──────────────────────────────────────────────
@@ -61,6 +63,7 @@ def load_library() -> SectionLibrary:
 
 config = load_config()
 library = load_library()
+regional_norms = load_regional_norms()
 
 
 # ─── Боковая панель ──────────────────────────────────────────────────
@@ -98,12 +101,23 @@ else:
 
 st.sidebar.markdown(f"**Площадь участка:** {site.area:,.0f} м²")
 
-# ─── Нормативы ───────────────────────────────────────────────────────
+# ─── Градостроительные нормативы ─────────────────────────────────────
 
-st.sidebar.header("📏 Нормативы")
+st.sidebar.header("📏 Градостроительные нормативы")
+
+region_ids = list(regional_norms.keys())
+region_labels = {k: v.name for k, v in regional_norms.items()}
+selected_region_id = st.sidebar.selectbox(
+    "Региональные нормативы (РНГП / МНГП)",
+    region_ids,
+    format_func=lambda x: region_labels.get(x, x),
+    help="Определяет требования к парковкам, детским и спортивным площадкам по региональным градостроительным нормам",
+)
+selected_norm = regional_norms[selected_region_id]
+st.sidebar.caption(f"📌 {selected_norm.description}")
 
 config["boundary_setback"] = st.sidebar.slider(
-    "Отступ от границы, м", 0, 20, int(config.get("boundary_setback", 3))
+    "Отступ от границы, м", 0, 20, int(config.get("boundary_setback", 6))
 )
 config["fire_gap_min"] = st.sidebar.slider(
     "Пожарный разрыв (мин.), м", 3, 30, int(config.get("fire_gap_min", 6))
@@ -115,11 +129,12 @@ config["insolation_factor"] = st.sidebar.slider(
     "Коэфф. инсоляции", 0.1, 1.5, float(config.get("insolation_factor", 0.5)), 0.1
 )
 config["max_bcr"] = st.sidebar.slider(
-    "Макс. % застройки", 0.1, 0.8, float(config.get("max_bcr", 0.4)), 0.05
+    "Макс. % застройки (КЗ)", 0.1, 0.8, float(selected_norm.density.max_bcr), 0.05
 )
 config["max_far"] = st.sidebar.slider(
-    "Макс. FAR", 0.5, 5.0, float(config.get("max_far", 2.5)), 0.1
+    "Макс. плотность (FAR)", 0.5, 5.0, float(selected_norm.density.max_far), 0.1
 )
+config["green_ratio_min"] = float(selected_norm.density.green_ratio_min)
 
 # ─── Параметры генерации ─────────────────────────────────────────────
 
@@ -282,11 +297,23 @@ if generate_btn:
                        "Попробуйте увеличить участок или уменьшить отступы.")
             st.stop()
 
+        # 3. Баланс территории по региональным нормативам
+        balance = calculate_territory_balance(
+            site_area=site.area,
+            building_footprint_area=tep.building_area,
+            population=tep.population,
+            residential_area=tep.residential_area,
+            apartments_total=tep.apartments_total,
+            regional_norm=selected_norm,
+        )
+
         # Сохраняем в session state
         st.session_state["buildings"] = buildings
         st.session_state["tep"] = tep
         st.session_state["site"] = site
         st.session_state["config"] = config
+        st.session_state["balance"] = balance
+        st.session_state["selected_norm"] = selected_norm
 
 
 # ─── Отображение результатов ─────────────────────────────────────────
@@ -334,6 +361,69 @@ if "buildings" in st.session_state:
                 val_str = f"{check['value']:.2f}"
                 lim_str = f"≤ {check['limit']:.1f}"
             st.metric(f"{icon} {check['name']}", val_str, lim_str)
+
+    # Баланс территории и машиномест по региональным нормативам
+    if "balance" in st.session_state:
+        balance: TerritoryBalanceResult = st.session_state["balance"]
+        st.subheader(f"🏛️ Баланс территории и машиномест ({balance.regional_norm_name})")
+
+        # Особые предупреждения
+        for w in balance.warnings:
+            if "подземный" in w.lower():
+                st.info(f"🚗 {w}")
+            else:
+                st.warning(f"⚠️ {w}")
+
+        # Карточки парковок
+        st.markdown("**Обеспеченность автостоянками:**")
+        p_col1, p_col2, p_col3 = st.columns(3)
+        with p_col1:
+            st.metric(
+                "Требуется по нормативу",
+                f"{balance.parking.required_total} м/м",
+                f"в т.ч. гостевых: {balance.parking.required_guest} м/м",
+            )
+        with p_col2:
+            st.metric(
+                "Наземная емкость на участке",
+                f"{balance.parking.ground_capacity} м/м",
+                f"{balance.parking.ground_area:,.0f} м² открытых стоянок",
+            )
+        with p_col3:
+            deficit_text = f"{balance.parking.underground_deficit} м/м"
+            deficit_delta = (
+                f"Требуется ~{balance.parking.underground_area_est:,.0f} м²"
+                if balance.parking.underground_deficit > 0
+                else "Дефицита нет"
+            )
+            st.metric(
+                "Дефицит в подземный паркинг",
+                deficit_text,
+                deficit_delta,
+                delta_color="inverse" if balance.parking.underground_deficit > 0 else "normal",
+            )
+
+        # Дворовые площадки
+        st.markdown("**Обязательные дворовые площадки (м²):**")
+        pl_c1, pl_c2, pl_c3, pl_c4, pl_c5 = st.columns(5)
+        with pl_c1:
+            st.metric("Детские игровые", f"{balance.playgrounds.children:,.0f} м²")
+        with pl_c2:
+            st.metric("Спортивные", f"{balance.playgrounds.sport:,.0f} м²")
+        with pl_c3:
+            st.metric("Отдых взрослых", f"{balance.playgrounds.relax:,.0f} м²")
+        with pl_c4:
+            st.metric("Хоз. цели и ТКО", f"{balance.playgrounds.utility + balance.playgrounds.waste:,.0f} м²")
+        with pl_c5:
+            st.metric("Всего площадок", f"{balance.playgrounds.total:,.0f} м²")
+
+        # Структура использования земельного участка
+        with st.expander("📊 Детализация баланса площади земельного участка"):
+            shares = balance.get_structure_shares()
+            cols = st.columns(len(shares))
+            for col, (item_name, share_val) in zip(cols, shares.items()):
+                with col:
+                    st.metric(item_name, f"{share_val:.1f}%")
 
     # Квартирография
     st.subheader("🏠 Квартирография")
@@ -407,7 +497,8 @@ if "buildings" in st.session_state:
             report_path = PROJECT_ROOT / "output" / "report.txt"
             report_text = generate_report(
                 site, buildings, tep,
-                st.session_state["config"], report_path
+                st.session_state["config"], report_path,
+                balance=st.session_state.get("balance"),
             )
             st.success(f"Сохранено: {report_path}")
             with st.expander("Просмотр отчёта"):
