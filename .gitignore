@@ -12,6 +12,7 @@ __pycache__/
 output/*.png
 output/*.txt
 output/*.geojson
+output/*.html
 output/*.dxf
 output/*.dwg
 

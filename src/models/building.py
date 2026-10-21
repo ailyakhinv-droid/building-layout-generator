@@ -37,6 +37,8 @@ class PlacedSection:
     angle: float = 0.0
     floors: int = 0
     is_flipped: bool = False
+    floor_height: float | None = None
+    ground_floor_height: float | None = None
 
     def __post_init__(self) -> None:
         """Установить этажность по умолчанию, если не задана."""
@@ -56,9 +58,28 @@ class PlacedSection:
         return self.section_type.floor_area * self.floors
 
     @property
+    def effective_floor_height(self) -> float:
+        """Эффективная высота типового этажа."""
+        if self.floor_height is not None and self.floor_height > 0:
+            return self.floor_height
+        return getattr(self.section_type, "floor_height", _DEFAULT_FLOOR_HEIGHT)
+
+    @property
+    def effective_ground_floor_height(self) -> float:
+        """Эффективная высота первого этажа (коммерческого при наличии)."""
+        if self.ground_floor_height is not None and self.ground_floor_height > 0:
+            return self.ground_floor_height
+        return getattr(self.section_type, "ground_floor_height", self.effective_floor_height)
+
+    @property
     def height(self) -> float:
-        """Высота секции в метрах."""
-        return self.floors * _DEFAULT_FLOOR_HEIGHT
+        """Высота секции в метрах с учетом этажности и высоты этажа."""
+        if self.section_type.has_commercial_ground and self.floors > 1:
+            return round(
+                self.effective_ground_floor_height + (self.floors - 1) * self.effective_floor_height,
+                2,
+            )
+        return round(self.floors * self.effective_floor_height, 2)
 
     def get_apartments(self) -> dict[str, int]:
         """Получить количество квартир по типам для данной секции.

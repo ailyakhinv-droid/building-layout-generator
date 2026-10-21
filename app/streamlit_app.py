@@ -39,6 +39,8 @@ from src.core.cadastre import (
     parse_cadastral_components,
 )
 from src.visualization.map_view import generate_leaflet_map_html
+from src.visualization.viewer_3d import generate_3d_viewer_html
+from src.export.html_3d_export import export_3d_html
 
 
 # ─── Настройка страницы ──────────────────────────────────────────────
@@ -165,6 +167,13 @@ if site_mode == "Кадастровый номер (OSM подложка)":
                     except ValueError:
                         pass
 
+        cad_override_file = st.file_uploader(
+            "📎 Прикрепить чертёж (.dxf, .dwg) — опционально",
+            type=["dxf", "dwg"],
+            key="cad_sub_uploader",
+            help="Если прикрепить чертёж, генератор возьмет точную геометрию контура и красных линий из CAD, посадив её на координаты кадастрового номера",
+        )
+
     try:
         parcel_info = get_cadastral_parcel(
             entered_cad,
@@ -175,6 +184,22 @@ if site_mode == "Кадастровый номер (OSM подложка)":
             add_red_line=enable_red_line,
         )
         site = create_site_from_cadastre(parcel_info)
+
+        if cad_override_file is not None:
+            try:
+                sub_bytes = cad_override_file.getvalue()
+                sub_site, sub_meta = parse_cad_site(
+                    sub_bytes,
+                    filename=cad_override_file.name,
+                    normalize_origin=True,
+                )
+                site.boundary = sub_site.boundary
+                if sub_site.red_lines:
+                    site.red_lines = sub_site.red_lines
+                st.sidebar.caption(f"📐 Геометрия взята из `{cad_override_file.name}` ({site.area:,.0f} м²)")
+            except Exception as e:
+                st.sidebar.warning(f"Не удалось применить геометрию из CAD: {e}")
+
         st.session_state["cadastral_norm_id"] = parcel_info.regional_norm_id
 
         st.sidebar.success(
@@ -187,27 +212,56 @@ if site_mode == "Кадастровый номер (OSM подложка)":
 
     except Exception as e:
         st.sidebar.error(f"Ошибка получения участка: {e}")
-        site = create_rectangular_site(200, 150)
+        site = create_rectangular_site(200, 150, geo_center=(59.934280, 30.335099))
 
 elif site_mode == "Прямоугольник":
     col1, col2 = st.sidebar.columns(2)
     site_width = col1.number_input("Ширина, м", 50, 1000, 200, step=10)
     site_height = col2.number_input("Высота, м", 50, 1000, 150, step=10)
-    site = create_rectangular_site(site_width, site_height)
+    site = create_rectangular_site(site_width, site_height, geo_center=(59.934280, 30.335099))
+
 elif site_mode == "Координаты":
     coords_text = st.sidebar.text_area(
-        "Координаты (x,y по одной на строку)",
-        value="0,0\n200,0\n200,150\n0,150",
-        height=150,
-        help="Введите координаты вершин участка в метрах",
+        "Координаты вершин (WGS-84 или метры)",
+        value="0, 0\n200, 0\n200, 150\n0, 150",
+        height=140,
+        help="Поддерживаются:\n• Географические координаты WGS-84 (широта, долгота или наоборот), например: 59.9342, 30.3350;\n• Локальные метры: x, y (0, 0 / 200, 0...).",
     )
+
+    with st.sidebar.expander("📍 Город / привязка (для метрических координат)", expanded=False):
+        coord_city_presets = {
+            "Санкт-Петербург / ЛО": (59.934280, 30.335099),
+            "Москва": (55.751244, 37.618423),
+            "Московская область (Подольск)": (55.431200, 37.545800),
+            "Екатеринбург": (56.838926, 60.605703),
+            "Казань": (55.788740, 49.122140),
+            "Краснодар": (45.071200, 38.912500),
+            "Новосибирск": (55.008353, 82.935733),
+            "Нижний Новгород": (56.296504, 43.936059),
+        }
+        sel_coord_city = st.selectbox(
+            "Город посадки на карту",
+            list(coord_city_presets.keys()),
+            index=0,
+            help="Если введены метры, участок привяжется к выбранному городу. При вводе градусов WGS-84 координаты определятся автоматически.",
+        )
+        coord_geo_center = coord_city_presets[sel_coord_city]
+
     try:
         coords = []
         for line in coords_text.strip().split("\n"):
-            parts = line.strip().split(",")
+            clean_line = line.strip().replace(";", ",")
+            if not clean_line:
+                continue
+            parts = [p.strip() for p in clean_line.split(",") if p.strip()]
             if len(parts) >= 2:
                 coords.append((float(parts[0]), float(parts[1])))
-        site = parse_coordinates(coords)
+        site = parse_coordinates(coords, geo_center=coord_geo_center)
+        if site.geo_center and site.address and "WGS-84" in site.address:
+            st.sidebar.success(f"✓ Распознаны WGS-84: `[{site.geo_center[0]:.5f}, {site.geo_center[1]:.5f}]`")
+            st.sidebar.caption(f"📐 Вычисленная площадь: {site.area:,.0f} м² ({site.area / 10000.0:.2f} га)")
+        elif site.geo_center:
+            st.sidebar.caption(f"📍 Метрические координаты привязаны к: **{sel_coord_city}**")
     except Exception as e:
         st.sidebar.error(f"Ошибка разбора координат: {e}")
         st.stop()
@@ -263,6 +317,27 @@ else:
                 st.sidebar.caption(f"📍 МСК привязка: ({site.base_offset[0]:,.0f}, {site.base_offset[1]:,.0f})")
             if cad_meta["red_lines_count"] > 0:
                 st.sidebar.caption(f"⛔ Красных линий: {cad_meta['red_lines_count']} шт.")
+
+            # Опциональная посадка CAD-чертежа на карту OSM по кадастровому номеру
+            cad_geocode_num = st.sidebar.text_input(
+                "Кадастровый номер для посадки на карту OSM (опционально)",
+                value=st.session_state.get("cad_osm_number", ""),
+                placeholder="Например: 50:27:0010101:500 или 78:34:...",
+                help="Укажите кадастровый номер, чтобы точно посадить CAD-чертёж на векторную карту OpenStreetMap и автоматически применить региональные нормативы (РНГП/МНГП)",
+            )
+            st.session_state["cad_osm_number"] = cad_geocode_num.strip()
+
+            if cad_geocode_num.strip():
+                from src.core.cadastre import resolve_cadastral_location, parse_cadastral_components
+                reg_name, dist_name, norm_id, c_lat, c_lon = resolve_cadastral_location(cad_geocode_num.strip())
+                comps = parse_cadastral_components(cad_geocode_num.strip())
+
+                site.geo_center = (c_lat, c_lon)
+                site.cadastral_number = comps["formatted"] if comps else cad_geocode_num.strip()
+                site.address = f"{reg_name}, {dist_name} (импорт из {cad_file.name})"
+                st.session_state["cadastral_norm_id"] = norm_id
+
+                st.sidebar.caption(f"🌐 Геопривязка OSM: **{reg_name} ({dist_name})** `[{c_lat:.4f}, {c_lon:.4f}]`")
 
         except DWGConversionError as e:
             st.sidebar.warning(str(e))
@@ -509,12 +584,45 @@ min_wing_fl = 8
 if cascade_floors:
     min_wing_fl = st.sidebar.slider("Этажность южных торцов", 5, 10, 8)
 
+st.sidebar.subheader("📏 Высотность и этажи")
+col_h1, col_h2 = st.sidebar.columns(2)
+with col_h1:
+    floor_height_val = st.number_input(
+        "Высота этажа (м)",
+        min_value=2.5,
+        max_value=5.0,
+        value=float(config.get("floor_height", 3.0)),
+        step=0.1,
+        help="Высота типового этажа (от пола до пола) для расчета высоты здания, строительного объема и инсоляции",
+    )
+with col_h2:
+    max_height_val = st.number_input(
+        "Макс. высота (м)",
+        min_value=0.0,
+        max_value=200.0,
+        value=float(config.get("max_building_height_m", 0.0) or 0.0),
+        step=1.0,
+        help="Предельная высота здания в метрах (по ПЗЗ/ГПЗУ). 0 — без ограничения.",
+    )
+
+if max_height_val > 0.0:
+    max_floors_allowed = max(1, int(max_height_val // floor_height_val))
+    st.sidebar.caption(
+        f"📐 Лимит по высоте: **не более {max_floors_allowed} эт.** "
+        f"({max_height_val:.1f} м при h_эт={floor_height_val:.2f} м)"
+    )
+    if target_floors > max_floors_allowed:
+        target_floors = max_floors_allowed
+
+config["floor_height"] = floor_height_val
+config["max_building_height_m"] = max_height_val if max_height_val > 0.0 else None
+
 
 # ─── Генерация ───────────────────────────────────────────────────────
 
 generate_btn = st.sidebar.button("🚀 Сгенерировать", type="primary", use_container_width=True)
 
-if generate_btn:
+if generate_btn or ("buildings" not in st.session_state):
     with st.spinner("Генерация расстановки..."):
         # 1. Вычисляем зону застройки
         try:
@@ -534,6 +642,8 @@ if generate_btn:
                 cascade_floors=cascade_floors,
                 asymmetric_wings=asymmetric_wings,
                 min_wing_floors=min_wing_fl,
+                floor_height=floor_height_val,
+                max_building_height_m=max_height_val if max_height_val > 0.0 else None,
             )
 
             if gen_mode == "Заданная этажность":
@@ -623,11 +733,29 @@ if "buildings" in st.session_state:
 
     with col_plan:
         st.subheader("🗺️ План застройки")
-        map_tab1, map_tab2, map_tab3 = st.tabs([
-            "🗺️ Векторная подложка OSM",
+        tab_3d, map_tab1, map_tab2, map_tab3 = st.tabs([
+            "🏙️ 3D Визуализация",
+            "🗺️ 2D Подложка OSM",
             "📐 2D Генплан (Схема)",
             "🛰️ Сведения о геопривязке",
         ])
+
+        with tab_3d:
+            html_3d = generate_3d_viewer_html(
+                site=site,
+                buildings=buildings,
+                tep=tep,
+                title=f"3D-модель: {site.cadastral_number or 'Участок'}",
+                height=600,
+                default_basemap="light",
+                standalone=False,
+            )
+            components.html(html_3d, height=620)
+            st.caption(
+                "💡 **3D-навигация:** Зажмите правую кнопку мыши (или Ctrl + левую кнопку) для свободного вращения и наклона. "
+                "Колёсико мыши — масштабирование. В меню слева доступны: выбор подложки (холст/светлая/тёмная), палитра окраски, "
+                "фильтр этажей и просмотр ТЭП конкретного здания при клике."
+            )
 
         with map_tab1:
             map_html = generate_leaflet_map_html(site, buildings, tep, height=580)
@@ -806,23 +934,52 @@ if "buildings" in st.session_state:
 
     # Экспорт
     st.subheader("📥 Экспорт")
-    col_exp1, col_exp2 = st.columns(2)
+    col_exp1, col_exp2, col_exp3 = st.columns(3)
 
     with col_exp1:
-        if st.button("💾 Скачать GeoJSON"):
-            export_path = PROJECT_ROOT / "output" / "plan.geojson"
-            export_geojson(site, buildings, tep, export_path)
-            st.success(f"Сохранено: {export_path}")
+        if st.button("🏙️ Скачать 3D-модель (HTML)", use_container_width=True):
+            export_path_3d = PROJECT_ROOT / "output" / "plan_3d.html"
+            export_3d_html(
+                site=site,
+                buildings=buildings,
+                tep=tep,
+                filepath=export_path_3d,
+                title=f"3D-застройка: {site.cadastral_number or 'Участок'}",
+                default_basemap="light",
+            )
+            st.success(f"Сохранено: {export_path_3d.name}")
+            with open(export_path_3d, "rb") as f_3d:
+                st.download_button(
+                    label="⬇️ Загрузить HTML в браузер",
+                    data=f_3d,
+                    file_name="plan_3d.html",
+                    mime="text/html",
+                    use_container_width=True,
+                )
 
     with col_exp2:
-        if st.button("📄 Скачать отчёт"):
+        if st.button("💾 Скачать GeoJSON", use_container_width=True):
+            export_path = PROJECT_ROOT / "output" / "plan.geojson"
+            export_geojson(site, buildings, tep, export_path)
+            st.success(f"Сохранено: {export_path.name}")
+            with open(export_path, "rb") as f_geo:
+                st.download_button(
+                    label="⬇️ Загрузить GeoJSON",
+                    data=f_geo,
+                    file_name="plan.geojson",
+                    mime="application/geo+json",
+                    use_container_width=True,
+                )
+
+    with col_exp3:
+        if st.button("📄 Скачать отчёт", use_container_width=True):
             report_path = PROJECT_ROOT / "output" / "report.txt"
             report_text = generate_report(
                 site, buildings, tep,
                 st.session_state["config"], report_path,
                 balance=st.session_state.get("balance"),
             )
-            st.success(f"Сохранено: {report_path}")
+            st.success(f"Сохранено: {report_path.name}")
             with st.expander("Просмотр отчёта"):
                 st.code(report_text)
 
@@ -833,11 +990,22 @@ else:
         "в боковой панели для создания плана застройки."
     )
 
-    if site_mode == "Кадастровый номер (OSM подложка)" or site.geo_center:
-        st.subheader("🗺️ Предпросмотр участка на карте OpenStreetMap")
+    st.subheader("🗺️ Предпросмотр участка")
+    p_tab1, p_tab2 = st.tabs(["🏙️ 3D Границы", "🗺️ 2D Карта OSM"])
+    with p_tab1:
+        html_3d_prev = generate_3d_viewer_html(
+            site=site,
+            buildings=None,
+            tep=None,
+            height=460,
+            default_basemap="light",
+            standalone=False,
+        )
+        components.html(html_3d_prev, height=480)
+    with p_tab2:
         map_html = generate_leaflet_map_html(site, buildings=None, tep=None, height=460)
         components.html(map_html, height=480)
-        st.caption("Нажмите кнопку **«🚀 Сгенерировать»** в боковой панели, чтобы расставить жилые корпуса на этом участке.")
+    st.caption("Нажмите кнопку **«🚀 Сгенерировать»** в боковой панели, чтобы расставить жилые корпуса на этом участке.")
 
     # Демо-информация о библиотеке секций
     st.subheader("📦 Библиотека типовых секций")

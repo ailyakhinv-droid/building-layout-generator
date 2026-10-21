@@ -227,6 +227,22 @@ class Optimizer:
                 return []
             min_f = min(s.min_floors for s in middles)
             max_f = max(s.max_floors for s in middles)
+
+            # Проверяем ограничение максимальной высоты здания (если задано)
+            max_h = self.base_placement_config.max_building_height_m or self.config.get("max_building_height_m")
+            floor_h = self.base_placement_config.floor_height or self.config.get("floor_height", 3.0)
+            ground_h = (
+                self.base_placement_config.ground_floor_height
+                if self.base_placement_config.ground_floor_height is not None
+                else self.config.get("ground_floor_height", floor_h)
+            )
+            if max_h and max_h > 0:
+                extra_first = max(0.0, float(ground_h) - float(floor_h))
+                max_f_from_h = max(1, int((float(max_h) - extra_first) // float(floor_h)))
+                max_f = min(max_f, max_f_from_h)
+            if min_f > max_f:
+                min_f = max_f
+
             # Шаг строго 1 этаж, чтобы не пропускать оптимум
             floors_range = range(min_f, max_f + 1, 1)
 

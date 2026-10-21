@@ -53,10 +53,10 @@ def generate_leaflet_map_html(
     Returns:
         HTML строка для рендеринга через st.components.v1.html.
     """
-    if not site.geo_center:
-        center_lat, center_lon = 55.751244, 37.618423
-    else:
+    if site.geo_center:
         center_lat, center_lon = site.geo_center
+    else:
+        center_lat, center_lon = 59.934280, 30.335099
 
     # 1. Формируем GeoJSON границы участка
     boundary_wgs = transform_geometry_to_wgs84(site.boundary, center_lat, center_lon)

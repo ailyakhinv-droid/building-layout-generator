@@ -53,6 +53,9 @@ class PlacementConfig:
     cascade_floors: bool = True
     asymmetric_wings: bool = True
     min_wing_floors: int = 8
+    floor_height: float = 3.0
+    ground_floor_height: float | None = None
+    max_building_height_m: float | None = None
 
 
 class PlacementEngine:
@@ -68,6 +71,9 @@ class PlacementEngine:
         self.site = site
         self.library = library
         self.config = config
+        self._current_floor_height: float = float(config.get("floor_height", 3.0))
+        self._current_ground_floor_height: float | None = config.get("ground_floor_height")
+        self._max_building_height_m: float | None = config.get("max_building_height_m")
 
         if site.buildable_area is None:
             raise ValueError(
@@ -82,6 +88,36 @@ class PlacementEngine:
         """Сгенерировать расстановку зданий на участке."""
         if placement_config is None:
             placement_config = PlacementConfig()
+
+        if placement_config.floor_height is not None:
+            self._current_floor_height = float(placement_config.floor_height)
+        else:
+            self._current_floor_height = float(self.config.get("floor_height", 3.0))
+
+        if placement_config.ground_floor_height is not None:
+            self._current_ground_floor_height = float(placement_config.ground_floor_height)
+        else:
+            self._current_ground_floor_height = self.config.get("ground_floor_height")
+
+        self._max_building_height_m = (
+            placement_config.max_building_height_m
+            if placement_config.max_building_height_m is not None
+            else self.config.get("max_building_height_m")
+        )
+
+        max_floors_from_h = None
+        if self._max_building_height_m and self._max_building_height_m > 0:
+            ground_h = (
+                self._current_ground_floor_height
+                if self._current_ground_floor_height is not None
+                else float(self.config.get("ground_floor_height", self._current_floor_height))
+            )
+            extra_first = max(0.0, ground_h - self._current_floor_height)
+            max_floors_from_h = max(
+                1,
+                int((self._max_building_height_m - extra_first) // self._current_floor_height),
+            )
+        self._max_floors_from_h = max_floors_from_h
 
         buildable = self.site.buildable_area
 
@@ -104,7 +140,11 @@ class PlacementEngine:
         floors = placement_config.target_floors
         if floors is None:
             floors = middle.default_floors
+        if max_floors_from_h is not None:
+            floors = min(floors, max_floors_from_h)
         floors = max(middle.min_floors, min(floors, middle.max_floors))
+        if max_floors_from_h is not None:
+            floors = min(floors, max_floors_from_h)
 
         # 4. Выбор стратегии в зависимости от типологии
         typology = placement_config.typology.upper()
@@ -129,6 +169,14 @@ class PlacementEngine:
     # ─────────────────────────────────────────────────────────────────
     # Локальная сборка центрированных секций
     # ─────────────────────────────────────────────────────────────────
+
+    def _clamp_floors(self, sec: SectionType, req_floors: int) -> int:
+        """Ограничить этажность секции с учетом ее диапазона и предельной высоты."""
+        fl = max(sec.min_floors, min(req_floors, sec.max_floors))
+        max_h_fl = getattr(self, "_max_floors_from_h", None)
+        if max_h_fl is not None:
+            fl = min(fl, max_h_fl)
+        return max(1, fl)
 
     def _build_linear_local(
         self,
@@ -160,7 +208,7 @@ class PlacementEngine:
             self._find_best_section(self.library.get_end_sections(), fl_end1)
             if cascade_floors else end
         ) or end
-        fl_end1 = max(sec_end1.min_floors, min(fl_end1, sec_end1.max_floors))
+        fl_end1 = self._clamp_floors(sec_end1, fl_end1)
 
         # 2. Рядовые секции
         mid_secs = []
@@ -170,7 +218,7 @@ class PlacementEngine:
                 self._find_best_section(self.library.get_middle_sections(), fl_m)
                 if cascade_floors else middle
             ) or middle
-            fl_m = max(sec_m.min_floors, min(fl_m, sec_m.max_floors))
+            fl_m = self._clamp_floors(sec_m, fl_m)
             mid_secs.append((sec_m, fl_m))
 
         # 3. Вторая торцевая секция
@@ -179,7 +227,7 @@ class PlacementEngine:
             self._find_best_section(self.library.get_end_sections(), fl_end2)
             if cascade_floors else end
         ) or end
-        fl_end2 = max(sec_end2.min_floors, min(fl_end2, sec_end2.max_floors))
+        fl_end2 = self._clamp_floors(sec_end2, fl_end2)
 
         # Выстраиваем цепочку вдоль оси X
         x_curr = 0.0
@@ -221,15 +269,15 @@ class PlacementEngine:
             sec_back = self._find_best_section(self.library.get_middle_sections(), fl_back) or middle
         else:
             sec_back = middle
-        fl_back = max(sec_back.min_floors, min(fl_back, sec_back.max_floors))
+        fl_back = self._clamp_floors(sec_back, fl_back)
         wm_back = sec_back.width
         dm_back = sec_back.depth
 
         # Угловые секции
         sec_cor_l = corner
         sec_cor_r = corner
-        fl_cor_l = max(sec_cor_l.min_floors, min(floors, sec_cor_l.max_floors))
-        fl_cor_r = max(sec_cor_r.min_floors, min(floors, sec_cor_r.max_floors))
+        fl_cor_l = self._clamp_floors(sec_cor_l, floors)
+        fl_cor_r = self._clamp_floors(sec_cor_r, floors)
         wc_l, dc_l = sec_cor_l.width, sec_cor_l.depth
         wc_r, dc_r = sec_cor_r.width, sec_cor_r.depth
 
@@ -263,7 +311,7 @@ class PlacementEngine:
             else:
                 sec_j = middle
                 fl_j = floors
-            fl_j = max(sec_j.min_floors, min(fl_j, sec_j.max_floors))
+            fl_j = self._clamp_floors(sec_j, fl_j)
 
             xj = sec_j.depth / 2.0
             yj = y_curr_l - sec_j.width / 2.0
@@ -277,7 +325,7 @@ class PlacementEngine:
         else:
             sec_end_l = end
             fl_end_l = floors
-        fl_end_l = max(sec_end_l.min_floors, min(fl_end_l, sec_end_l.max_floors))
+        fl_end_l = self._clamp_floors(sec_end_l, fl_end_l)
         xe_l = sec_end_l.depth / 2.0
         ye_l = y_curr_l - sec_end_l.width / 2.0
         sections.append(PlacedSection(sec_end_l, xe_l, ye_l, 90.0, fl_end_l))
@@ -293,7 +341,7 @@ class PlacementEngine:
             else:
                 sec_k = middle
                 fl_k = floors
-            fl_k = max(sec_k.min_floors, min(fl_k, sec_k.max_floors))
+            fl_k = self._clamp_floors(sec_k, fl_k)
 
             xk = x_right_outer - sec_k.depth / 2.0
             yk = y_curr_r - sec_k.width / 2.0
@@ -307,7 +355,7 @@ class PlacementEngine:
         else:
             sec_end_r = end
             fl_end_r = floors
-        fl_end_r = max(sec_end_r.min_floors, min(fl_end_r, sec_end_r.max_floors))
+        fl_end_r = self._clamp_floors(sec_end_r, fl_end_r)
         xe_r = x_right_outer - sec_end_r.depth / 2.0
         ye_r = y_curr_r - sec_end_r.width / 2.0
         sections.append(PlacedSection(sec_end_r, xe_r, ye_r, 90.0, fl_end_r))
@@ -336,7 +384,7 @@ class PlacementEngine:
         """Г-образный корпус, центрированный в (0, 0), без наложений секций."""
         sections: list[PlacedSection] = []
 
-        fl_cor = max(corner.min_floors, min(floors, corner.max_floors))
+        fl_cor = self._clamp_floors(corner, floors)
         wc, dc = corner.width, corner.depth
 
         # Угловая секция в верхнем правом стыке
@@ -350,7 +398,7 @@ class PlacementEngine:
             sec_x = self._find_best_section(self.library.get_middle_sections(), fl_x) or middle
         else:
             sec_x = middle
-        fl_x = max(sec_x.min_floors, min(fl_x, sec_x.max_floors))
+        fl_x = self._clamp_floors(sec_x, fl_x)
         wm_x, dm_x = sec_x.width, sec_x.depth
 
         x_curr = -wc
@@ -361,7 +409,7 @@ class PlacementEngine:
             x_curr -= wm_x
 
         sec_end_x = end
-        fl_end_x = max(sec_end_x.min_floors, min(fl_x, sec_end_x.max_floors))
+        fl_end_x = self._clamp_floors(sec_end_x, fl_x)
         xe = x_curr - sec_end_x.width / 2.0
         ye = -sec_end_x.depth / 2.0
         sections.append(PlacedSection(sec_end_x, xe, ye, 0.0, fl_end_x))
@@ -377,7 +425,7 @@ class PlacementEngine:
             else:
                 sec_j = middle
                 fl_j = floors
-            fl_j = max(sec_j.min_floors, min(fl_j, sec_j.max_floors))
+            fl_j = self._clamp_floors(sec_j, fl_j)
 
             xv = -sec_j.depth / 2.0
             yv = y_curr - sec_j.width / 2.0
@@ -390,7 +438,7 @@ class PlacementEngine:
         else:
             sec_end_y = end
             fl_end_y = floors
-        fl_end_y = max(sec_end_y.min_floors, min(fl_end_y, sec_end_y.max_floors))
+        fl_end_y = self._clamp_floors(sec_end_y, fl_end_y)
         xev = -sec_end_y.depth / 2.0
         yev = y_curr - sec_end_y.width / 2.0
         sections.append(PlacedSection(sec_end_y, xev, yev, 90.0, fl_end_y))
@@ -430,6 +478,8 @@ class PlacementEngine:
                     angle=g_angle,
                     floors=s.floors,
                     is_flipped=s.is_flipped,
+                    floor_height=s.floor_height or self._current_floor_height,
+                    ground_floor_height=s.ground_floor_height or self._current_ground_floor_height,
                 )
             )
 
@@ -1060,6 +1110,14 @@ class PlacementEngine:
         """Подобрать наилучшую секцию с учетом диапазона этажей и лифтовых ограничений."""
         if not sections:
             return None
+
+        # Если задана предельная высота здания, отсекаем секции с завышенной минимальной этажностью
+        max_h_fl = getattr(self, "_max_floors_from_h", None)
+        if max_h_fl is not None:
+            viable = [s for s in sections if s.min_floors <= max_h_fl]
+            if viable:
+                sections = viable
+
         if target_floors is None:
             return sections[0]
 
@@ -1240,7 +1298,7 @@ class PlacementEngine:
 
     def _get_insolation_gap(self, floors: int) -> float:
         """Инсоляционный разрыв в метрах."""
-        floor_height = self.config.get("floor_height", 3.0)
+        floor_height = getattr(self, "_current_floor_height", None) or self.config.get("floor_height", 3.0)
         building_height = floors * floor_height
         insol_factor = self.config.get("insolation_factor", 0.5)
         return building_height * insol_factor
