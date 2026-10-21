@@ -28,7 +28,7 @@ def compute_buildable_area(site: Site, config: dict[str, Any]) -> Polygon:
     Returns:
         Полигон зоны допустимой застройки.
     """
-    boundary_setback = config.get("boundary_setback", 3.0)
+    boundary_setback = config.get("boundary_setback", 6.0)
     red_line_setback = config.get("red_line_setback", 5.0)
 
     return site.compute_buildable_area(boundary_setback, red_line_setback)

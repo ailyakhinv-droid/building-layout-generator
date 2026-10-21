@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from shapely.affinity import rotate, translate
-from shapely.geometry import LineString, MultiLineString, Point, Polygon, box
+from shapely.geometry import LineString, MultiLineString, MultiPolygon, Point, Polygon, box
 from shapely.ops import unary_union
 
 from src.core.buildable_area import get_obb_dimensions, get_primary_axes
@@ -460,15 +460,23 @@ class PlacementEngine:
         court_angle = self._get_solar_courtyard_angle(placement_config, angle)
         fire_gap = self._get_fire_gap(floors)
 
-        # Выбираем размер дворов: двор шириной 30-40 м
-        num_back = 3 if length < 170 else 3
-        num_wing = 2 if width < 130 else 2
+        # Соразмерный масштаб основания скобы (65–88 м вместо монстров 180 м)
+        num_back = 1 if middle.width > 35.0 else 2
+        passage_gap = float(self.config.get("passage_gap_min", 18.0))
+        side_gap = max(fire_gap, passage_gap)
+
+        # Если при num_back=1 помещается 2 квартала, а при 2 только один — выбираем 1 для естественного ансамбля
+        if num_back == 2:
+            u_w_1 = corner.width * 2 + middle.width
+            u_w_2 = corner.width * 2 + 2 * middle.width
+            if (2 * u_w_1 + side_gap <= length) and (2 * u_w_2 + side_gap > length):
+                num_back = 1
+
+        # Соразмерная глубина крыльев: при широких секциях (M5=45м) 1 секция дает крыло 95м
+        num_wing = 1 if (middle.width > 35.0 or width < 140.0) else 2
 
         u_w = corner.width * 2 + num_back * middle.width
         u_h = middle.depth + num_wing * middle.width + end.width
-
-        # Проверяем, сколько П-образных дворов помещается по ширине участка
-        side_gap = max(fire_gap, 20.0)
         u_step_x = u_w + side_gap
 
         cols = max(1, int((length + side_gap) / u_step_x))
@@ -496,14 +504,16 @@ class PlacementEngine:
             py = centroid.y + ox * ux[1] + target_oy * uy[1]
 
             if placement_config.asymmetric_wings:
-                if col % 2 == 0:
-                    cand_wings = [(3, 1), (2, 1), (2, 2), (1, 1)]
+                if middle.width > 35.0:
+                    cand_wings = [(1, 1)]
+                elif col % 2 == 0:
+                    cand_wings = [(2, 1), (1, 2), (1, 1)]
                 else:
-                    cand_wings = [(1, 3), (1, 2), (2, 2), (1, 1)]
-                cand_l_shapes = [(num_back, 3), (num_back, 2), (num_back, 1)]
+                    cand_wings = [(1, 2), (2, 1), (1, 1)]
+                cand_l_shapes = [(num_back, 1)]
             else:
-                cand_wings = [(2, 2), (2, 1), (1, 1)]
-                cand_l_shapes = [(num_back, 2), (num_back, 1)]
+                cand_wings = [(num_wing, num_wing), (1, 1)]
+                cand_l_shapes = [(num_back, 1)]
 
             # 1. Пробуем поставить П-образный корпус со двором
             placed = False
@@ -534,7 +544,7 @@ class PlacementEngine:
                     buildings.append(cand_l)
                     break
 
-        # 3. Дозаполняем оставшиеся свободные зоны участка (северная улица, фланги)
+        # 3. Дозаполняем оставшиеся свободные зоны участка соразмерными корпусами (северная улица, фланги)
         self._fill_remaining_space(
             buildable, buildings, angle, middle, end, floors, placement_config
         )
@@ -563,11 +573,21 @@ class PlacementEngine:
         court_angle = self._get_solar_courtyard_angle(placement_config, angle)
         fire_gap = self._get_fire_gap(floors)
 
-        num_back = 3
-        num_wing = 2
+        num_back = 1 if middle.width > 35.0 else 2
+        passage_gap = float(self.config.get("passage_gap_min", 18.0))
+        side_gap = max(fire_gap, passage_gap)
+
+        # Если при num_back=1 помещается 2 квартала, а при 2 только один — выбираем 1 для естественного ансамбля
+        if num_back == 2:
+            u_w_1 = corner.width * 2 + middle.width
+            u_w_2 = corner.width * 2 + 2 * middle.width
+            if (2 * u_w_1 + side_gap <= length) and (2 * u_w_2 + side_gap > length):
+                num_back = 1
+
+        # Соразмерная глубина крыльев: при широких секциях (M5=45м) 1 секция дает крыло 95м
+        num_wing = 1 if (middle.width > 35.0 or width < 140.0) else 2
 
         u_w = corner.width * 2 + num_back * middle.width
-        side_gap = max(fire_gap, 20.0)
         u_step_x = u_w + side_gap
 
         cols = max(1, int((length + side_gap) / u_step_x))
@@ -582,7 +602,8 @@ class PlacementEngine:
         ux = (math.cos(rad_p), math.sin(rad_p))
         uy = (math.cos(rad_n), math.sin(rad_n))
 
-        target_oy = -width / 2.0 + (middle.depth + num_wing * middle.width + end.width) / 2.0 + 8.0 if width >= 110.0 else 0.0
+        u_h = middle.depth + num_wing * middle.width + end.width
+        target_oy = -width / 2.0 + u_h / 2.0 + 8.0 if width >= 110.0 else 0.0
 
         for col in range(cols):
             ox = start_ox + col * u_step_x
@@ -590,12 +611,14 @@ class PlacementEngine:
             py = centroid.y + ox * ux[1] + target_oy * uy[1]
 
             if placement_config.asymmetric_wings:
-                if col % 2 == 0:
-                    cand_wings = [(3, 1), (2, 1), (2, 2), (1, 1)]
+                if middle.width > 35.0:
+                    cand_wings = [(1, 1)]
+                elif col % 2 == 0:
+                    cand_wings = [(2, 1), (1, 2), (1, 1)]
                 else:
-                    cand_wings = [(1, 3), (1, 2), (2, 2), (1, 1)]
+                    cand_wings = [(1, 2), (2, 1), (1, 1)]
             else:
-                cand_wings = [(2, 2), (2, 1), (1, 1)]
+                cand_wings = [(num_wing, num_wing), (1, 1)]
 
             for n_wl, n_wr in cand_wings:
                 cand = self._create_u_building(
@@ -631,11 +654,12 @@ class PlacementEngine:
         court_angle = self._get_solar_courtyard_angle(placement_config, angle)
         fire_gap = self._get_fire_gap(floors)
 
-        num_x = 3
-        num_y = 2
+        num_x = 1 if middle.width > 35.0 else 2
+        num_y = 1 if width < 120.0 else 2
 
         l_w = corner.width + num_x * middle.width + end.width
-        l_step_x = l_w + max(fire_gap, 15.0)
+        passage_gap = float(self.config.get("passage_gap_min", 18.0))
+        l_step_x = l_w + max(fire_gap, passage_gap)
         cols = max(1, int(length / l_step_x))
 
         span_x = (cols - 1) * l_step_x
@@ -650,9 +674,9 @@ class PlacementEngine:
             py = centroid.y + ox * ux[1]
 
             if placement_config.asymmetric_wings:
-                cand_l = [(num_x, 3), (num_x, 2), (num_x, 1)]
+                cand_l = [(num_x, 2), (num_x, 1), (1, 1)]
             else:
-                cand_l = [(num_x, 2), (num_x, 1)]
+                cand_l = [(num_x, num_y), (1, 1)]
 
             for nx, ny in cand_l:
                 cand = self._create_l_building(
@@ -679,20 +703,21 @@ class PlacementEngine:
         floors: int,
         placement_config: PlacementConfig,
     ) -> list[Building]:
-        """Генерация параллельной рядовой застройки."""
+        """Генерация параллельной рядовой застройки соразмерными корпусами (<= 90 м)."""
         fire_gap = self._get_fire_gap(floors)
         insol_gap = self._get_insolation_gap(floors)
         row_spacing = middle.depth + max(fire_gap, insol_gap)
 
-        row_lines = self._compute_row_positions(buildable, angle, row_spacing)
+        row_lines = self._compute_row_positions(buildable, angle, row_spacing, middle.depth)
         buildings: list[Building] = []
 
         for line in row_lines:
-            b = self._create_linear_on_line(
+            cands = self._create_linears_on_line(
                 line, middle, end, floors, angle, placement_config
             )
-            if b is not None and self._check_constraints(b, buildings, placement_config):
-                buildings.append(b)
+            for b in cands:
+                if self._check_constraints(b, buildings, placement_config):
+                    buildings.append(b)
 
         return buildings
 
@@ -754,7 +779,7 @@ class PlacementEngine:
         except Exception:
             return None
 
-    def _create_linear_on_line(
+    def _create_single_linear(
         self,
         center_line: LineString,
         middle: SectionType,
@@ -763,7 +788,7 @@ class PlacementEngine:
         angle: float,
         placement_config: PlacementConfig,
     ) -> Building | None:
-        """Создать линейное здание на линии."""
+        """Создать один соразмерный линейный корпус на отрезке линии."""
         line_len = center_line.length
         min_len = end.width * 2
         if line_len < min_len:
@@ -803,6 +828,48 @@ class PlacementEngine:
 
         return building
 
+    def _create_linears_on_line(
+        self,
+        center_line: LineString,
+        middle: SectionType,
+        end: SectionType,
+        floors: int,
+        angle: float,
+        placement_config: PlacementConfig,
+    ) -> list[Building]:
+        """Создать цепочку соразмерных линейных зданий (<= 90 м) с разрывами для проездов."""
+        line_len = center_line.length
+        min_len = end.width * 2
+        if line_len < min_len:
+            return []
+
+        max_bldg_len = float(self.config.get("building_max_length", 90.0))
+        passage_gap = float(self.config.get("passage_gap_min", 18.0))
+
+        # Если линия короче допустимой длины одного дома, ставим один дом
+        if line_len <= max_bldg_len:
+            b = self._create_single_linear(center_line, middle, end, floors, angle, placement_config)
+            return [b] if b is not None else []
+
+        # Иначе делим длинную линию на соразмерные корпуса (<= max_bldg_len) с разрывами для проездов
+        num_bldgs = math.ceil((line_len - max_bldg_len) / (max_bldg_len + passage_gap)) + 1
+        avail_for_bldgs = line_len - (num_bldgs - 1) * passage_gap
+        target_len = avail_for_bldgs / num_bldgs
+
+        buildings: list[Building] = []
+        for b_idx in range(num_bldgs):
+            d_start = b_idx * (target_len + passage_gap)
+            d_end = d_start + target_len
+            p_start = center_line.interpolate(d_start)
+            p_end = center_line.interpolate(d_end)
+            seg = LineString([p_start, p_end])
+
+            b = self._create_single_linear(seg, middle, end, floors, angle, placement_config)
+            if b is not None:
+                buildings.append(b)
+
+        return buildings
+
     def _fill_remaining_space(
         self,
         buildable: Polygon,
@@ -813,34 +880,127 @@ class PlacementEngine:
         floors: int,
         placement_config: PlacementConfig,
     ) -> None:
-        """Дозаполнить свободные части участка линейными корпусами."""
+        """Дозаполнить свободные части участка (фланги, уличный фронт) соразмерными корпусами."""
         fire_gap = self._get_fire_gap(floors)
-        row_spacing = middle.depth + max(fire_gap, self._get_insolation_gap(floors))
-        row_lines = self._compute_row_positions(buildable, angle, row_spacing)
+        half_d = middle.depth / 2.0
+        inner_buildable = buildable.buffer(-half_d)
+        if inner_buildable.is_empty:
+            return
 
-        for line in row_lines:
-            cand = self._create_linear_on_line(
-                line, middle, end, floors, angle, placement_config
-            )
-            if cand is not None and self._check_constraints(cand, buildings, placement_config):
-                buildings.append(cand)
+        min_area = end.width * 2 * middle.depth
+
+        min_clearance = max(fire_gap * 1.2 + 0.5, 18.5)
+
+        # Защита дворовых пространств и пожарных разрывов:
+        # Для П-образных и Г-образных корпусов исключаем их выпуклую оболочку (дворовое пространство)
+        if buildings:
+            exclusion_polys = []
+            for b in buildings:
+                if b.typology in ("U_SHAPE", "L_SHAPE"):
+                    exclusion_polys.append(b.footprint.convex_hull.buffer(min_clearance))
+                else:
+                    exclusion_polys.append(b.footprint.buffer(min_clearance))
+            occupied = unary_union(exclusion_polys)
+            angles_to_try = [angle + 90.0, angle]
+        else:
+            occupied = Polygon()
+            angles_to_try = [angle, angle + 90.0]
+
+        remaining = inner_buildable.difference(occupied)
+
+        for cand_ang in angles_to_try:
+            parts = remaining.geoms if isinstance(remaining, MultiPolygon) else [remaining]
+            for part in parts:
+                if part.is_empty or part.area < min_area:
+                    continue
+
+                rad = math.radians(cand_ang)
+                ux, uy = math.cos(rad), math.sin(rad)
+                px, py = -math.sin(rad), math.cos(rad)
+
+                coords = list(part.exterior.coords)
+                proj = [x * px + y * py for x, y in coords]
+                t_min, t_max = min(proj), max(proj)
+                span = t_max - t_min
+
+                step = middle.depth + max(fire_gap, 15.0)
+                t_vals = []
+                cur_t = t_min
+                while cur_t <= t_max:
+                    t_vals.append(cur_t)
+                    cur_t += step
+                if not t_vals or (t_max - t_vals[-1]) > step * 0.5:
+                    t_vals.append(t_max)
+
+                ray_len = max(span, 300.0)
+
+                for t in t_vals:
+                    lx = t * px
+                    ly = t * py
+
+                    p1 = (lx - ray_len * ux, ly - ray_len * uy)
+                    p2 = (lx + ray_len * ux, ly + ray_len * uy)
+                    raw_line = LineString([p1, p2]).intersection(part)
+
+                    if raw_line.is_empty:
+                        continue
+
+                    if isinstance(raw_line, LineString):
+                        segs = [raw_line]
+                    elif hasattr(raw_line, "geoms"):
+                        segs = [g for g in raw_line.geoms if isinstance(g, LineString)]
+                    else:
+                        segs = []
+                    for seg in segs:
+                        if seg.length < end.width * 2:
+                            continue
+
+                        # На перпендикулярных флангах для живой пластики этажность согласуется с каскадом
+                        fl = (
+                            max(placement_config.min_wing_floors, floors - 3)
+                            if (round(cand_ang % 180) != round(angle % 180))
+                            else floors
+                        )
+                        cands = self._create_linears_on_line(
+                            seg, middle, end, fl, cand_ang, placement_config
+                        )
+                        for cand in cands:
+                            if self._fits_in_buildable(cand) and self._check_constraints(
+                                cand, buildings, placement_config
+                            ):
+                                buildings.append(cand)
+                                occupied = unary_union([occupied, cand.footprint.convex_hull.buffer(min_clearance)])
+                                remaining = inner_buildable.difference(occupied)
 
     def _get_solar_courtyard_angle(
         self, placement_config: PlacementConfig, primary_angle: float
     ) -> float:
-        """Определить угол ориентации дворов по сторонам света."""
+        """Определить угол ориентации дворов по сторонам света с привязкой к сетке участка."""
         orientation = placement_config.courtyard_orientation.upper()
+        if orientation == "AUTO":
+            orientation = "SOUTH"
 
-        if orientation == "SOUTH":
-            return 0.0
-        elif orientation == "NORTH":
-            return 180.0
-        elif orientation == "EAST":
-            return 90.0
-        elif orientation == "WEST":
-            return 270.0
-        else:
-            return primary_angle
+        target_angles = {
+            "SOUTH": 0.0,
+            "EAST": 90.0,
+            "NORTH": 180.0,
+            "WEST": 270.0,
+        }
+        target = target_angles.get(orientation, 0.0)
+
+        # 4 направления сетки участка
+        candidates = [
+            primary_angle % 360,
+            (primary_angle + 90.0) % 360,
+            (primary_angle + 180.0) % 360,
+            (primary_angle + 270.0) % 360,
+        ]
+
+        def ang_diff(a1: float, a2: float) -> float:
+            d = abs(a1 - a2) % 360
+            return min(d, 360 - d)
+
+        return min(candidates, key=lambda c: ang_diff(c, target))
 
     def _find_best_section(
         self,
@@ -916,8 +1076,9 @@ class PlacementEngine:
         buildable: Polygon,
         angle: float,
         row_spacing: float,
+        section_depth: float = 17.0,
     ) -> list[LineString]:
-        """Вычислить центральные линии рядов."""
+        """Вычислить центральные линии рядов с гарантированным отступом от границы зоны застройки."""
         length, width, _ = get_obb_dimensions(buildable)
         centroid = buildable.centroid
         cx, cy = centroid.x, centroid.y
@@ -925,14 +1086,28 @@ class PlacementEngine:
         perp_angle_rad = math.radians(angle + 90.0)
         row_angle_rad = math.radians(angle)
 
-        max_rows = int(width / row_spacing) + 1
-        total_width = (max_rows - 1) * row_spacing
-        start_offset = -total_width / 2.0
+        half_d = section_depth / 2.0 + 1.0
+        usable_width = width - 2.0 * half_d
+
+        if usable_width <= 0:
+            usable_width = max(10.0, width * 0.5)
+            num_rows = 1
+            start_offset = 0.0
+            actual_spacing = 0.0
+        else:
+            num_rows = max(1, int(usable_width / row_spacing) + 1)
+            actual_spacing = usable_width / (num_rows - 1) if num_rows > 1 else 0.0
+            total_w = (num_rows - 1) * actual_spacing
+            start_offset = -total_w / 2.0
 
         row_lines: list[LineString] = []
 
-        for i in range(max_rows):
-            offset = start_offset + i * row_spacing
+        clip_poly = buildable.buffer(-0.5)
+        if clip_poly.is_empty:
+            clip_poly = buildable
+
+        for i in range(num_rows):
+            offset = start_offset + (i * actual_spacing if num_rows > 1 else 0.0)
             row_cx = cx + offset * math.cos(perp_angle_rad)
             row_cy = cy + offset * math.sin(perp_angle_rad)
 
@@ -942,7 +1117,7 @@ class PlacementEngine:
             x2 = row_cx + half_len * math.cos(row_angle_rad)
             y2 = row_cy + half_len * math.sin(row_angle_rad)
 
-            clipped = LineString([(x1, y1), (x2, y2)]).intersection(buildable)
+            clipped = LineString([(x1, y1), (x2, y2)]).intersection(clip_poly)
             if clipped.is_empty:
                 continue
 
@@ -957,11 +1132,12 @@ class PlacementEngine:
         return row_lines
 
     def _fits_in_buildable(self, building: Building) -> bool:
-        """Проверить, что здание полностью помещается в зону застройки."""
+        """Проверить, что здание строго помещается в зону допустимой застройки."""
         try:
             footprint = building.footprint
             buildable = self.site.buildable_area
-            return buildable.buffer(0.5).contains(footprint)
+            # Строгое вхождение без наезда на нормативный отступ
+            return buildable.contains(footprint)
         except Exception:
             return False
 

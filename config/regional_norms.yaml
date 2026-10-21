@@ -1,0 +1,85 @@
+# =====================================================================
+# РЕГИОНАЛЬНЫЕ НОРМАТИВЫ ГРАДОСТРОИТЕЛЬНОГО ПРОЕКТИРОВАНИЯ (РНГП / МНГП)
+# Используются для расчета баланса территории, парковок и площадок
+# =====================================================================
+
+regions:
+  russia_sp42:
+    id: "russia_sp42"
+    name: "РФ (СП 42.13330.2016)"
+    description: "Базовые федеральные нормативы градостроительства РФ"
+    density:
+      max_far: 2.5
+      max_bcr: 0.40
+      green_ratio_min: 0.25
+    parking:
+      method: "per_1000_people"  # per_1000_people | per_living_area | per_apartment
+      ratio: 350                 # 350 м/м на 1000 жителей (уровень автомобилизации)
+      guest_share: 0.25          # 25% гостевые парковки
+      area_per_car: 25.0         # м² на 1 открытое машиноместо с учетом проездов
+    playgrounds:                 # м² на 1 жителя (СП 42.13330, Таблица 9.1)
+      children: 0.7              # площадки для игр детей
+      sport: 0.5                 # площадки для занятий физкультурой
+      relax: 0.1                 # площадки для отдыха взрослого населения
+      utility: 0.1               # площадки для хозяйственных целей
+      waste: 0.05                # площадки контейнеров ТКО
+
+  moscow_mngp:
+    id: "moscow_mngp"
+    name: "Москва (МНГП № 945-ПП)"
+    description: "Местные нормативы градостроительного проектирования г. Москвы"
+    density:
+      max_far: 2.8
+      max_bcr: 0.45
+      green_ratio_min: 0.25
+    parking:
+      method: "per_living_area"
+      ratio: 90                  # 1 м/м на 90 м² жилой площади (комфорт-класс)
+      guest_share: 0.15
+      area_per_car: 25.0
+    playgrounds:
+      children: 0.7
+      sport: 1.0
+      relax: 0.1
+      utility: 0.1
+      waste: 0.05
+
+  moscow_oblast_rngp:
+    id: "moscow_oblast_rngp"
+    name: "Московская область (РНГП МО № 713/30)"
+    description: "Региональные нормативы МО (повышенные требования к парковкам и спорту)"
+    density:
+      max_far: 2.2
+      max_bcr: 0.40
+      green_ratio_min: 0.25
+    parking:
+      method: "per_living_area"
+      ratio: 80                  # 1 м/м на 80 м² общей жилой площади (жесткий норматив)
+      guest_share: 0.20
+      area_per_car: 25.0
+    playgrounds:
+      children: 0.7
+      sport: 2.0                 # 2.0 м²/чел - региональный норматив МО по спортивным ядрам
+      relax: 0.1
+      utility: 0.15
+      waste: 0.05
+
+  spb_rngp:
+    id: "spb_rngp"
+    name: "Санкт-Петербург (РНГП СПб)"
+    description: "Региональные нормативы градостроительного проектирования Санкт-Петербурга"
+    density:
+      max_far: 2.3
+      max_bcr: 0.40
+      green_ratio_min: 0.25
+    parking:
+      method: "per_living_area"
+      ratio: 80                  # 1 м/м на 80 м² жилья
+      guest_share: 0.15
+      area_per_car: 25.0
+    playgrounds:
+      children: 0.7
+      sport: 0.8
+      relax: 0.1
+      utility: 0.1
+      waste: 0.05

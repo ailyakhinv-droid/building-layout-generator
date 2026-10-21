@@ -35,7 +35,7 @@ class Site:
 
     def compute_buildable_area(
         self,
-        boundary_setback: float = 3.0,
+        boundary_setback: float = 6.0,
         red_line_setback: float = 5.0,
     ) -> Polygon:
         """Вычислить зону допустимой застройки.
