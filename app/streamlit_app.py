@@ -123,6 +123,52 @@ config["max_far"] = st.sidebar.slider(
 
 # ─── Параметры генерации ─────────────────────────────────────────────
 
+st.sidebar.header("🏛️ Архитектурно-градостроительная концепция")
+
+typology_choice = st.sidebar.selectbox(
+    "Типология застройки",
+    [
+        "Квартальная / Смешанная (AUTO)",
+        "П-образные дворы (U-Shape)",
+        "Г-образные корпуса (L-Shape)",
+        "Линейная застройка (Пластины)",
+    ],
+    help="Выберите градостроительный тип застройки участка",
+)
+typology_map = {
+    "Квартальная / Смешанная (AUTO)": "AUTO",
+    "П-образные дворы (U-Shape)": "U_SHAPE",
+    "Г-образные корпуса (L-Shape)": "L_SHAPE",
+    "Линейная застройка (Пластины)": "LINEAR",
+}
+typology_val = typology_map[typology_choice]
+
+court_orient_choice = st.sidebar.selectbox(
+    "Ориентация дворов",
+    [
+        "На Юг (макс. инсоляция)",
+        "По оси участка (AUTO)",
+        "На Восток",
+        "На Запад",
+        "На Север",
+    ],
+    help="Сторона света, в которую раскрываются дворы для лучшего освещения солнцем",
+)
+court_orient_map = {
+    "На Юг (макс. инсоляция)": "SOUTH",
+    "По оси участка (AUTO)": "AUTO",
+    "На Восток": "EAST",
+    "На Запад": "WEST",
+    "На Север": "NORTH",
+}
+court_orient_val = court_orient_map[court_orient_choice]
+
+var_insolation = st.sidebar.checkbox(
+    "Переменный шаг инсоляции",
+    value=True,
+    help="Сокращает противопожарный разрыв с глухих торцов, освобождая место для просторных дворов",
+)
+
 st.sidebar.header("⚙️ Параметры генерации")
 
 available_sections = library.get_all()
@@ -182,23 +228,27 @@ if generate_btn:
 
         # 2. Генерация
         try:
+            placement_cfg = PlacementConfig(
+                target_floors=target_floors,
+                max_sections_per_building=max_sections,
+                typology=typology_val,
+                courtyard_orientation=court_orient_val,
+                variable_insolation=var_insolation,
+            )
+
             if gen_mode == "Заданная этажность":
                 engine = PlacementEngine(site, library, config)
-                placement_cfg = PlacementConfig(
-                    target_floors=target_floors,
-                    max_sections_per_building=max_sections,
-                )
                 buildings = engine.generate(placement_cfg)
                 tep = calculate_tep(site, buildings, config)
 
             elif gen_mode == "Подбор под ТЭП":
-                optimizer = Optimizer(site, library, config)
+                optimizer = Optimizer(site, library, config, base_placement_config=placement_cfg)
                 result = optimizer.optimize_for_target(target_tep)
                 buildings = result.buildings
                 tep = result.tep
 
             elif gen_mode == "Максимизация":
-                optimizer = Optimizer(site, library, config)
+                optimizer = Optimizer(site, library, config, base_placement_config=placement_cfg)
                 result = optimizer.optimize_maximize()
                 buildings = result.buildings
                 tep = result.tep
@@ -292,7 +342,15 @@ if "buildings" in st.session_state:
             with st.spinner("Генерация вариантов..."):
                 if site.buildable_area is None:
                     compute_buildable_area(site, st.session_state["config"])
-                optimizer = Optimizer(site, library, st.session_state["config"])
+                optimizer = Optimizer(
+                    site, library, st.session_state["config"],
+                    base_placement_config=PlacementConfig(
+                        typology=typology_val,
+                        courtyard_orientation=court_orient_val,
+                        variable_insolation=var_insolation,
+                        max_sections_per_building=max_sections,
+                    )
+                )
                 variants = optimizer.generate_variants()
 
                 if variants:

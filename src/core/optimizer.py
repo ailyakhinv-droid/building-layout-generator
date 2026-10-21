@@ -48,6 +48,7 @@ class Optimizer:
         site: Site,
         library: SectionLibrary,
         config: dict[str, Any],
+        base_placement_config: PlacementConfig | None = None,
     ) -> None:
         """Инициализировать оптимизатор.
 
@@ -55,10 +56,12 @@ class Optimizer:
             site: Участок с вычисленной зоной застройки.
             library: Библиотека типовых секций.
             config: Нормативные параметры.
+            base_placement_config: Базовые параметры расстановки (типология, ориентация).
         """
         self.site = site
         self.library = library
         self.config = config
+        self.base_placement_config = base_placement_config or PlacementConfig()
 
     def optimize_for_target(
         self,
@@ -218,7 +221,16 @@ class Optimizer:
         """
         try:
             engine = PlacementEngine(self.site, self.library, self.config)
-            placement_config = PlacementConfig(target_floors=floors)
+            placement_config = PlacementConfig(
+                target_floors=floors,
+                placement_angle=self.base_placement_config.placement_angle,
+                preferred_section_ids=self.base_placement_config.preferred_section_ids,
+                min_sections_per_building=self.base_placement_config.min_sections_per_building,
+                max_sections_per_building=self.base_placement_config.max_sections_per_building,
+                typology=self.base_placement_config.typology,
+                courtyard_orientation=self.base_placement_config.courtyard_orientation,
+                variable_insolation=self.base_placement_config.variable_insolation,
+            )
             buildings = engine.generate(placement_config)
 
             if not buildings:

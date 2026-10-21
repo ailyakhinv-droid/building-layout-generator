@@ -90,9 +90,11 @@ class Building:
 
     Attributes:
         sections: Список размещённых секций, составляющих здание.
+        typology: Типология здания (LINEAR, L_SHAPE, U_SHAPE, COURTYARD).
     """
 
     sections: list[PlacedSection] = field(default_factory=list)
+    typology: str = "LINEAR"
 
     @property
     def footprint(self) -> Polygon:
@@ -110,9 +112,12 @@ class Building:
         footprints = [section.footprint for section in self.sections]
         union = unary_union(footprints)
 
-        # Если результат — MultiPolygon, возвращаем convex hull
+        # Если из-за микропогрешностей стыковки вернулся MultiPolygon,
+        # объединяем микрозазоры с помощью буфера без потери формы двора
         if union.geom_type == "MultiPolygon":
-            return union.convex_hull
+            merged = union.buffer(0.05).buffer(-0.05)
+            if merged.geom_type == "Polygon":
+                return merged
 
         return union
 

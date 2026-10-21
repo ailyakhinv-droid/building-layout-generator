@@ -104,13 +104,48 @@ def plot_site_plan(
                 facecolor=cat_color,
                 edgecolor="#222222",
                 linewidth=1.0,
-                alpha=0.7,
+                alpha=0.75,
             )
 
-        # Подпись здания
+        # Выделяем внутренний двор для П-образных и Г-образных корпусов
+        if getattr(building, "typology", "LINEAR") in ("U_SHAPE", "L_SHAPE", "COURTYARD"):
+            try:
+                hull = building.footprint.convex_hull
+                court_poly = hull.difference(building.footprint)
+                if not court_poly.is_empty and court_poly.area > 50.0:
+                    _draw_polygon(
+                        ax, court_poly,
+                        facecolor="#E8F8F5",
+                        edgecolor="#27AE60",
+                        linewidth=1.5,
+                        linestyle=":",
+                        alpha=0.55,
+                    )
+                    c_pt = court_poly.centroid
+                    ax.annotate(
+                        "Двор",
+                        xy=(c_pt.x, c_pt.y),
+                        fontsize=8,
+                        color="#196F3D",
+                        fontweight="bold",
+                        ha="center",
+                        va="center",
+                        bbox=dict(boxstyle="round,pad=0.25", facecolor="#E8F8F5", edgecolor="#27AE60", alpha=0.8),
+                        zorder=8,
+                    )
+            except Exception:
+                pass
+
+        # Подпись здания с указанием типологии
         if show_labels:
             centroid = building.footprint.centroid
-            label_text = f"Д{i + 1}\n{building.floors} эт."
+            typo_name = {
+                "U_SHAPE": "П-обр.",
+                "L_SHAPE": "Г-обр.",
+                "COURTYARD": "Квартал",
+                "LINEAR": "Линейн."
+            }.get(getattr(building, "typology", "LINEAR"), "")
+            label_text = f"Д{i + 1} ({typo_name})\n{building.floors} эт."
             ax.annotate(
                 label_text,
                 xy=(centroid.x, centroid.y),
@@ -119,7 +154,7 @@ def plot_site_plan(
                 ha="center",
                 va="center",
                 color="white",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="#333333", alpha=0.7),
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="#333333", alpha=0.8),
                 zorder=10,
             )
 
@@ -140,6 +175,7 @@ def plot_site_plan(
         mpatches.Patch(facecolor=SECTION_CATEGORY_COLORS["MIDDLE"], edgecolor="#222", label="Рядовая секция"),
         mpatches.Patch(facecolor=SECTION_CATEGORY_COLORS["END"], edgecolor="#222", label="Торцевая секция"),
         mpatches.Patch(facecolor=SECTION_CATEGORY_COLORS["CORNER"], edgecolor="#222", label="Угловая секция"),
+        mpatches.Patch(facecolor="#E8F8F5", edgecolor="#27AE60", linestyle=":", label="Внутренний двор"),
     ]
     ax.legend(handles=legend_items, loc="upper right", fontsize=8,
               framealpha=0.9)
