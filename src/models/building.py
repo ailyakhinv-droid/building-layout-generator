@@ -28,6 +28,7 @@ class PlacedSection:
         y: Координата Y центра секции.
         angle: Угол поворота секции в градусах.
         floors: Количество этажей секции.
+        is_flipped: Зеркальное отражение по горизонтали (для правого угла скобы).
     """
 
     section_type: SectionType
@@ -35,6 +36,7 @@ class PlacedSection:
     y: float
     angle: float = 0.0
     floors: int = 0
+    is_flipped: bool = False
 
     def __post_init__(self) -> None:
         """Установить этажность по умолчанию, если не задана."""
@@ -44,7 +46,9 @@ class PlacedSection:
     @property
     def footprint(self) -> Polygon:
         """Полигон пятна застройки секции."""
-        return self.section_type.create_footprint(self.x, self.y, self.angle)
+        return self.section_type.create_footprint(
+            self.x, self.y, self.angle, is_flipped=self.is_flipped
+        )
 
     @property
     def gfa(self) -> float:
@@ -77,10 +81,11 @@ class PlacedSection:
 
     def __repr__(self) -> str:
         """Строковое представление размещённой секции."""
+        flip_str = ", flipped" if self.is_flipped else ""
         return (
             f"PlacedSection('{self.section_type.id}', "
             f"pos=({self.x:.1f}, {self.y:.1f}), "
-            f"angle={self.angle:.0f}°, floors={self.floors})"
+            f"angle={self.angle:.0f}°, floors={self.floors}{flip_str})"
         )
 
 

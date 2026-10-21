@@ -11,7 +11,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from shapely.affinity import rotate, translate
+from shapely.affinity import rotate, scale, translate
 from shapely.geometry import Polygon, box
 
 
@@ -25,6 +25,8 @@ class SectionType:
         category: Категория секции (MIDDLE, CORNER, END).
         width: Ширина секции в метрах (по фасаду).
         depth: Глубина секции в метрах (перпендикулярно фасаду).
+        width_small: Малая ширина секции в метрах (для Г-образных угловых секций).
+        depth_small: Малая глубина секции в метрах (для Г-образных угловых секций).
         min_floors: Минимальное количество этажей.
         max_floors: Максимальное количество этажей.
         default_floors: Количество этажей по умолчанию.
@@ -44,6 +46,8 @@ class SectionType:
     max_floors: int
     default_floors: int
     floor_area: float
+    width_small: float | None = None
+    depth_small: float | None = None
     apartments_per_floor: dict[str, int] = field(default_factory=dict)
     apt_areas: dict[str, float] = field(default_factory=dict)
     has_commercial_ground: bool = False
@@ -86,24 +90,47 @@ class SectionType:
         """Общее количество квартир на одном этаже."""
         return sum(self.apartments_per_floor.values())
 
-    def create_footprint(self, x: float, y: float, angle: float = 0.0) -> Polygon:
+    def create_footprint(
+        self,
+        x: float,
+        y: float,
+        angle: float = 0.0,
+        is_flipped: bool = False,
+    ) -> Polygon:
         """Создать полигон пятна застройки секции.
 
-        Создаёт прямоугольник с центром в точке (x, y),
-        повёрнутый на заданный угол.
+        Для угловых секций (CORNER) с заданными малыми габаритами создаёт
+        Г-образный контур с вырезом со стороны внутреннего двора.
+        Для остальных секций создаёт прямоугольник.
 
         Args:
             x: Координата X центра секции.
             y: Координата Y центра секции.
             angle: Угол поворота в градусах (против часовой стрелки).
+            is_flipped: Отразить ли секцию зеркально по горизонтали (для правого угла скобы).
 
         Returns:
             Полигон пятна застройки.
         """
-        # Создаём прямоугольник с центром в начале координат
-        half_w = self.width / 2.0
-        half_d = self.depth / 2.0
-        footprint = box(-half_w, -half_d, half_w, half_d)
+        hw = self.width / 2.0
+        hd = self.depth / 2.0
+
+        if self.category == "CORNER" and self.width_small and self.depth_small:
+            ws = self.width_small
+            ds = self.depth_small
+            footprint = Polygon([
+                (-hw, hd),
+                (hw, hd),
+                (hw, hd - ds),
+                (-hw + ws, hd - ds),
+                (-hw + ws, -hd),
+                (-hw, -hd),
+                (-hw, hd),
+            ])
+            if is_flipped:
+                footprint = scale(footprint, xfact=-1.0, yfact=1.0, origin=(0, 0))
+        else:
+            footprint = box(-hw, -hd, hw, hd)
 
         # Поворачиваем вокруг центра
         if angle != 0.0:

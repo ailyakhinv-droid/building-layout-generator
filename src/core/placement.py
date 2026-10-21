@@ -196,7 +196,7 @@ class PlacementEngine:
         # Центрирование
         shift_x = x_curr / 2.0
         return [
-            PlacedSection(s.section_type, s.x - shift_x, s.y, s.angle, s.floors)
+            PlacedSection(s.section_type, s.x - shift_x, s.y, s.angle, s.floors, is_flipped=s.is_flipped)
             for s in sections
         ]
 
@@ -236,7 +236,7 @@ class PlacementEngine:
         # Координаты основания:
         xc1 = wc_l / 2.0
         yc1 = -dc_l / 2.0
-        sections.append(PlacedSection(sec_cor_l, xc1, yc1, 0.0, fl_cor_l))
+        sections.append(PlacedSection(sec_cor_l, xc1, yc1, 0.0, fl_cor_l, is_flipped=False))
 
         x_back_start = wc_l
         for i in range(num_back):
@@ -248,7 +248,7 @@ class PlacementEngine:
 
         xc2 = x_back_end + wc_r / 2.0
         yc2 = -dc_r / 2.0
-        sections.append(PlacedSection(sec_cor_r, xc2, yc2, 0.0, fl_cor_r))
+        sections.append(PlacedSection(sec_cor_r, xc2, yc2, 0.0, fl_cor_r, is_flipped=True))
 
         x_right_outer = x_back_end + wc_r
 
@@ -318,7 +318,7 @@ class PlacementEngine:
         cy = (min(f.bounds[1] for f in fps) + max(f.bounds[3] for f in fps)) / 2.0
 
         return [
-            PlacedSection(s.section_type, s.x - cx, s.y - cy, s.angle, s.floors)
+            PlacedSection(s.section_type, s.x - cx, s.y - cy, s.angle, s.floors, is_flipped=s.is_flipped)
             for s in sections
         ]
 
@@ -342,7 +342,7 @@ class PlacementEngine:
         # Угловая секция в верхнем правом стыке
         xc = -wc / 2.0
         yc = -dc / 2.0
-        sections.append(PlacedSection(corner, xc, yc, 0.0, fl_cor))
+        sections.append(PlacedSection(corner, xc, yc, 0.0, fl_cor, is_flipped=True))
 
         # 1. Горизонтальное крыло влево (-X)
         fl_x = floors
@@ -401,7 +401,7 @@ class PlacementEngine:
         cy = (min(f.bounds[1] for f in fps) + max(f.bounds[3] for f in fps)) / 2.0
 
         return [
-            PlacedSection(s.section_type, s.x - cx, s.y - cy, s.angle, s.floors)
+            PlacedSection(s.section_type, s.x - cx, s.y - cy, s.angle, s.floors, is_flipped=s.is_flipped)
             for s in sections
         ]
 
@@ -429,6 +429,7 @@ class PlacementEngine:
                     y=gy,
                     angle=g_angle,
                     floors=s.floors,
+                    is_flipped=s.is_flipped,
                 )
             )
 
@@ -461,7 +462,7 @@ class PlacementEngine:
         fire_gap = self._get_fire_gap(floors)
 
         # Соразмерный масштаб основания скобы (65–88 м вместо монстров 180 м)
-        num_back = 1 if middle.width > 35.0 else 2
+        num_back = 1 if middle.width > 35.0 or placement_config.max_sections_per_building < 7 else 2
         passage_gap = float(self.config.get("passage_gap_min", 18.0))
         side_gap = max(fire_gap, passage_gap)
 
@@ -474,6 +475,10 @@ class PlacementEngine:
 
         # Соразмерная глубина крыльев: при широких секциях (M5=45м) 1 секция дает крыло 95м
         num_wing = 1 if (middle.width > 35.0 or width < 140.0) else 2
+
+        max_sec = placement_config.max_sections_per_building
+        min_sec = placement_config.min_sections_per_building
+        can_place_u = max_sec >= 5
 
         u_w = corner.width * 2 + num_back * middle.width
         u_h = middle.depth + num_wing * middle.width + end.width
@@ -503,17 +508,30 @@ class PlacementEngine:
             px = centroid.x + ox * ux[0] + target_oy * uy[0]
             py = centroid.y + ox * ux[1] + target_oy * uy[1]
 
-            if placement_config.asymmetric_wings:
-                if middle.width > 35.0:
-                    cand_wings = [(1, 1)]
-                elif col % 2 == 0:
-                    cand_wings = [(2, 1), (1, 2), (1, 1)]
+            if can_place_u:
+                if placement_config.asymmetric_wings:
+                    if middle.width > 35.0:
+                        cand_wings = [(1, 1), (1, 0), (0, 1), (0, 0)]
+                    elif col % 2 == 0:
+                        cand_wings = [(2, 1), (1, 2), (1, 1), (1, 0), (0, 1), (0, 0)]
+                    else:
+                        cand_wings = [(1, 2), (2, 1), (1, 1), (0, 1), (1, 0), (0, 0)]
                 else:
-                    cand_wings = [(1, 2), (2, 1), (1, 1)]
-                cand_l_shapes = [(num_back, 1)]
+                    cand_wings = [(num_wing, num_wing), (1, 1), (0, 0)]
+                # U-корпус: 2 угла + num_back + wl + 1 торец + wr + 1 торец = 4 + num_back + wl + wr
+                cand_wings = [
+                    (wl, wr) for wl, wr in cand_wings
+                    if min_sec <= (4 + num_back + wl + wr) <= max_sec
+                ]
             else:
-                cand_wings = [(num_wing, num_wing), (1, 1)]
-                cand_l_shapes = [(num_back, 1)]
+                cand_wings = []
+
+            cand_l_shapes = [(num_back, 1), (num_back, 0), (1, 1), (1, 0), (0, 0)]
+            # L-корпус: 1 угол + (nx + 1 торец) + (ny + 1 торец) = 3 + nx + ny
+            cand_l_shapes = [
+                (nx, ny) for nx, ny in cand_l_shapes
+                if min_sec <= (3 + nx + ny) <= max_sec
+            ]
 
             # 1. Пробуем поставить П-образный корпус со двором
             placed = False
@@ -566,6 +584,11 @@ class PlacementEngine:
         placement_config: PlacementConfig,
     ) -> list[Building]:
         """Генерация с приоритетом П-образных скоб."""
+        if placement_config.max_sections_per_building < 5:
+            return self._generate_l_shape_layout(
+                buildable, angle, middle, corner, end, floors, placement_config
+            )
+
         length, width, _ = get_obb_dimensions(buildable)
         centroid = buildable.centroid
         buildings: list[Building] = []
@@ -573,7 +596,7 @@ class PlacementEngine:
         court_angle = self._get_solar_courtyard_angle(placement_config, angle)
         fire_gap = self._get_fire_gap(floors)
 
-        num_back = 1 if middle.width > 35.0 else 2
+        num_back = 1 if middle.width > 35.0 or placement_config.max_sections_per_building < 7 else 2
         passage_gap = float(self.config.get("passage_gap_min", 18.0))
         side_gap = max(fire_gap, passage_gap)
 
@@ -586,6 +609,9 @@ class PlacementEngine:
 
         # Соразмерная глубина крыльев: при широких секциях (M5=45м) 1 секция дает крыло 95м
         num_wing = 1 if (middle.width > 35.0 or width < 140.0) else 2
+
+        max_sec = placement_config.max_sections_per_building
+        min_sec = placement_config.min_sections_per_building
 
         u_w = corner.width * 2 + num_back * middle.width
         u_step_x = u_w + side_gap
@@ -612,13 +638,18 @@ class PlacementEngine:
 
             if placement_config.asymmetric_wings:
                 if middle.width > 35.0:
-                    cand_wings = [(1, 1)]
+                    cand_wings = [(1, 1), (1, 0), (0, 1), (0, 0)]
                 elif col % 2 == 0:
-                    cand_wings = [(2, 1), (1, 2), (1, 1)]
+                    cand_wings = [(2, 1), (1, 2), (1, 1), (1, 0), (0, 1), (0, 0)]
                 else:
-                    cand_wings = [(1, 2), (2, 1), (1, 1)]
+                    cand_wings = [(1, 2), (2, 1), (1, 1), (0, 1), (1, 0), (0, 0)]
             else:
-                cand_wings = [(num_wing, num_wing), (1, 1)]
+                cand_wings = [(num_wing, num_wing), (1, 1), (0, 0)]
+
+            cand_wings = [
+                (wl, wr) for wl, wr in cand_wings
+                if min_sec <= (4 + num_back + wl + wr) <= max_sec
+            ]
 
             for n_wl, n_wr in cand_wings:
                 cand = self._create_u_building(
@@ -647,12 +678,20 @@ class PlacementEngine:
         placement_config: PlacementConfig,
     ) -> list[Building]:
         """Генерация с приоритетом Г-образных корпусов."""
+        if placement_config.max_sections_per_building < 3:
+            return self._generate_linear(
+                buildable, angle, middle, end, floors, placement_config
+            )
+
         length, width, _ = get_obb_dimensions(buildable)
         centroid = buildable.centroid
         buildings: list[Building] = []
 
         court_angle = self._get_solar_courtyard_angle(placement_config, angle)
         fire_gap = self._get_fire_gap(floors)
+
+        max_sec = placement_config.max_sections_per_building
+        min_sec = placement_config.min_sections_per_building
 
         num_x = 1 if middle.width > 35.0 else 2
         num_y = 1 if width < 120.0 else 2
@@ -674,9 +713,15 @@ class PlacementEngine:
             py = centroid.y + ox * ux[1]
 
             if placement_config.asymmetric_wings:
-                cand_l = [(num_x, 2), (num_x, 1), (1, 1)]
+                cand_l = [(num_x, 2), (num_x, 1), (num_x, 0), (1, 1), (1, 0), (0, 0)]
             else:
-                cand_l = [(num_x, num_y), (1, 1)]
+                cand_l = [(num_x, num_y), (num_x, 0), (1, 1), (1, 0), (0, 0)]
+
+            # L-корпус: 1 угол + (nx + 1 торец) + (ny + 1 торец) = 3 + nx + ny
+            cand_l = [
+                (nx, ny) for nx, ny in cand_l
+                if min_sec <= (3 + nx + ny) <= max_sec
+            ]
 
             for nx, ny in cand_l:
                 cand = self._create_l_building(
@@ -795,13 +840,15 @@ class PlacementEngine:
             return None
 
         avail = line_len - end.width * 2
-        num_middle = int(avail / middle.width)
+        num_middle = max(0, int(avail / middle.width))
 
         total_secs = num_middle + 2
+        if total_secs > placement_config.max_sections_per_building:
+            num_middle = max(0, placement_config.max_sections_per_building - 2)
+            total_secs = num_middle + 2
+
         if total_secs < placement_config.min_sections_per_building:
             return None
-        if total_secs > placement_config.max_sections_per_building:
-            num_middle = placement_config.max_sections_per_building - 2
 
         midpoint = center_line.interpolate(line_len / 2.0)
         local_secs = self._build_linear_local(
@@ -843,7 +890,10 @@ class PlacementEngine:
         if line_len < min_len:
             return []
 
-        max_bldg_len = float(self.config.get("building_max_length", 90.0))
+        max_secs = placement_config.max_sections_per_building
+        max_sec_len = max(end.width * 2, (max_secs - 2) * middle.width + end.width * 2)
+        norm_max_len = float(self.config.get("building_max_length", 90.0))
+        max_bldg_len = min(norm_max_len, max_sec_len)
         passage_gap = float(self.config.get("passage_gap_min", 18.0))
 
         # Если линия короче допустимой длины одного дома, ставим один дом
@@ -1148,6 +1198,12 @@ class PlacementEngine:
         placement_config: PlacementConfig | None = None,
     ) -> bool:
         """Проверить нормативные противопожарные и инсоляционные расстояния."""
+        if placement_config is not None:
+            if len(new_building.sections) > placement_config.max_sections_per_building:
+                return False
+            if len(new_building.sections) < placement_config.min_sections_per_building:
+                return False
+
         new_fp = new_building.footprint
 
         for existing in existing_buildings:

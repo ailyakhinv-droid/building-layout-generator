@@ -5,6 +5,8 @@
   "category": "CORNER",
   "width": 20.93,
   "depth": 27.95,
+  "width_small": 13.18,
+  "depth_small": 16.90,
   "min_floors": 3,
   "max_floors": 9,
   "default_floors": 5,

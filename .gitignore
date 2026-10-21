@@ -15,6 +15,10 @@ output/*.geojson
 output/*.dxf
 output/*.dwg
 
+# External / local libraries
+libs/
+external_libs/
+
 # OS specific
 Thumbs.db
 .DS_Store

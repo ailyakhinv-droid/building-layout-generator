@@ -157,6 +157,25 @@ def import_sections_from_excel(
         length_m = round(parse_num(row_dict.get("Секция_Длина")) / 1000.0, 2)
         width_m = round(parse_num(row_dict.get("Секция_Ширина")) / 1000.0, 2)
 
+        # Малые габариты для угловых секций (L-shape)
+        len_small_raw = row_dict.get("Секция_Длина малая")
+        width_small_raw = row_dict.get("Секция_Ширина малая")
+        len_small_m = round(parse_num(len_small_raw) / 1000.0, 2) if len_small_raw else None
+        width_small_m = round(parse_num(width_small_raw) / 1000.0, 2) if width_small_raw else None
+
+        # Для угловых Г-образных секций:
+        # width_small = толщина бокового крыла (~13.2-13.6м)
+        # depth_small = толщина верхнего крыла (~16.9-17.0м, стык со стандартными 17м корпусами)
+        width_small = None
+        depth_small = None
+        if len_small_m and width_small_m:
+            if abs(len_small_m - 17.0) < abs(width_small_m - 17.0):
+                depth_small = len_small_m
+                width_small = width_small_m
+            else:
+                depth_small = width_small_m
+                width_small = len_small_m
+
         # В градостроительной модели: width = фасадный шаг, depth = глубина корпуса
         facade_width = length_m
         building_depth = width_m
@@ -204,6 +223,8 @@ def import_sections_from_excel(
             "category": meta["category"],
             "width": facade_width,
             "depth": building_depth,
+            "width_small": width_small,
+            "depth_small": depth_small,
             "min_floors": meta["min_floors"],
             "max_floors": meta["max_floors"],
             "default_floors": default_floors,
@@ -228,13 +249,3 @@ def import_sections_from_excel(
         imported_sections.append(section_data)
 
     return imported_sections
-
-
-if __name__ == "__main__":
-    proj_root = Path(__file__).resolve().parent.parent.parent
-    xlsx_file = proj_root / "data" / "sections.xlsx"
-    sec_dir = proj_root / "config" / "sections"
-    secs = import_sections_from_excel(xlsx_file, sec_dir)
-    print(f"Успешно импортировано {len(secs)} секций в {sec_dir}!")
-    for s in secs:
-        print(f"  • [{s['category']}] {s['name']} (id: {s['id']}): {s['width']}×{s['depth']}м, {s['min_floors']}-{s['max_floors']} эт. (лифтов: {s['elevators']})")
