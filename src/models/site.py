@@ -26,6 +26,7 @@ class Site:
     boundary: Polygon
     red_lines: list[LineString] = field(default_factory=list)
     setbacks: dict[str, float] = field(default_factory=dict)
+    base_offset: tuple[float, float] = (0.0, 0.0)
     buildable_area: Polygon | None = field(default=None, init=False)
 
     @property

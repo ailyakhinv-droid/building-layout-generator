@@ -29,6 +29,7 @@ from src.export.geojson_export import export_geojson
 from src.export.report import generate_report
 from src.core.regional_norms import load_regional_norms, RegionalNorm
 from src.core.territory_balance import calculate_territory_balance, TerritoryBalanceResult
+from src.core.cad_parser import inspect_cad_layers, parse_cad_site, DWGConversionError
 
 
 # ─── Настройка страницы ──────────────────────────────────────────────
@@ -72,8 +73,8 @@ st.sidebar.header("📐 Параметры участка")
 
 site_mode = st.sidebar.radio(
     "Способ задания участка",
-    ["Прямоугольник", "Координаты"],
-    help="Выберите способ задания границ участка",
+    ["Прямоугольник", "Координаты", "Загрузка CAD (DWG / DXF)"],
+    help="Выберите способ задания границ участка: типовой прямоугольник, координаты вершин или импорт из CAD чертежа",
 )
 
 if site_mode == "Прямоугольник":
@@ -81,7 +82,7 @@ if site_mode == "Прямоугольник":
     site_width = col1.number_input("Ширина, м", 50, 1000, 200, step=10)
     site_height = col2.number_input("Высота, м", 50, 1000, 150, step=10)
     site = create_rectangular_site(site_width, site_height)
-else:
+elif site_mode == "Координаты":
     coords_text = st.sidebar.text_area(
         "Координаты (x,y по одной на строку)",
         value="0,0\n200,0\n200,150\n0,150",
@@ -98,6 +99,71 @@ else:
     except Exception as e:
         st.sidebar.error(f"Ошибка разбора координат: {e}")
         st.stop()
+else:
+    cad_file = st.sidebar.file_uploader(
+        "Чертеж границы (.dxf, .dwg)",
+        type=["dxf", "dwg"],
+        help="Загрузите чертеж генплана с контуром участка. DXF читается нативно, DWG конвертируется через ODA.",
+    )
+    if cad_file is not None:
+        try:
+            file_bytes = cad_file.getvalue()
+            layers_info = inspect_cad_layers(file_bytes, cad_file.name)
+            if not layers_info:
+                st.sidebar.error("В чертеже не найдено геометрических линий или полилиний.")
+                st.stop()
+
+            layer_names = [l.name for l in layers_info]
+            cand_idx = 0
+            for idx, l in enumerate(layers_info):
+                if l.is_candidate:
+                    cand_idx = idx
+                    break
+
+            sel_layer = st.sidebar.selectbox(
+                "Слой границы участка",
+                layer_names,
+                index=cand_idx,
+                help="Слой CAD, на котором начерчен внешний контур границы участка",
+            )
+
+            rl_names = ["(нет)"] + layer_names
+            rl_idx = 0
+            for idx, l in enumerate(layers_info):
+                if l.is_red_line_candidate and l.name != sel_layer:
+                    rl_idx = idx + 1
+                    break
+            sel_rl = st.sidebar.selectbox("Слой красных линий", rl_names, index=rl_idx)
+            rl_param = None if sel_rl == "(нет)" else sel_rl
+
+            site, cad_meta = parse_cad_site(
+                file_bytes,
+                filename=cad_file.name,
+                boundary_layer=sel_layer,
+                red_lines_layer=rl_param,
+                normalize_origin=True,
+            )
+
+            st.sidebar.success(
+                f"✓ Участок: {site.area:,.0f} м² ({cad_meta['vertices_count']} вершин)"
+            )
+            if site.base_offset != (0.0, 0.0):
+                st.sidebar.caption(f"📍 МСК привязка: ({site.base_offset[0]:,.0f}, {site.base_offset[1]:,.0f})")
+            if cad_meta["red_lines_count"] > 0:
+                st.sidebar.caption(f"⛔ Красных линий: {cad_meta['red_lines_count']} шт.")
+
+        except DWGConversionError as e:
+            st.sidebar.warning(str(e))
+            st.sidebar.info("💡 Сохраните чертеж в AutoCAD/nanoCAD в формат DXF (`DXFOUT`) и загрузите .dxf файл.")
+            st.stop()
+        except Exception as e:
+            st.sidebar.error(f"Ошибка обработки CAD файла: {e}")
+            st.stop()
+    else:
+        st.sidebar.info("Загрузите чертеж границы участка (.dxf или .dwg).")
+        st.sidebar.caption("💡 Совет: команда `DXFOUT` в AutoCAD или «Сохранить как → DXF».")
+        # Тестовый полигон по умолчанию пока файл не выбран
+        site = create_rectangular_site(200, 150)
 
 st.sidebar.markdown(f"**Площадь участка:** {site.area:,.0f} м²")
 

@@ -12,6 +12,8 @@ __pycache__/
 output/*.png
 output/*.txt
 output/*.geojson
+output/*.dxf
+output/*.dwg
 
 # OS specific
 Thumbs.db
