@@ -28,12 +28,16 @@ class OptimizationResult:
         floors: Использованная этажность.
         normative_ok: Соблюдены ли все нормативы.
         score: Оценка варианта (для сравнения).
+        typology: Использованная типология застройки.
+        note: Пояснительное примечание к варианту.
     """
     buildings: list[Building]
     tep: TEP
     floors: int
     normative_ok: bool
     score: float = 0.0
+    typology: str = "AUTO"
+    note: str = ""
 
 
 class Optimizer:
@@ -94,9 +98,8 @@ class Optimizer:
         if not middles:
             raise ValueError("В библиотеке нет рядовых секций.")
 
-        section = middles[0]
-        min_f = section.min_floors
-        max_f = section.max_floors
+        min_f = min(s.min_floors for s in middles)
+        max_f = max(s.max_floors for s in middles)
 
         # Определяем целевой показатель
         target_far = target_tep.get("target_far")
@@ -156,37 +159,64 @@ class Optimizer:
 
         return best_result
 
-    def optimize_maximize(self) -> OptimizationResult:
-        """Максимизировать жилую площадь при соблюдении нормативов.
+    def optimize_maximize(
+        self,
+        respect_normatives: bool = True,
+        explore_typologies: bool = False,
+    ) -> OptimizationResult:
+        """Максимизировать жилую площадь.
 
-        Перебирает варианты этажности и выбирает вариант
-        с максимальной жилой площадью, удовлетворяющий нормативам.
+        Args:
+            respect_normatives: Если True — строго соблюдать нормативы (FAR <= max_far, BCR <= max_bcr).
+                               Если False — абсолютная максимизация площади без отсечения по плотности.
+            explore_typologies: Если True — перебрать все типологии (AUTO, U_SHAPE, L_SHAPE, LINEAR).
 
         Returns:
             Лучший найденный результат.
         """
-        variants = self.generate_variants()
+        variants = self.generate_variants(explore_typologies=explore_typologies)
 
-        # Фильтруем допустимые варианты
-        valid = [v for v in variants if v.normative_ok]
-
-        if not valid:
-            # Если нет допустимых — берём с минимальным нарушением
-            if variants:
-                return max(variants, key=lambda v: v.tep.residential_area)
+        if not variants:
             raise ValueError("Не удалось сгенерировать ни одного варианта.")
 
-        # Из допустимых — выбираем с максимальной жилой площадью
-        return max(valid, key=lambda v: v.tep.residential_area)
+        max_far_limit = float(self.config.get("max_far", 2.50))
+
+        if respect_normatives:
+            # Фильтруем допустимые нормативами варианты
+            valid = [v for v in variants if v.normative_ok]
+            if valid:
+                best = max(valid, key=lambda v: v.tep.residential_area)
+                best.note = (
+                    f"Оптимальный максимум по нормативам: {best.floors} эт. ({best.typology}), "
+                    f"FAR={best.tep.far:.2f} (лимит {max_far_limit:.2f})."
+                )
+                return best
+            else:
+                # Если ни один не уложился в нормативы — берем с минимальными отклонениями
+                best = max(variants, key=lambda v: v.score)
+                best.note = (
+                    f"Все варианты превышают предельный FAR {max_far_limit:.2f}. "
+                    f"Выбран вариант с мин. нарушениями ({best.floors} эт.)."
+                )
+                return best
+        else:
+            best = max(variants, key=lambda v: v.tep.residential_area)
+            best.note = (
+                f"Абсолютный физический максимум (без лимитов FAR): {best.floors} эт. ({best.typology}), "
+                f"FAR={best.tep.far:.2f}."
+            )
+            return best
 
     def generate_variants(
         self,
         floors_range: range | None = None,
+        explore_typologies: bool = False,
     ) -> list[OptimizationResult]:
-        """Сгенерировать несколько вариантов застройки.
+        """Сгенерировать варианты застройки с шагом в 1 этаж.
 
         Args:
-            floors_range: Диапазон этажности. Если None — полный диапазон.
+            floors_range: Диапазон этажности. Если None — от мин до макс по секциям с шагом 1.
+            explore_typologies: Если True — перебрать все типологии застройки.
 
         Returns:
             Список вариантов с ТЭП.
@@ -195,30 +225,45 @@ class Optimizer:
             middles = self.library.get_middle_sections()
             if not middles:
                 return []
-            section = middles[0]
-            floors_range = range(section.min_floors, section.max_floors + 1, 2)
+            min_f = min(s.min_floors for s in middles)
+            max_f = max(s.max_floors for s in middles)
+            # Шаг строго 1 этаж, чтобы не пропускать оптимум
+            floors_range = range(min_f, max_f + 1, 1)
+
+        typs_to_check = (
+            ["AUTO", "U_SHAPE", "L_SHAPE", "LINEAR"]
+            if explore_typologies
+            else [self.base_placement_config.typology]
+        )
 
         variants: list[OptimizationResult] = []
 
-        for floors in floors_range:
-            result = self._try_placement(floors)
-            if result is not None:
-                variants.append(result)
+        for typ in typs_to_check:
+            for floors in floors_range:
+                result = self._try_placement(floors, typology=typ)
+                if result is not None:
+                    variants.append(result)
 
         # Сортируем по жилой площади (убывание)
         variants.sort(key=lambda v: v.tep.residential_area, reverse=True)
 
         return variants
 
-    def _try_placement(self, floors: int) -> OptimizationResult | None:
-        """Попытка расстановки с заданной этажностью.
+    def _try_placement(
+        self,
+        floors: int,
+        typology: str | None = None,
+    ) -> OptimizationResult | None:
+        """Попытка расстановки с заданной этажностью и типологией.
 
         Args:
             floors: Количество этажей.
+            typology: Типология (если None — из base_placement_config).
 
         Returns:
             Результат или None при неудаче.
         """
+        typ = typology or self.base_placement_config.typology
         try:
             engine = PlacementEngine(self.site, self.library, self.config)
             placement_config = PlacementConfig(
@@ -227,9 +272,12 @@ class Optimizer:
                 preferred_section_ids=self.base_placement_config.preferred_section_ids,
                 min_sections_per_building=self.base_placement_config.min_sections_per_building,
                 max_sections_per_building=self.base_placement_config.max_sections_per_building,
-                typology=self.base_placement_config.typology,
+                typology=typ,
                 courtyard_orientation=self.base_placement_config.courtyard_orientation,
                 variable_insolation=self.base_placement_config.variable_insolation,
+                cascade_floors=self.base_placement_config.cascade_floors,
+                asymmetric_wings=self.base_placement_config.asymmetric_wings,
+                min_wing_floors=self.base_placement_config.min_wing_floors,
             )
             buildings = engine.generate(placement_config)
 
@@ -251,10 +299,11 @@ class Optimizer:
                 floors=floors,
                 normative_ok=normative_ok,
                 score=score,
+                typology=typ,
             )
 
         except Exception as e:
-            print(f"Ошибка при расстановке ({floors} эт.): {e}")
+            print(f"Ошибка при расстановке ({floors} эт., {typ}): {e}")
             return None
 
     def compare_variants(self, variants: list[OptimizationResult]) -> str:
@@ -270,27 +319,27 @@ class Optimizer:
             return "Нет вариантов для сравнения."
 
         lines: list[str] = []
-        lines.append("=" * 90)
+        lines.append("=" * 102)
         lines.append("  СРАВНЕНИЕ ВАРИАНТОВ ЗАСТРОЙКИ")
-        lines.append("=" * 90)
+        lines.append("=" * 102)
 
         header = (
-            f"  {'Вариант':<10} {'Этажн.':<8} {'Зданий':<8} "
+            f"  {'Вариант':<9} {'Типология':<10} {'Этажн.':<8} {'Зданий':<8} "
             f"{'GFA, м²':<12} {'Жил.пл.':<12} {'Кварт.':<8} "
             f"{'BCR':<8} {'FAR':<8} {'Норм.':<6}"
         )
         lines.append(header)
-        lines.append("-" * 90)
+        lines.append("-" * 102)
 
         for i, v in enumerate(variants, 1):
             status = "✓" if v.normative_ok else "✗"
             line = (
-                f"  {i:<10} {v.floors:<8} {v.tep.building_count:<8} "
+                f"  {i:<9} {v.typology:<10} {v.floors:<8} {v.tep.building_count:<8} "
                 f"{v.tep.total_gfa:<12,.0f} {v.tep.residential_area:<12,.0f} "
                 f"{v.tep.apartments_total:<8} "
                 f"{v.tep.bcr:<8.1%} {v.tep.far:<8.2f} {status:<6}"
             )
             lines.append(line)
 
-        lines.append("=" * 90)
+        lines.append("=" * 102)
         return "\n".join(lines)

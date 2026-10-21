@@ -221,6 +221,17 @@ elif gen_mode == "Подбор под ТЭП":
         target_tep["target_gfa"] = st.sidebar.number_input(
             "Целевая GFA, м²", 5000, 500000, 50000, 5000
         )
+elif gen_mode == "Максимизация":
+    respect_norms = st.sidebar.checkbox(
+        "Соблюдать нормативы плотности (FAR / BCR)",
+        value=True,
+        help="Если включено — этажность подбирается так, чтобы плотность застройки не превышала норматив (СП 42.13330 / РНГП). Если выключено — абсолютная максимизация площади без ограничений.",
+    )
+    explore_all_typs = st.sidebar.checkbox(
+        "Сравнивать все типологии застройки",
+        value=False,
+        help="Автоматически протестирует все типы застройки (квартальная, линейная, Г- и П-образная) и выберет самую вместительную",
+    )
 
 max_sections = st.sidebar.slider(
     "Макс. секций в здании", 2, 12, 8,
@@ -282,9 +293,13 @@ if generate_btn:
 
             elif gen_mode == "Максимизация":
                 optimizer = Optimizer(site, library, config, base_placement_config=placement_cfg)
-                result = optimizer.optimize_maximize()
+                result = optimizer.optimize_maximize(
+                    respect_normatives=respect_norms,
+                    explore_typologies=explore_all_typs,
+                )
                 buildings = result.buildings
                 tep = result.tep
+                optimization_note = result.note
 
         except Exception as e:
             st.error(f"Ошибка генерации: {e}")
@@ -314,6 +329,8 @@ if generate_btn:
         st.session_state["config"] = config
         st.session_state["balance"] = balance
         st.session_state["selected_norm"] = selected_norm
+        st.session_state["gen_mode"] = gen_mode
+        st.session_state["optimization_note"] = optimization_note if gen_mode == "Максимизация" else ""
 
 
 # ─── Отображение результатов ─────────────────────────────────────────
@@ -322,6 +339,28 @@ if "buildings" in st.session_state:
     buildings = st.session_state["buildings"]
     tep = st.session_state["tep"]
     site = st.session_state["site"]
+
+    # Пояснительные баннеры режима расчёта
+    current_mode = st.session_state.get("gen_mode", "")
+    if current_mode == "Максимизация":
+        note = st.session_state.get("optimization_note", "")
+        if note:
+            if "Внимание" in note or "без лимитов" in note:
+                st.warning(f"⚠️ **Режим максимизации:** {note}")
+            else:
+                st.info(f"💡 **Режим максимизации:** {note}")
+    elif current_mode == "Заданная этажность":
+        checks = check_normatives(tep, st.session_state["config"])
+        violations = [
+            f"{c['name']} ({c['value']:.2f} > {c['limit']:.2f})"
+            for c in checks.values()
+            if not c["ok"] and c["name"] in ("Плотность застройки", "Процент застройки")
+        ]
+        if violations:
+            st.warning(
+                f"⚠️ **Внимание: в режиме 'Заданная этажность' превышены нормативы:** {', '.join(violations)}. "
+                f"В режиме 'Максимизация' генератор автоматически подбирает этажность для строгого соблюдения этих лимитов."
+            )
 
     # Две колонки: план и ТЭП
     col_plan, col_tep = st.columns([2, 1])
