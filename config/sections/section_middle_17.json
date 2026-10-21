@@ -1,0 +1,15 @@
+{
+  "id": "mid_17",
+  "name": "Рядовая секция 17 эт.",
+  "category": "MIDDLE",
+  "width": 15.0,
+  "depth": 30.0,
+  "min_floors": 9,
+  "max_floors": 25,
+  "default_floors": 17,
+  "floor_area": 420.0,
+  "apartments_per_floor": {"1k": 2, "2k": 1, "3k": 1},
+  "apt_areas": {"1k": 38.5, "2k": 55.0, "3k": 76.0},
+  "has_commercial_ground": false,
+  "parking_per_apt": 0.5
+}

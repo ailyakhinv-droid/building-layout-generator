@@ -1,0 +1,18 @@
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Output files
+output/*.png
+output/*.txt
+output/*.geojson
+
+# OS specific
+Thumbs.db
+.DS_Store

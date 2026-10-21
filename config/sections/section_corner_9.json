@@ -1,0 +1,15 @@
+{
+  "id": "corner_9",
+  "name": "Угловая секция 9 эт.",
+  "category": "CORNER",
+  "width": 15.0,
+  "depth": 24.0,
+  "min_floors": 5,
+  "max_floors": 12,
+  "default_floors": 9,
+  "floor_area": 330.0,
+  "apartments_per_floor": {"1k": 2, "2k": 1, "3k": 1},
+  "apt_areas": {"1k": 38.0, "2k": 54.0, "3k": 74.0},
+  "has_commercial_ground": true,
+  "parking_per_apt": 0.3
+}
