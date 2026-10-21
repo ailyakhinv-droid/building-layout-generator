@@ -15,6 +15,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import yaml
 import streamlit as st
+import streamlit.components.v1 as components
 import matplotlib.pyplot as plt
 
 from src.core.site_parser import create_rectangular_site, parse_coordinates
@@ -30,6 +31,14 @@ from src.export.report import generate_report
 from src.core.regional_norms import load_regional_norms, RegionalNorm
 from src.core.territory_balance import calculate_territory_balance, TerritoryBalanceResult
 from src.core.cad_parser import inspect_cad_layers, parse_cad_site, DWGConversionError
+from src.core.cadastre import (
+    PRESET_PARCELS,
+    get_cadastral_parcel,
+    create_site_from_cadastre,
+    validate_cadastral_number,
+    parse_cadastral_components,
+)
+from src.visualization.map_view import generate_leaflet_map_html
 
 
 # ─── Настройка страницы ──────────────────────────────────────────────
@@ -73,11 +82,114 @@ st.sidebar.header("📐 Параметры участка")
 
 site_mode = st.sidebar.radio(
     "Способ задания участка",
-    ["Прямоугольник", "Координаты", "Загрузка CAD (DWG / DXF)"],
-    help="Выберите способ задания границ участка: типовой прямоугольник, координаты вершин или импорт из CAD чертежа",
+    ["Кадастровый номер (OSM подложка)", "Прямоугольник", "Координаты", "Загрузка CAD (DWG / DXF)"],
+    help="Выберите способ задания границ участка: по кадастровому номеру РФ с подложкой OpenStreetMap, типовой прямоугольник, координаты вершин или импорт из CAD чертежа",
 )
 
-if site_mode == "Прямоугольник":
+if site_mode == "Кадастровый номер (OSM подложка)":
+    # 1. Поле прямого ввода кадастрового номера
+    entered_cad = st.sidebar.text_input(
+        "Кадастровый номер участка (РФ)",
+        value=st.session_state.get("last_cadastral", "50:27:0010101:500"),
+        help="Введите кадастровый номер любого региона РФ (например, 50:27:..., 78:34:..., 23:43:..., 66:41:..., 16:50:...). Регион и город определятся автоматически.",
+    )
+    st.session_state["last_cadastral"] = entered_cad.strip()
+
+    # Быстрые пресеты по городам РФ для тестирования
+    cad_quick_samples = {
+        "(свой номер выше)": "",
+        "50:27:0010101:500 (МО, Подольск — 3.3 га)": "50:27:0010101:500",
+        "50:04:0010101:300 (МО, Дмитров — 3.2 га)": "50:04:0010101:300",
+        "77:17:0120316:1024 (Москва, Коммунарка — 3.6 га)": "77:17:0120316:1024",
+        "78:34:0004286:115 (СПб, Приморский — 3.4 га)": "78:34:0004286:115",
+        "23:43:0106012:450 (Краснодар, Зап. обход — 4.3 га)": "23:43:0106012:450",
+        "66:41:0101001:500 (Екатеринбург, Академический)": "66:41:0101001:500",
+        "16:50:010101:200 (Казань, Ново-Савиновский)": "16:50:010101:200",
+        "54:35:010101:300 (Новосибирск)": "54:35:010101:300",
+        "52:18:0010101:400 (Нижний Новгород)": "52:18:0010101:400",
+        "42:24:010101:500 (Кемерово / Кузбасс)": "42:24:010101:500",
+        "74:36:010101:200 (Челябинск)": "74:36:010101:200",
+    }
+    sel_sample = st.sidebar.selectbox(
+        "Или выберите пример из каталога",
+        list(cad_quick_samples.keys()),
+        index=0,
+        help="Выберите пример, чтобы автоматически подставить его кадастровый номер",
+    )
+    if sel_sample != "(свой номер выше)":
+        sample_code = cad_quick_samples[sel_sample]
+        if sample_code != entered_cad:
+            entered_cad = sample_code
+            st.session_state["last_cadastral"] = sample_code
+            st.rerun()
+
+    # Опциональная настройка параметров и координат
+    with st.sidebar.expander("📍 Настройка координат и площади", expanded=False):
+        custom_area = st.number_input(
+            "Площадь участка, м²",
+            min_value=5000,
+            max_value=300000,
+            value=32000,
+            step=1000,
+            help="Используется для расчёта формы, если введён произвольный номер",
+        )
+        col_lat, col_lon = st.columns(2)
+        override_lat = col_lat.number_input(
+            "Широта (Lat)", value=0.0, format="%.5f", help="Оставьте 0.0 для автоопределения по кадастровому номеру"
+        )
+        override_lon = col_lon.number_input(
+            "Долгота (Lon)", value=0.0, format="%.5f", help="Оставьте 0.0 для автоопределения по кадастровому номеру"
+        )
+        ov_lat = override_lat if override_lat != 0.0 else None
+        ov_lon = override_lon if override_lon != 0.0 else None
+
+        enable_red_line = st.checkbox(
+            "Добавить красную линию (отступ УДС)",
+            value=False,
+            help="По умолчанию выключено. Включает градостроительную красную линию вдоль южной границы участка.",
+        )
+
+        egrn_coords_raw = st.text_area(
+            "Координаты из выписки ЕГРН (WGS-84: lon, lat)",
+            placeholder="37.5458, 55.4312\n37.5490, 55.4312\n37.5490, 55.4330\n...",
+            help="Вставьте координаты вершин участка в формате долгота, широта, если у вас есть официальная выписка ЕГРН",
+        )
+        custom_wgs = None
+        if egrn_coords_raw.strip():
+            custom_wgs = []
+            for line in egrn_coords_raw.strip().split("\n"):
+                parts = line.strip().replace(";", ",").split(",")
+                if len(parts) >= 2:
+                    try:
+                        custom_wgs.append((float(parts[0].strip()), float(parts[1].strip())))
+                    except ValueError:
+                        pass
+
+    try:
+        parcel_info = get_cadastral_parcel(
+            entered_cad,
+            custom_area_sqm=custom_area,
+            custom_wgs84_coords=custom_wgs,
+            override_lat=ov_lat,
+            override_lon=ov_lon,
+            add_red_line=enable_red_line,
+        )
+        site = create_site_from_cadastre(parcel_info)
+        st.session_state["cadastral_norm_id"] = parcel_info.regional_norm_id
+
+        st.sidebar.success(
+            f"✓ **{parcel_info.region_name}**\n\n*{parcel_info.district_name}*: {site.area:,.0f} м² ({site.area / 10000.0:.2f} га)"
+        )
+        st.sidebar.caption(f"📍 {parcel_info.address}")
+        st.sidebar.caption(f"🌐 Центр WGS-84: `{parcel_info.center_lat:.5f}, {parcel_info.center_lon:.5f}`")
+        if site.red_lines:
+            st.sidebar.caption(f"⛔ Красная линия УДС активна ({len(site.red_lines)} шт.)")
+
+    except Exception as e:
+        st.sidebar.error(f"Ошибка получения участка: {e}")
+        site = create_rectangular_site(200, 150)
+
+elif site_mode == "Прямоугольник":
     col1, col2 = st.sidebar.columns(2)
     site_width = col1.number_input("Ширина, м", 50, 1000, 200, step=10)
     site_height = col2.number_input("Высота, м", 50, 1000, 150, step=10)
@@ -167,15 +279,93 @@ else:
 
 st.sidebar.markdown(f"**Площадь участка:** {site.area:,.0f} м²")
 
+# ─── Ориентация участка и стороны света ──────────────────────────────
+st.sidebar.subheader("🧭 Ориентация участка и стороны света")
+
+cardinal_presets = {
+    "(произвольный угол)": None,
+    "Юг (0° - строго по меридиану)": 0,
+    "Юго-Восток (45°)": 45,
+    "Восток (90°)": 90,
+    "Северо-Восток (135°)": 135,
+    "Север (180°)": 180,
+    "Северо-Запад (-135°)": -135,
+    "Запад (-90°)": -90,
+    "Юго-Запад (-45°)": -45,
+}
+
+sel_cardinal = st.sidebar.selectbox(
+    "Назначить ориентацию фасада / улицы",
+    list(cardinal_presets.keys()),
+    index=0,
+    help="Быстро назначить ориентацию главного фасада участка по сторонам света (истинному северу)",
+)
+
+if sel_cardinal != "(произвольный угол)" and cardinal_presets[sel_cardinal] is not None:
+    preset_angle = cardinal_presets[sel_cardinal]
+    if st.session_state.get("site_rotation", 0) != preset_angle:
+        st.session_state["site_rotation"] = preset_angle
+        st.rerun()
+
+rot_btn1, rot_btn2, rot_btn3, rot_btn4 = st.sidebar.columns(4)
+current_rot = int(st.session_state.get("site_rotation", 0))
+
+if rot_btn1.button("↺ -15°", use_container_width=True, help="Повернуть против часовой стрелки на 15°"):
+    st.session_state["site_rotation"] = current_rot - 15
+    st.rerun()
+
+if rot_btn2.button("↺ -5°", use_container_width=True, help="Повернуть против часовой стрелки на 5°"):
+    st.session_state["site_rotation"] = current_rot - 5
+    st.rerun()
+
+if rot_btn3.button("↻ +5°", use_container_width=True, help="Повернуть по часовой стрелке на 5°"):
+    st.session_state["site_rotation"] = current_rot + 5
+    st.rerun()
+
+if rot_btn4.button("↻ +15°", use_container_width=True, help="Повернуть по часовой стрелке на 15°"):
+    st.session_state["site_rotation"] = current_rot + 15
+    st.rerun()
+
+col_rot_s, col_rot_n = st.sidebar.columns([3, 2])
+site_rot_val = col_rot_s.slider(
+    "Точный угол к северу, °",
+    min_value=-180,
+    max_value=180,
+    value=current_rot,
+    step=1,
+    help="Поверните участок, чтобы состыковать его границу с направлением улиц, дорог и кварталов на карте OSM",
+)
+st.session_state["site_rotation"] = site_rot_val
+
+if site_rot_val != 0:
+    site.rotate(float(site_rot_val))
+
+# Индикация азимута главной оси участка
+from src.core.buildable_area import get_primary_axes
+p_axis, _ = get_primary_axes(site.boundary)
+col_rot_n.metric("Азимут оси", f"{p_axis:.0f}°")
+
+if site_rot_val != 0 and st.sidebar.button("Сбросить поворот (0°)", use_container_width=True):
+    st.session_state["site_rotation"] = 0
+    st.rerun()
+
+st.sidebar.caption("💡 *При загрузке чертежа DXF или вставке координат ЕГРН истинный север и форма считываются автоматически.*")
+
 # ─── Градостроительные нормативы ─────────────────────────────────────
 
 st.sidebar.header("📏 Градостроительные нормативы")
 
 region_ids = list(regional_norms.keys())
 region_labels = {k: v.name for k, v in regional_norms.items()}
+default_reg_idx = 0
+target_norm_id = st.session_state.get("cadastral_norm_id")
+if target_norm_id and target_norm_id in region_ids:
+    default_reg_idx = region_ids.index(target_norm_id)
+
 selected_region_id = st.sidebar.selectbox(
     "Региональные нормативы (РНГП / МНГП)",
     region_ids,
+    index=default_reg_idx,
     format_func=lambda x: region_labels.get(x, x),
     help="Определяет требования к парковкам, детским и спортивным площадкам по региональным градостроительным нормам",
 )
@@ -433,9 +623,36 @@ if "buildings" in st.session_state:
 
     with col_plan:
         st.subheader("🗺️ План застройки")
-        fig = plot_site_plan(site, buildings, tep)
-        st.pyplot(fig)
-        plt.close(fig)
+        map_tab1, map_tab2, map_tab3 = st.tabs([
+            "🗺️ Векторная подложка OSM",
+            "📐 2D Генплан (Схема)",
+            "🛰️ Сведения о геопривязке",
+        ])
+
+        with map_tab1:
+            map_html = generate_leaflet_map_html(site, buildings, tep, height=580)
+            components.html(map_html, height=600)
+            st.caption(
+                "💡 Интерактивная векторная карта OpenStreetMap. "
+                "Кликните на здание для просмотра карточки ТЭП. В правом верхнем углу доступен выбор слоёв."
+            )
+
+        with map_tab2:
+            fig = plot_site_plan(site, buildings, tep)
+            st.pyplot(fig)
+            plt.close(fig)
+
+        with map_tab3:
+            st.markdown(f"**Кадастровый номер:** `{site.cadastral_number or 'Не задан'}`")
+            if site.geo_center:
+                st.markdown(f"**Координаты центра (WGS-84):** `{site.geo_center[0]:.6f}, {site.geo_center[1]:.6f}`")
+            if site.address:
+                st.markdown(f"**Ориентир / Адрес:** {site.address}")
+            st.markdown(f"**Площадь участка:** {site.area:,.1f} м² ({site.area / 10000.0:.2f} га)")
+            if site.buildable_area:
+                st.markdown(f"**Площадь зоны застройки:** {site.buildable_area.area:,.1f} м²")
+            if site.red_lines:
+                st.markdown(f"**Красных линий:** {len(site.red_lines)} шт.")
 
     with col_tep:
         st.subheader("📊 Технико-экономические показатели")
@@ -615,6 +832,12 @@ else:
         "👈 Настройте параметры участка и нажмите **«Сгенерировать»** "
         "в боковой панели для создания плана застройки."
     )
+
+    if site_mode == "Кадастровый номер (OSM подложка)" or site.geo_center:
+        st.subheader("🗺️ Предпросмотр участка на карте OpenStreetMap")
+        map_html = generate_leaflet_map_html(site, buildings=None, tep=None, height=460)
+        components.html(map_html, height=480)
+        st.caption("Нажмите кнопку **«🚀 Сгенерировать»** в боковой панели, чтобы расставить жилые корпуса на этом участке.")
 
     # Демо-информация о библиотеке секций
     st.subheader("📦 Библиотека типовых секций")

@@ -27,12 +27,51 @@ class Site:
     red_lines: list[LineString] = field(default_factory=list)
     setbacks: dict[str, float] = field(default_factory=dict)
     base_offset: tuple[float, float] = (0.0, 0.0)
+    geo_center: tuple[float, float] | None = None  # (latitude, longitude)
+    cadastral_number: str | None = None
+    address: str | None = None
+    rotation_deg: float = 0.0
     buildable_area: Polygon | None = field(default=None, init=False)
 
     @property
     def area(self) -> float:
         """Площадь участка в квадратных метрах."""
         return self.boundary.area
+
+    def rotate(self, angle_deg: float) -> None:
+        """Повернуть границы участка и красные линии вокруг геометрического центра."""
+        if angle_deg == 0.0:
+            return
+        import shapely.affinity
+        c = self.boundary.centroid
+        self.boundary = shapely.affinity.rotate(self.boundary, angle_deg, origin=c)
+        if self.red_lines:
+            self.red_lines = [
+                shapely.affinity.rotate(rl, angle_deg, origin=c)
+                for rl in self.red_lines
+            ]
+        self.rotation_deg = (self.rotation_deg + angle_deg) % 360
+
+    def to_wgs84_boundary(self) -> Polygon | None:
+        """Получить полигон границы в координатах WGS-84 (lon, lat), если задан geo_center."""
+        if not self.geo_center:
+            return None
+        from src.core.geo_utils import transform_geometry_to_wgs84
+        return transform_geometry_to_wgs84(self.boundary, self.geo_center[0], self.geo_center[1])
+
+    def to_wgs84_buildable_area(self) -> Polygon | None:
+        """Получить зону застройки в координатах WGS-84 (lon, lat), если задан geo_center."""
+        if not self.geo_center or not self.buildable_area:
+            return None
+        from src.core.geo_utils import transform_geometry_to_wgs84
+        return transform_geometry_to_wgs84(self.buildable_area, self.geo_center[0], self.geo_center[1])
+
+    def to_wgs84_red_lines(self) -> list[LineString]:
+        """Получить красные линии в координатах WGS-84 (lon, lat)."""
+        if not self.geo_center or not self.red_lines:
+            return []
+        from src.core.geo_utils import transform_geometry_to_wgs84
+        return [transform_geometry_to_wgs84(rl, self.geo_center[0], self.geo_center[1]) for rl in self.red_lines]
 
     def compute_buildable_area(
         self,
