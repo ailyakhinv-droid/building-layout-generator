@@ -43,6 +43,7 @@ SECTION_CATEGORY_COLORS = {
     "MIDDLE": "#5B9BD5",
     "CORNER": "#ED7D31",
     "END": "#70AD47",
+    "TOWER": "#9B59B6",
 }
 
 
@@ -192,6 +193,7 @@ def plot_site_plan(
         mpatches.Patch(facecolor=SECTION_CATEGORY_COLORS["MIDDLE"], edgecolor="#222", label="Рядовая секция"),
         mpatches.Patch(facecolor=SECTION_CATEGORY_COLORS["END"], edgecolor="#222", label="Торцевая секция"),
         mpatches.Patch(facecolor=SECTION_CATEGORY_COLORS["CORNER"], edgecolor="#222", label="Угловая секция"),
+        mpatches.Patch(facecolor=SECTION_CATEGORY_COLORS["TOWER"], edgecolor="#222", label="Точечная (башня)"),
         mpatches.Patch(facecolor="#E8F8F5", edgecolor="#27AE60", linestyle=":", label="Внутренний двор"),
     ]
     ax.legend(handles=legend_items, loc="upper right", fontsize=8,

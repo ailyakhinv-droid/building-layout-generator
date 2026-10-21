@@ -247,7 +247,7 @@ class Optimizer:
             floors_range = range(min_f, max_f + 1, 1)
 
         typs_to_check = (
-            ["AUTO", "U_SHAPE", "L_SHAPE", "LINEAR"]
+            ["AUTO", "TOWER", "U_SHAPE", "L_SHAPE", "LINEAR"]
             if explore_typologies
             else [self.base_placement_config.typology]
         )

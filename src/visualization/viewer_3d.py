@@ -42,12 +42,14 @@ CATEGORY_COLORS = {
     "MIDDLE": "#2E86AB",  # Рядовая секция (синий)
     "CORNER": "#E67E22",  # Угловая секция (терракотовый)
     "END": "#8E44AD",     # Торцевая секция (фиолетовый)
+    "TOWER": "#9B59B6",   # Точечная башня (аметистовый/пурпурный)
 }
 
 CATEGORY_NAMES = {
     "MIDDLE": "Рядовая",
     "CORNER": "Угловая",
     "END": "Торцевая",
+    "TOWER": "Точечная (башня)",
 }
 
 
@@ -565,12 +567,10 @@ def generate_3d_viewer_html(
 
     <div class="group">
       <div class="group-title">Картографическая подложка</div>
-      <select id="select-basemap">
-        <option value="light" {"selected" if default_basemap == "light" else ""}>Светлая карта (Positron)</option>
-        <option value="osm" {"selected" if default_basemap == "osm" else ""}>OpenStreetMap (Стандарт)</option>
-        <option value="dark" {"selected" if default_basemap == "dark" else ""}>Тёмная карта (Dark)</option>
-        <option value="none" {"selected" if default_basemap == "none" else ""}>Без подложки (Архитектурный холст)</option>
-      </select>
+      <div style="font-size: 13px; color: #334155; display: flex; align-items: center; gap: 8px; padding: 4px 0;">
+        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#10b981;"></span>
+        <span><b>Светлая карта Positron</b></span>
+      </div>
     </div>
 
     <div class="group">
@@ -776,6 +776,7 @@ def generate_3d_viewer_html(
         <div class="legend-row"><span class="legend-chip" style="background:#2E86AB"></span> Рядовая секция</div>
         <div class="legend-row"><span class="legend-chip" style="background:#E67E22"></span> Угловая секция</div>
         <div class="legend-row"><span class="legend-chip" style="background:#8E44AD"></span> Торцевая секция</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#9B59B6"></span> Точечная башня</div>
       `;
     }} else if (mode === 'buildings') {{
       el.innerHTML = '<div style="color:#64748b;font-size:11px;">Каждый корпус окрашен индивидуальным цветом</div>';
@@ -967,10 +968,13 @@ def generate_3d_viewer_html(
   // Сброс ракурса
   document.getElementById('btn-reset-view').addEventListener('click', () => fitToData(true));
 
-  // Смена подложки
-  document.getElementById('select-basemap').addEventListener('change', (e) => {{
-    switchBasemap(e.target.value);
-  }});
+  // Смена подложки (если доступен селектор)
+  const selBasemap = document.getElementById('select-basemap');
+  if (selBasemap) {{
+    selBasemap.addEventListener('change', (e) => {{
+      switchBasemap(e.target.value);
+    }});
+  }}
 
   // Смена палитры
   document.getElementById('select-color-mode').addEventListener('change', (e) => {{

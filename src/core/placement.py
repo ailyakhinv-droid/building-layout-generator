@@ -34,12 +34,13 @@ class PlacementConfig:
         preferred_section_ids: Список предпочтительных ID секций.
         min_sections_per_building: Мин. кол-во секций в здании.
         max_sections_per_building: Макс. кол-во секций в здании.
-        typology: Типология застройки ("AUTO", "U_SHAPE", "L_SHAPE", "LINEAR").
+        typology: Типология застройки ("AUTO", "TOWER", "U_SHAPE", "L_SHAPE", "LINEAR").
         courtyard_orientation: Раскрытие дворов ("SOUTH", "NORTH", "EAST", "WEST", "AUTO").
         variable_insolation: Переменный шаг инсоляции (уменьшенный разрыв с торцов).
         cascade_floors: Каскадное понижение этажности к югу (дворам).
         asymmetric_wings: Асимметричная длина крыльев (живой силуэт, раскрытие к свету).
         min_wing_floors: Минимальная этажность южных торцов/крыльев.
+        allow_towers_in_mixed: Разрешить башни-акценты на свободных пятнах в AUTO/смешанном режиме.
     """
 
     target_floors: int | None = None
@@ -56,6 +57,7 @@ class PlacementConfig:
     floor_height: float = 3.0
     ground_floor_height: float | None = None
     max_building_height_m: float | None = None
+    allow_towers_in_mixed: bool = True
 
 
 class PlacementEngine:
@@ -149,7 +151,14 @@ class PlacementEngine:
         # 4. Выбор стратегии в зависимости от типологии
         typology = placement_config.typology.upper()
 
-        if typology == "LINEAR":
+        if typology in ("TOWER", "TOWERS", "POINT"):
+            tower_sec = sections.get("tower", middle)
+            t_floors = placement_config.target_floors or tower_sec.default_floors
+            t_floors = self._clamp_floors(tower_sec, t_floors)
+            return self._generate_tower_layout(
+                buildable, primary_angle, tower_sec, t_floors, placement_config
+            )
+        elif typology == "LINEAR":
             return self._generate_linear(
                 buildable, primary_angle, middle, end, floors, placement_config
             )
@@ -620,8 +629,104 @@ class PlacementEngine:
         return buildings
 
     # ─────────────────────────────────────────────────────────────────
-    # Стратегии: U_SHAPE, L_SHAPE, LINEAR
+    # Стратегии: TOWER, U_SHAPE, L_SHAPE, LINEAR
     # ─────────────────────────────────────────────────────────────────
+
+    def _create_single_tower(
+        self,
+        x: float,
+        y: float,
+        angle: float,
+        tower_sec: SectionType,
+        floors: int,
+    ) -> Building:
+        """Создать отдельное башенное (точечное) 1-секционное здание."""
+        fl = self._clamp_floors(tower_sec, floors)
+        placed_sec = PlacedSection(
+            section_type=tower_sec,
+            x=x,
+            y=y,
+            angle=angle,
+            floors=fl,
+            floor_height=self._current_floor_height,
+            ground_floor_height=self._current_ground_floor_height,
+        )
+        return Building(sections=[placed_sec], typology="TOWER")
+
+    def _generate_tower_layout(
+        self,
+        buildable: Polygon,
+        angle: float,
+        tower_sec: SectionType,
+        floors: int,
+        placement_config: PlacementConfig,
+    ) -> list[Building]:
+        """Генерация регулярной / шахматной точечной (башенной) застройки.
+
+        Размещает отдельно стоящие башни с соблюдением требований инсоляции,
+        освещенности и противопожарных разрывов.
+        """
+        length, width, _ = get_obb_dimensions(buildable)
+        centroid = buildable.centroid
+
+        fire_gap = self._get_fire_gap(floors)
+        h = floors * self._current_floor_height
+        insol_factor = float(self.config.get("insolation_factor", 0.5))
+        req_gap = max(fire_gap, h * insol_factor, 24.0)
+
+        step_x = tower_sec.width + req_gap
+        step_y = tower_sec.depth + req_gap
+
+        cols = max(1, int((length + req_gap) / step_x))
+        rows = max(1, int((width + req_gap) / step_y))
+
+        span_x = (cols - 1) * step_x
+        span_y = (rows - 1) * step_y
+        start_ox = -span_x / 2.0
+        start_oy = -span_y / 2.0
+
+        rad_p = math.radians(angle)
+        rad_n = math.radians(angle + 90.0)
+        ux = (math.cos(rad_p), math.sin(rad_p))
+        uy = (math.cos(rad_n), math.sin(rad_n))
+
+        patterns = ["staggered", "grid"]
+        best_buildings: list[Building] = []
+
+        for pattern in patterns:
+            cand_buildings: list[Building] = []
+            for r in range(rows):
+                if placement_config.cascade_floors and rows > 1:
+                    row_fl = max(
+                        placement_config.min_wing_floors,
+                        floors - (rows - 1 - r) * 3,
+                    )
+                else:
+                    row_fl = floors
+
+                x_offset = (step_x * 0.5) if (pattern == "staggered" and r % 2 == 1 and cols > 1) else 0.0
+
+                for c in range(cols):
+                    ox = start_ox + c * step_x + x_offset
+                    oy = start_oy + r * step_y
+                    px = centroid.x + ox * ux[0] + oy * uy[0]
+                    py = centroid.y + ox * ux[1] + oy * uy[1]
+
+                    cand_b = self._create_single_tower(px, py, angle, tower_sec, row_fl)
+                    if self._fits_in_buildable(cand_b) and self._check_constraints(
+                        cand_b, cand_buildings, placement_config
+                    ):
+                        cand_buildings.append(cand_b)
+
+            if len(cand_buildings) > len(best_buildings):
+                best_buildings = cand_buildings
+
+        if not best_buildings:
+            cand_single = self._create_single_tower(centroid.x, centroid.y, angle, tower_sec, floors)
+            if self._fits_in_buildable(cand_single):
+                best_buildings.append(cand_single)
+
+        return best_buildings
 
     def _generate_u_shape_layout(
         self,
@@ -1072,6 +1177,24 @@ class PlacementEngine:
                                 occupied = unary_union([occupied, cand.footprint.convex_hull.buffer(min_clearance)])
                                 remaining = inner_buildable.difference(occupied)
 
+        # Дополнительно: размещаем башни-акценты на оставшихся свободных пятнах
+        if getattr(placement_config, "allow_towers_in_mixed", True):
+            tower_secs = self.library.get_tower_sections()
+            if tower_secs:
+                tower_sec = self._find_best_section(tower_secs, floors) or tower_secs[0]
+                t_parts = remaining.geoms if isinstance(remaining, MultiPolygon) else [remaining]
+                for p in t_parts:
+                    if p.is_empty or p.area < (tower_sec.width * tower_sec.depth * 1.05):
+                        continue
+                    pt = p.centroid
+                    cand_tower = self._create_single_tower(pt.x, pt.y, angle, tower_sec, floors)
+                    if self._fits_in_buildable(cand_tower) and self._check_constraints(
+                        cand_tower, buildings, placement_config
+                    ):
+                        buildings.append(cand_tower)
+                        occupied = unary_union([occupied, cand_tower.footprint.buffer(min_clearance)])
+                        remaining = inner_buildable.difference(occupied)
+
     def _get_solar_courtyard_angle(
         self, placement_config: PlacementConfig, primary_angle: float
     ) -> float:
@@ -1145,12 +1268,15 @@ class PlacementEngine:
             for sid in placement_config.preferred_section_ids:
                 s = self.library.get_by_id(sid)
                 if s:
-                    if s.category == "MIDDLE":
+                    cat = s.category.upper()
+                    if cat == "MIDDLE":
                         sections["middle"] = s
-                    elif s.category == "END":
+                    elif cat == "END":
                         sections["end"] = s
-                    elif s.category == "CORNER":
+                    elif cat == "CORNER":
                         sections["corner"] = s
+                    elif cat == "TOWER" or s.id.lower().startswith("tower"):
+                        sections["tower"] = s
             if "middle" not in sections:
                 sections["middle"] = self._find_best_section(
                     self.library.get_middle_sections(), target_fl
@@ -1161,22 +1287,29 @@ class PlacementEngine:
             if "corner" not in sections:
                 best_cor = self._find_best_section(self.library.get_corner_sections(), target_fl)
                 sections["corner"] = best_cor if best_cor else sections.get("middle")
-            return sections if "middle" in sections else None
+            if "tower" not in sections:
+                towers = self.library.get_tower_sections()
+                best_tower = self._find_best_section(towers, target_fl) if towers else None
+                sections["tower"] = best_tower if best_tower else sections.get("middle")
+            return sections if ("middle" in sections or "tower" in sections) else None
 
         middles = self.library.get_middle_sections()
         ends = self.library.get_end_sections()
         corners = self.library.get_corner_sections()
+        towers = self.library.get_tower_sections()
 
-        if not middles:
+        if not middles and not towers:
             return None
 
-        best_middle = self._find_best_section(middles, target_fl)
-        best_end = self._find_best_section(ends, target_fl)
-        best_corner = self._find_best_section(corners, target_fl)
+        best_middle = self._find_best_section(middles, target_fl) if middles else (towers[0] if towers else None)
+        best_end = self._find_best_section(ends, target_fl) if ends else best_middle
+        best_corner = self._find_best_section(corners, target_fl) if corners else best_middle
+        best_tower = self._find_best_section(towers, target_fl) if towers else best_middle
 
         result: dict[str, SectionType] = {"middle": best_middle}
         result["end"] = best_end if best_end else best_middle
         result["corner"] = best_corner if best_corner else best_middle
+        result["tower"] = best_tower if best_tower else best_middle
         return result
 
     def _compute_row_positions(
@@ -1259,7 +1392,7 @@ class PlacementEngine:
         if placement_config is not None:
             if len(new_building.sections) > placement_config.max_sections_per_building:
                 return False
-            if len(new_building.sections) < placement_config.min_sections_per_building:
+            if new_building.typology != "TOWER" and len(new_building.sections) < placement_config.min_sections_per_building:
                 return False
 
         new_fp = new_building.footprint

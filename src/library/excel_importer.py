@@ -54,7 +54,7 @@ def import_sections_from_excel(
     meta_mapping = {
         "Б1": {
             "id": "tower_b1",
-            "category": "MIDDLE",  # Точечная башня
+            "category": "TOWER",  # Точечная башня
             "min_floors": 12,
             "max_floors": 25,
             "elevators": 2,

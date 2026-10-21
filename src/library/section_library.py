@@ -96,6 +96,16 @@ class SectionLibrary:
         """Получить все торцевые секции."""
         return self.get_by_category("END")
 
+    def get_tower_sections(self) -> list[SectionType]:
+        """Получить все точечные (башенные) секции."""
+        return [
+            s for s in self._sections.values()
+            if s.category.upper() == "TOWER"
+            or s.id.lower().startswith("tower")
+            or "точечн" in s.name.lower()
+            or "башн" in s.name.lower()
+        ]
+
     def get_sections_for_floors(self, floors: int) -> list[SectionType]:
         """Получить секции, поддерживающие заданную этажность (с учетом лифтовых ограничений)."""
         return [

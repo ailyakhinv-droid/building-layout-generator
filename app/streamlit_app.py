@@ -475,6 +475,7 @@ typology_choice = st.sidebar.selectbox(
     "Типология застройки",
     [
         "Квартальная / Смешанная (AUTO)",
+        "Точечная / Башенная (Towers)",
         "П-образные дворы (U-Shape)",
         "Г-образные корпуса (L-Shape)",
         "Линейная застройка (Пластины)",
@@ -483,11 +484,20 @@ typology_choice = st.sidebar.selectbox(
 )
 typology_map = {
     "Квартальная / Смешанная (AUTO)": "AUTO",
+    "Точечная / Башенная (Towers)": "TOWER",
     "П-образные дворы (U-Shape)": "U_SHAPE",
     "Г-образные корпуса (L-Shape)": "L_SHAPE",
     "Линейная застройка (Пластины)": "LINEAR",
 }
 typology_val = typology_map[typology_choice]
+
+allow_towers_in_mixed = True
+if typology_val == "AUTO":
+    allow_towers_in_mixed = st.sidebar.checkbox(
+        "Размещать башни-акценты на флангах",
+        value=True,
+        help="Разрешить размещение компактных башенных секций на свободных флангах в смешанной застройке",
+    )
 
 court_orient_choice = st.sidebar.selectbox(
     "Ориентация дворов",
@@ -519,6 +529,15 @@ st.sidebar.header("⚙️ Параметры генерации")
 
 available_sections = library.get_all()
 section_names = {s.id: f"{s.name} ({s.width}×{s.depth}м)" for s in available_sections}
+
+with st.sidebar.expander("📦 Предпочтительные секции", expanded=False):
+    pref_section_ids = st.multiselect(
+        "Использовать типы секций:",
+        options=list(section_names.keys()),
+        default=[],
+        format_func=lambda sid: f"{section_names.get(sid, sid)} [{getattr(library.get_by_id(sid), 'category', '')}]",
+        help="Оставьте пустым для автоматического выбора оптимальных секций движком",
+    )
 
 gen_mode = st.sidebar.radio(
     "Режим генерации",
@@ -644,6 +663,8 @@ if generate_btn or ("buildings" not in st.session_state):
                 min_wing_floors=min_wing_fl,
                 floor_height=floor_height_val,
                 max_building_height_m=max_height_val if max_height_val > 0.0 else None,
+                preferred_section_ids=pref_section_ids if pref_section_ids else None,
+                allow_towers_in_mixed=allow_towers_in_mixed,
             )
 
             if gen_mode == "Заданная этажность":
@@ -733,29 +754,11 @@ if "buildings" in st.session_state:
 
     with col_plan:
         st.subheader("🗺️ План застройки")
-        tab_3d, map_tab1, map_tab2, map_tab3 = st.tabs([
-            "🏙️ 3D Визуализация",
+        map_tab1, map_tab2, map_tab3 = st.tabs([
             "🗺️ 2D Подложка OSM",
             "📐 2D Генплан (Схема)",
             "🛰️ Сведения о геопривязке",
         ])
-
-        with tab_3d:
-            html_3d = generate_3d_viewer_html(
-                site=site,
-                buildings=buildings,
-                tep=tep,
-                title=f"3D-модель: {site.cadastral_number or 'Участок'}",
-                height=600,
-                default_basemap="light",
-                standalone=False,
-            )
-            components.html(html_3d, height=620)
-            st.caption(
-                "💡 **3D-навигация:** Зажмите правую кнопку мыши (или Ctrl + левую кнопку) для свободного вращения и наклона. "
-                "Колёсико мыши — масштабирование. В меню слева доступны: выбор подложки (холст/светлая/тёмная), палитра окраски, "
-                "фильтр этажей и просмотр ТЭП конкретного здания при клике."
-            )
 
         with map_tab1:
             map_html = generate_leaflet_map_html(site, buildings, tep, height=580)
@@ -913,6 +916,8 @@ if "buildings" in st.session_state:
                         asymmetric_wings=asymmetric_wings,
                         min_wing_floors=min_wing_fl,
                         max_sections_per_building=max_sections,
+                        preferred_section_ids=pref_section_ids if pref_section_ids else None,
+                        allow_towers_in_mixed=allow_towers_in_mixed,
                     )
                 )
                 variants = optimizer.generate_variants()
@@ -991,35 +996,45 @@ else:
     )
 
     st.subheader("🗺️ Предпросмотр участка")
-    p_tab1, p_tab2 = st.tabs(["🏙️ 3D Границы", "🗺️ 2D Карта OSM"])
-    with p_tab1:
-        html_3d_prev = generate_3d_viewer_html(
-            site=site,
-            buildings=None,
-            tep=None,
-            height=460,
-            default_basemap="light",
-            standalone=False,
-        )
-        components.html(html_3d_prev, height=480)
-    with p_tab2:
-        map_html = generate_leaflet_map_html(site, buildings=None, tep=None, height=460)
-        components.html(map_html, height=480)
+    map_html = generate_leaflet_map_html(site, buildings=None, tep=None, height=500)
+    components.html(map_html, height=520)
     st.caption("Нажмите кнопку **«🚀 Сгенерировать»** в боковой панели, чтобы расставить жилые корпуса на этом участке.")
 
-    # Демо-информация о библиотеке секций
-    st.subheader("📦 Библиотека типовых секций")
 
-    for section in library.get_all():
-        with st.expander(f"{section.name} ({section.category})"):
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(f"- **Размеры:** {section.width} × {section.depth} м")
-                st.markdown(f"- **Этажность:** {section.min_floors}–{section.max_floors} "
-                            f"(по умолч. {section.default_floors})")
-                st.markdown(f"- **Площадь этажа:** {section.floor_area} м²")
-            with col2:
-                st.markdown(f"- **Квартиры/этаж:** {section.apartments_per_floor}")
-                st.markdown(f"- **Площади кв.:** {section.apt_areas}")
-                st.markdown(f"- **Коммерч. 1 эт.:** "
-                            f"{'Да' if section.has_commercial_ground else 'Нет'}")
+# ─── Библиотека типовых секций (доступна всегда) ──────────────────────
+st.divider()
+with st.expander(f"📦 Библиотека типовых секций ({library.count} типов секций в каталоге)", expanded=False):
+    st.markdown(
+        "Параметрический каталог секций жилых корпусов, используемых алгоритмом расстановки. "
+        "Секции сгруппированы по градостроительным категориям и типам лифтовых узлов."
+    )
+
+    category_meta = [
+        ("TOWER", "🏢 Точечные башни (TOWER) — отдельно стоящие доминанты"),
+        ("MIDDLE", "🏙️ Рядовые секции (MIDDLE) — центральные звенья корпусов"),
+        ("CORNER", "📐 Угловые поворотные секции (CORNER) — замкнутые и П/Г-образные дворы"),
+        ("END", "🚪 Торцевые секции (END) — завершающие секции фасадов с торцевыми окнами"),
+    ]
+
+    for cat_code, cat_title in category_meta:
+        cat_secs = [s for s in library.get_all() if s.category.upper() == cat_code]
+        if not cat_secs:
+            continue
+        st.markdown(f"#### {cat_title}")
+        for s in cat_secs:
+            code_label = getattr(s, "section_code", "") or s.id
+            with st.expander(f"{s.name} ({code_label}) — {s.width} × {s.depth} м | {s.min_floors}–{s.max_floors} эт."):
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.markdown(f"- **Габариты фасада:** {s.width} × {s.depth} м")
+                    st.markdown(f"- **Площадь типового этажа:** {s.floor_area:,.1f} м²")
+                    st.markdown(f"- **Количество лифтов:** {s.elevators} шт.")
+                with c2:
+                    st.markdown(f"- **Диапазон этажности:** {s.min_floors}–{s.max_floors} эт.")
+                    st.markdown(f"- **Этажность по умолчанию:** {s.default_floors} эт.")
+                    st.markdown(f"- **Коммерческий 1-й этаж:** {'Да' if s.has_commercial_ground else 'Нет'}")
+                with c3:
+                    total_apts = sum(s.apartments_per_floor.values())
+                    st.markdown(f"- **Квартир на этаже:** {total_apts} шт.")
+                    st.markdown(f"- **Квартирография:** {s.apartments_per_floor}")
+                    st.markdown(f"- **Площади квартир:** {s.apt_areas}")
