@@ -1,0 +1,33 @@
+{
+  "id": "mid_m5_15",
+  "name": "Меридиональная (М5)",
+  "section_code": "М5",
+  "category": "MIDDLE",
+  "width": 45.25,
+  "depth": 17.0,
+  "min_floors": 10,
+  "max_floors": 18,
+  "default_floors": 15,
+  "elevators": 2,
+  "floor_area": 745.44,
+  "living_area_per_floor": 515.38,
+  "apartments_per_floor": {
+    "studio": 4,
+    "1k": 0,
+    "2k": 1,
+    "3k": 4,
+    "4k": 1
+  },
+  "apt_areas": {
+    "studio": 24.3,
+    "1k": 0.0,
+    "2k": 51.9,
+    "3k": 69.8,
+    "4k": 87.2
+  },
+  "has_commercial_ground": false,
+  "commercial_area_ground": 0.0,
+  "floor_height": 3.15,
+  "ground_floor_height": 4.2,
+  "parking_per_apt": 0.5
+}

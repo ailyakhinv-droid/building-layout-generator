@@ -327,9 +327,11 @@ if "buildings" in st.session_state:
             "Дом": f"Д{i + 1}",
             "Этажность": building.floors,
             "Секций": len(building.sections),
+            "Студии": apts.get("studio", 0),
             "1-комн.": apts.get("1k", 0),
             "2-комн.": apts.get("2k", 0),
             "3-комн.": apts.get("3k", 0),
+            "4-комн.": apts.get("4k", 0),
             "Всего кв.": sum(apts.values()),
             "GFA, м²": f"{building.total_gfa:,.0f}",
         })

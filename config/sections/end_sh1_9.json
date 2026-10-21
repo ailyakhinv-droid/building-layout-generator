@@ -1,0 +1,33 @@
+{
+  "id": "end_sh1_9",
+  "name": "Широтная (Ш1)",
+  "section_code": "Ш1",
+  "category": "END",
+  "width": 19.35,
+  "depth": 17.0,
+  "min_floors": 5,
+  "max_floors": 9,
+  "default_floors": 9,
+  "elevators": 1,
+  "floor_area": 315.28,
+  "living_area_per_floor": 227.35,
+  "apartments_per_floor": {
+    "studio": 2,
+    "1k": 0,
+    "2k": 0,
+    "3k": 2,
+    "4k": 0
+  },
+  "apt_areas": {
+    "studio": 29.4,
+    "1k": 0.0,
+    "2k": 0.0,
+    "3k": 84.3,
+    "4k": 0.0
+  },
+  "has_commercial_ground": true,
+  "commercial_area_ground": 163.71,
+  "floor_height": 3.15,
+  "ground_floor_height": 4.2,
+  "parking_per_apt": 0.5
+}

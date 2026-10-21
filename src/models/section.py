@@ -48,25 +48,25 @@ class SectionType:
     apt_areas: dict[str, float] = field(default_factory=dict)
     has_commercial_ground: bool = False
     parking_per_apt: float = 0.5
+    elevators: int = 1
+    section_code: str = ""
+    living_area_per_floor: float = 0.0
+    commercial_area_ground: float = 0.0
+    floor_height: float = 3.15
+    ground_floor_height: float = 4.20
 
     @classmethod
     def from_json(cls, filepath: str | Path) -> SectionType:
-        """Загрузить тип секции из JSON-файла.
-
-        Args:
-            filepath: Путь к JSON-файлу с описанием секции.
-
-        Returns:
-            Экземпляр SectionType с параметрами из файла.
-
-        Raises:
-            FileNotFoundError: Если файл не найден.
-            json.JSONDecodeError: Если файл содержит невалидный JSON.
-        """
+        """Загрузить тип секции из JSON-файла."""
         path = Path(filepath)
         with path.open("r", encoding="utf-8") as f:
             data = json.load(f)
-        return cls(**data)
+        
+        # Фильтруем только поля, присутствующие в dataclass
+        import dataclasses
+        valid_fields = {f.name for f in dataclasses.fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered_data)
 
     @property
     def residential_area_per_floor(self) -> float:

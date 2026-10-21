@@ -46,11 +46,14 @@ class TEP:
     building_count: int
     avg_floors: float
     apartments_total: int
+    apartments_studio: int
     apartments_1k: int
     apartments_2k: int
     apartments_3k: int
+    apartments_4k: int
     population: float
     parking_spaces: int
+    commercial_area: float
     green_area: float
     green_ratio: float
 
@@ -65,14 +68,17 @@ class TEP:
             "Площадь застройки, м²": round(self.building_area, 1),
             "Общая площадь (GFA), м²": round(self.total_gfa, 1),
             "Жилая площадь, м²": round(self.residential_area, 1),
+            "Коммерческая площадь, м²": round(self.commercial_area, 1),
             "Процент застройки (BCR)": round(self.bcr, 3),
             "Коэффициент плотности (FAR)": round(self.far, 3),
             "Количество зданий": self.building_count,
             "Средняя этажность": round(self.avg_floors, 1),
             "Квартиры всего": self.apartments_total,
+            "Студии": self.apartments_studio,
             "1-комнатные": self.apartments_1k,
             "2-комнатные": self.apartments_2k,
             "3-комнатные": self.apartments_3k,
+            "4-комнатные": self.apartments_4k,
             "Население, чел.": round(self.population, 0),
             "Машиномест": self.parking_spaces,
             "Площадь озеленения, м²": round(self.green_area, 1),
@@ -95,6 +101,7 @@ class TEP:
             ("Площадь застройки", f"{self.building_area:,.1f} м²"),
             ("Общая площадь (GFA)", f"{self.total_gfa:,.1f} м²"),
             ("Жилая площадь", f"{self.residential_area:,.1f} м²"),
+            ("Коммерческая площадь (1 эт.)", f"{self.commercial_area:,.1f} м²"),
             ("", ""),
             ("Процент застройки (BCR)", f"{self.bcr:.1%}"),
             ("Коэфф. плотности (FAR)", f"{self.far:.2f}"),
@@ -103,9 +110,11 @@ class TEP:
             ("Средняя этажность", f"{self.avg_floors:.1f}"),
             ("", ""),
             ("Квартиры всего", f"{self.apartments_total}"),
+            ("  — Студии", f"{self.apartments_studio}"),
             ("  — 1-комнатные", f"{self.apartments_1k}"),
             ("  — 2-комнатные", f"{self.apartments_2k}"),
             ("  — 3-комнатные", f"{self.apartments_3k}"),
+            ("  — 4-комнатные", f"{self.apartments_4k}"),
             ("", ""),
             ("Население", f"{self.population:,.0f} чел."),
             ("Машиномест", f"{self.parking_spaces}"),
@@ -149,17 +158,26 @@ class TEP:
         # Общая площадь (GFA)
         total_gfa = sum(b.total_gfa for b in buildings)
 
+        # Коммерческая площадь на 1 этаже
+        commercial_area = 0.0
+        for building in buildings:
+            for section in building.sections:
+                comm = getattr(section.section_type, "commercial_area_ground", 0.0)
+                commercial_area += comm
+
         # Жилая площадь — сумма жилых площадей по секциям
         residential_area = 0.0
         for building in buildings:
             for section in building.sections:
-                # Определяем количество жилых этажей
                 res_floors = section.floors
                 if section.section_type.has_commercial_ground:
                     res_floors = max(0, section.floors - 1)
-                residential_area += (
-                    section.section_type.residential_area_per_floor * res_floors
-                )
+                
+                # Если в секции прямо задана жилая площадь этажа
+                unit_living = getattr(section.section_type, "living_area_per_floor", 0.0)
+                if unit_living <= 0:
+                    unit_living = section.section_type.residential_area_per_floor
+                residential_area += unit_living * res_floors
 
         # Процент застройки и плотность
         bcr = building_area / site_area if site_area > 0 else 0.0
@@ -179,27 +197,34 @@ class TEP:
             for apt_type, count in building.total_apartments.items():
                 total_apts[apt_type] = total_apts.get(apt_type, 0) + count
 
+        apartments_studio = total_apts.get("studio", 0)
         apartments_1k = total_apts.get("1k", 0)
         apartments_2k = total_apts.get("2k", 0)
         apartments_3k = total_apts.get("3k", 0)
-        apartments_total = apartments_1k + apartments_2k + apartments_3k
+        apartments_4k = total_apts.get("4k", 0)
+        apartments_total = (
+            apartments_studio + apartments_1k + apartments_2k + apartments_3k + apartments_4k
+        )
 
         # Население
-        pop_per_1k = config.get("population_per_1k", 2.8)
-        pop_per_2k = config.get("population_per_2k", 3.6)
-        pop_per_3k = config.get("population_per_3k", 4.5)
+        pop_per_studio = config.get("population_per_studio", 1.5)
+        pop_per_1k = config.get("population_per_1k", 2.0)
+        pop_per_2k = config.get("population_per_2k", 2.8)
+        pop_per_3k = config.get("population_per_3k", 3.5)
+        pop_per_4k = config.get("population_per_4k", 4.2)
         population = (
-            apartments_1k * pop_per_1k
+            apartments_studio * pop_per_studio
+            + apartments_1k * pop_per_1k
             + apartments_2k * pop_per_2k
             + apartments_3k * pop_per_3k
+            + apartments_4k * pop_per_4k
         )
 
         # Машиноместа
         parking_ratio = config.get("parking_ratio", 0.5)
         parking_spaces = math.ceil(apartments_total * parking_ratio)
 
-        # Озеленение — оставшаяся площадь за вычетом застройки
-        # (упрощённый расчёт: участок минус застройка)
+        # Озеленение
         green_area = max(0.0, site_area - building_area)
         green_ratio = green_area / site_area if site_area > 0 else 0.0
 
@@ -213,11 +238,14 @@ class TEP:
             building_count=building_count,
             avg_floors=avg_floors,
             apartments_total=apartments_total,
+            apartments_studio=apartments_studio,
             apartments_1k=apartments_1k,
             apartments_2k=apartments_2k,
             apartments_3k=apartments_3k,
+            apartments_4k=apartments_4k,
             population=population,
             parking_spaces=parking_spaces,
+            commercial_area=commercial_area,
             green_area=green_area,
             green_ratio=green_ratio,
         )

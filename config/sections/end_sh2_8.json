@@ -1,0 +1,33 @@
+{
+  "id": "end_sh2_8",
+  "name": "Широтная (Ш2)",
+  "section_code": "Ш2",
+  "category": "END",
+  "width": 22.35,
+  "depth": 17.0,
+  "min_floors": 5,
+  "max_floors": 9,
+  "default_floors": 8,
+  "elevators": 1,
+  "floor_area": 365.14,
+  "living_area_per_floor": 259.42,
+  "apartments_per_floor": {
+    "studio": 0,
+    "1k": 0,
+    "2k": 2,
+    "3k": 1,
+    "4k": 1
+  },
+  "apt_areas": {
+    "studio": 0.0,
+    "1k": 0.0,
+    "2k": 51.6,
+    "3k": 69.4,
+    "4k": 86.8
+  },
+  "has_commercial_ground": true,
+  "commercial_area_ground": 214.66,
+  "floor_height": 3.15,
+  "ground_floor_height": 4.2,
+  "parking_per_apt": 0.5
+}

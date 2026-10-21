@@ -1,0 +1,33 @@
+{
+  "id": "mid_m8_9",
+  "name": "Меридиональная (М8)",
+  "section_code": "М8",
+  "category": "MIDDLE",
+  "width": 31.15,
+  "depth": 17.0,
+  "min_floors": 5,
+  "max_floors": 9,
+  "default_floors": 9,
+  "elevators": 1,
+  "floor_area": 509.55,
+  "living_area_per_floor": 357.08,
+  "apartments_per_floor": {
+    "studio": 1,
+    "1k": 0,
+    "2k": 3,
+    "3k": 0,
+    "4k": 2
+  },
+  "apt_areas": {
+    "studio": 24.5,
+    "1k": 0.0,
+    "2k": 52.3,
+    "3k": 0.0,
+    "4k": 87.9
+  },
+  "has_commercial_ground": true,
+  "commercial_area_ground": 333.61,
+  "floor_height": 3.15,
+  "ground_floor_height": 4.2,
+  "parking_per_apt": 0.5
+}

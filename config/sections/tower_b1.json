@@ -1,0 +1,33 @@
+{
+  "id": "tower_b1",
+  "name": "Точечная (Б1)",
+  "section_code": "Б1",
+  "category": "MIDDLE",
+  "width": 29.7,
+  "depth": 23.9,
+  "min_floors": 12,
+  "max_floors": 25,
+  "default_floors": 24,
+  "elevators": 2,
+  "floor_area": 689.61,
+  "living_area_per_floor": 448.46,
+  "apartments_per_floor": {
+    "studio": 5,
+    "1k": 2,
+    "2k": 2,
+    "3k": 2,
+    "4k": 0
+  },
+  "apt_areas": {
+    "studio": 25.1,
+    "1k": 36.0,
+    "2k": 53.5,
+    "3k": 72.0,
+    "4k": 0.0
+  },
+  "has_commercial_ground": true,
+  "commercial_area_ground": 408.08,
+  "floor_height": 3.15,
+  "ground_floor_height": 4.2,
+  "parking_per_apt": 0.5
+}

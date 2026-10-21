@@ -1,0 +1,33 @@
+{
+  "id": "mid_m2_24",
+  "name": "Меридиональная (М2)",
+  "section_code": "М2",
+  "category": "MIDDLE",
+  "width": 47.85,
+  "depth": 17.0,
+  "min_floors": 10,
+  "max_floors": 25,
+  "default_floors": 24,
+  "elevators": 2,
+  "floor_area": 788.95,
+  "living_area_per_floor": 526.47,
+  "apartments_per_floor": {
+    "studio": 6,
+    "1k": 0,
+    "2k": 2,
+    "3k": 2,
+    "4k": 1
+  },
+  "apt_areas": {
+    "studio": 26.9,
+    "1k": 0.0,
+    "2k": 57.3,
+    "3k": 77.1,
+    "4k": 96.4
+  },
+  "has_commercial_ground": true,
+  "commercial_area_ground": 242.74,
+  "floor_height": 3.15,
+  "ground_floor_height": 4.2,
+  "parking_per_apt": 0.5
+}

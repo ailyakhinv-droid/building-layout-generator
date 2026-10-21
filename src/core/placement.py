@@ -137,14 +137,17 @@ class PlacementEngine:
         total_len = we * 2 + num_middle * wm
         x_cursor = -total_len / 2.0
 
-        sections.append(PlacedSection(end, x_cursor + we / 2.0, 0.0, 0.0, floors))
+        fl_end = max(end.min_floors, min(floors, end.max_floors))
+        fl_mid = max(middle.min_floors, min(floors, middle.max_floors))
+
+        sections.append(PlacedSection(end, x_cursor + we / 2.0, 0.0, 0.0, fl_end))
         x_cursor += we
 
         for _ in range(num_middle):
-            sections.append(PlacedSection(middle, x_cursor + wm / 2.0, 0.0, 0.0, floors))
+            sections.append(PlacedSection(middle, x_cursor + wm / 2.0, 0.0, 0.0, fl_mid))
             x_cursor += wm
 
-        sections.append(PlacedSection(end, x_cursor + we / 2.0, 0.0, 0.0, floors))
+        sections.append(PlacedSection(end, x_cursor + we / 2.0, 0.0, 0.0, fl_end))
         return sections
 
     def _build_u_shape_local(
@@ -160,6 +163,10 @@ class PlacementEngine:
         sections: list[PlacedSection] = []
         wc, wm, we, d = corner.width, middle.width, end.width, middle.depth
 
+        fl_cor = max(corner.min_floors, min(floors, corner.max_floors))
+        fl_mid = max(middle.min_floors, min(floors, middle.max_floors))
+        fl_end = max(end.min_floors, min(floors, end.max_floors))
+
         wing_len = num_wing * wm + we
         y_shift = wing_len / 2.0
 
@@ -168,29 +175,29 @@ class PlacementEngine:
         xc2 = +(l_back_mid + wc) / 2.0
 
         # Угловые секции заднего фасада
-        sections.append(PlacedSection(corner, xc1, y_shift, 0.0, floors))
-        sections.append(PlacedSection(corner, xc2, y_shift, 0.0, floors))
+        sections.append(PlacedSection(corner, xc1, y_shift, 0.0, fl_cor))
+        sections.append(PlacedSection(corner, xc2, y_shift, 0.0, fl_cor))
 
         # Заднее крыло
         for i in range(num_back):
             x = xc1 + wc / 2.0 + (i + 0.5) * wm
-            sections.append(PlacedSection(middle, x, y_shift, 0.0, floors))
+            sections.append(PlacedSection(middle, x, y_shift, 0.0, fl_mid))
 
         # Левое крыло (в сторону двора Y-)
         left_x = xc1 - wc / 2.0 + d / 2.0
         for j in range(num_wing):
             y = y_shift - d / 2.0 - (j + 0.5) * wm
-            sections.append(PlacedSection(middle, left_x, y, 90.0, floors))
+            sections.append(PlacedSection(middle, left_x, y, 90.0, fl_mid))
         end_l_y = y_shift - d / 2.0 - num_wing * wm - we / 2.0
-        sections.append(PlacedSection(end, left_x, end_l_y, 90.0, floors))
+        sections.append(PlacedSection(end, left_x, end_l_y, 90.0, fl_end))
 
         # Правое крыло (в сторону двора Y-)
         right_x = xc2 + wc / 2.0 - d / 2.0
         for k in range(num_wing):
             y = y_shift - d / 2.0 - (k + 0.5) * wm
-            sections.append(PlacedSection(middle, right_x, y, 90.0, floors))
+            sections.append(PlacedSection(middle, right_x, y, 90.0, fl_mid))
         end_r_y = y_shift - d / 2.0 - num_wing * wm - we / 2.0
-        sections.append(PlacedSection(end, right_x, end_r_y, 90.0, floors))
+        sections.append(PlacedSection(end, right_x, end_r_y, 90.0, fl_end))
 
         return sections
 
@@ -207,6 +214,10 @@ class PlacementEngine:
         sections: list[PlacedSection] = []
         wc, wm, we, d = corner.width, middle.width, end.width, middle.depth
 
+        fl_cor = max(corner.min_floors, min(floors, corner.max_floors))
+        fl_mid = max(middle.min_floors, min(floors, middle.max_floors))
+        fl_end = max(end.min_floors, min(floors, end.max_floors))
+
         wing_x = num_mid_x * wm + we
         wing_y = num_mid_y * wm + we
 
@@ -214,22 +225,22 @@ class PlacementEngine:
         y_shift = wing_y / 2.0
 
         # Угловая секция
-        sections.append(PlacedSection(corner, x_shift, y_shift, 0.0, floors))
+        sections.append(PlacedSection(corner, x_shift, y_shift, 0.0, fl_cor))
 
         # Крыло по X влево
         x_curr = x_shift - wc / 2.0
         for _ in range(num_mid_x):
-            sections.append(PlacedSection(middle, x_curr - wm / 2.0, y_shift, 0.0, floors))
+            sections.append(PlacedSection(middle, x_curr - wm / 2.0, y_shift, 0.0, fl_mid))
             x_curr -= wm
-        sections.append(PlacedSection(end, x_curr - we / 2.0, y_shift, 0.0, floors))
+        sections.append(PlacedSection(end, x_curr - we / 2.0, y_shift, 0.0, fl_end))
 
         # Крыло по Y вниз
         wing_y_x = x_shift + wc / 2.0 - d / 2.0
         y_curr = y_shift - d / 2.0
         for _ in range(num_mid_y):
-            sections.append(PlacedSection(middle, wing_y_x, y_curr - wm / 2.0, 90.0, floors))
+            sections.append(PlacedSection(middle, wing_y_x, y_curr - wm / 2.0, 90.0, fl_mid))
             y_curr -= wm
-        sections.append(PlacedSection(end, wing_y_x, y_curr - we / 2.0, 90.0, floors))
+        sections.append(PlacedSection(end, wing_y_x, y_curr - we / 2.0, 90.0, fl_end))
 
         return sections
 
@@ -605,10 +616,36 @@ class PlacementEngine:
         else:
             return primary_angle
 
+    def _find_best_section(
+        self,
+        sections: list[SectionType],
+        target_floors: int | None,
+    ) -> SectionType | None:
+        """Подобрать наилучшую секцию с учетом диапазона этажей и лифтовых ограничений."""
+        if not sections:
+            return None
+        if target_floors is None:
+            return sections[0]
+
+        # 1. Секции, строго вмещающие заданную этажность
+        matching = [s for s in sections if s.min_floors <= target_floors <= s.max_floors]
+        if matching:
+            return min(matching, key=lambda s: abs(s.default_floors - target_floors))
+
+        # 2. Иначе секция с минимальным расстоянием до допустимого диапазона
+        def dist(s: SectionType) -> int:
+            if target_floors < s.min_floors:
+                return s.min_floors - target_floors
+            return target_floors - s.max_floors
+
+        return min(sections, key=dist)
+
     def _select_sections(
         self, placement_config: PlacementConfig
     ) -> dict[str, SectionType] | None:
-        """Выбрать секции для расстановки."""
+        """Выбрать секции для расстановки с учетом этажности и предпочтений."""
+        target_fl = placement_config.target_floors
+
         if placement_config.preferred_section_ids:
             sections = {}
             for sid in placement_config.preferred_section_ids:
@@ -621,15 +658,15 @@ class PlacementEngine:
                     elif s.category == "CORNER":
                         sections["corner"] = s
             if "middle" not in sections:
-                middles = self.library.get_middle_sections()
-                if middles:
-                    sections["middle"] = middles[0]
+                sections["middle"] = self._find_best_section(
+                    self.library.get_middle_sections(), target_fl
+                )
             if "end" not in sections:
-                ends = self.library.get_end_sections()
-                sections["end"] = ends[0] if ends else sections.get("middle")
+                best_end = self._find_best_section(self.library.get_end_sections(), target_fl)
+                sections["end"] = best_end if best_end else sections.get("middle")
             if "corner" not in sections:
-                corners = self.library.get_corner_sections()
-                sections["corner"] = corners[0] if corners else sections.get("middle")
+                best_cor = self._find_best_section(self.library.get_corner_sections(), target_fl)
+                sections["corner"] = best_cor if best_cor else sections.get("middle")
             return sections if "middle" in sections else None
 
         middles = self.library.get_middle_sections()
@@ -639,9 +676,13 @@ class PlacementEngine:
         if not middles:
             return None
 
-        result: dict[str, SectionType] = {"middle": middles[0]}
-        result["end"] = ends[0] if ends else middles[0]
-        result["corner"] = corners[0] if corners else middles[0]
+        best_middle = self._find_best_section(middles, target_fl)
+        best_end = self._find_best_section(ends, target_fl)
+        best_corner = self._find_best_section(corners, target_fl)
+
+        result: dict[str, SectionType] = {"middle": best_middle}
+        result["end"] = best_end if best_end else best_middle
+        result["corner"] = best_corner if best_corner else best_middle
         return result
 
     def _compute_row_positions(

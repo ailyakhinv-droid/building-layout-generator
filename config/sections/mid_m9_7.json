@@ -1,0 +1,33 @@
+{
+  "id": "mid_m9_7",
+  "name": "Меридиональная (М9)",
+  "section_code": "М9",
+  "category": "MIDDLE",
+  "width": 28.45,
+  "depth": 17.0,
+  "min_floors": 5,
+  "max_floors": 8,
+  "default_floors": 7,
+  "elevators": 1,
+  "floor_area": 466.52,
+  "living_area_per_floor": 321.3,
+  "apartments_per_floor": {
+    "studio": 5,
+    "1k": 0,
+    "2k": 2,
+    "3k": 1,
+    "4k": 0
+  },
+  "apt_areas": {
+    "studio": 26.5,
+    "1k": 0.0,
+    "2k": 56.5,
+    "3k": 76.0,
+    "4k": 0.0
+  },
+  "has_commercial_ground": true,
+  "commercial_area_ground": 167.66,
+  "floor_height": 3.15,
+  "ground_floor_height": 4.2,
+  "parking_per_apt": 0.5
+}

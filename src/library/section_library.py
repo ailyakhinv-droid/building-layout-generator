@@ -96,6 +96,20 @@ class SectionLibrary:
         """Получить все торцевые секции."""
         return self.get_by_category("END")
 
+    def get_sections_for_floors(self, floors: int) -> list[SectionType]:
+        """Получить секции, поддерживающие заданную этажность (с учетом лифтовых ограничений)."""
+        return [
+            s for s in self._sections.values()
+            if s.min_floors <= floors <= s.max_floors
+        ]
+
+    def get_by_elevators(self, elevators: int) -> list[SectionType]:
+        """Получить секции с заданным количеством лифтов."""
+        return [
+            s for s in self._sections.values()
+            if s.elevators == elevators
+        ]
+
     @property
     def count(self) -> int:
         """Количество секций в библиотеке."""

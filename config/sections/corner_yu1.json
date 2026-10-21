@@ -1,0 +1,33 @@
+{
+  "id": "corner_yu1",
+  "name": "Южная (Ю1)",
+  "section_code": "Ю1",
+  "category": "CORNER",
+  "width": 21.62,
+  "depth": 23.88,
+  "min_floors": 3,
+  "max_floors": 9,
+  "default_floors": 5,
+  "elevators": 1,
+  "floor_area": 444.38,
+  "living_area_per_floor": 315.03,
+  "apartments_per_floor": {
+    "studio": 2,
+    "1k": 0,
+    "2k": 1,
+    "3k": 3,
+    "4k": 0
+  },
+  "apt_areas": {
+    "studio": 24.7,
+    "1k": 0.0,
+    "2k": 52.7,
+    "3k": 70.9,
+    "4k": 0.0
+  },
+  "has_commercial_ground": true,
+  "commercial_area_ground": 220.74,
+  "floor_height": 3.15,
+  "ground_floor_height": 4.2,
+  "parking_per_apt": 0.5
+}
