@@ -61,7 +61,8 @@ def generate_report(
     for i, building in enumerate(buildings):
         apts = building.total_apartments
         total = sum(apts.values())
-        lines.append(f"\n  Дом {i + 1}: {building.floors} эт., "
+        fl_str = f"{building.floors}" if building.min_floors == building.floors else f"{building.min_floors}–{building.floors}"
+        lines.append(f"\n  Дом {i + 1}: {fl_str} эт., "
                      f"{len(building.sections)} секций, "
                      f"{total} кв.")
         lines.append(f"    Пятно застройки: {building.total_building_area:.0f} м²")
@@ -75,7 +76,8 @@ def generate_report(
         for j, section in enumerate(building.sections):
             lines.append(
                 f"      [{j + 1}] {section.section_type.name} "
-                f"({section.section_type.category})"
+                f"({section.floors} эт., {section.section_type.elevators} лифт., "
+                f"{section.section_type.category})"
             )
 
     lines.append("")

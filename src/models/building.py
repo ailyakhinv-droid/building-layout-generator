@@ -129,6 +129,25 @@ class Building:
         return max(section.floors for section in self.sections)
 
     @property
+    def max_floors(self) -> int:
+        """Максимальное количество этажей среди секций здания."""
+        return self.floors
+
+    @property
+    def min_floors(self) -> int:
+        """Минимальное количество этажей среди секций здания."""
+        if not self.sections:
+            return 0
+        return min(section.floors for section in self.sections)
+
+    @property
+    def avg_floors(self) -> float:
+        """Средняя этажность секций здания."""
+        if not self.sections:
+            return 0.0
+        return sum(section.floors for section in self.sections) / len(self.sections)
+
+    @property
     def total_gfa(self) -> float:
         """Общая площадь здания (сумма GFA всех секций) в м²."""
         return sum(section.gfa for section in self.sections)
@@ -178,8 +197,9 @@ class Building:
 
     def __repr__(self) -> str:
         """Строковое представление здания."""
+        fl_str = f"{self.floors}" if self.min_floors == self.max_floors else f"{self.min_floors}-{self.max_floors}"
         return (
             f"Building(sections={len(self.sections)}, "
-            f"floors={self.floors}, "
+            f"floors={fl_str}, "
             f"gfa={self.total_gfa:.0f} м²)"
         )

@@ -183,11 +183,11 @@ class TEP:
         bcr = building_area / site_area if site_area > 0 else 0.0
         far = total_gfa / site_area if site_area > 0 else 0.0
 
-        # Количество зданий и средняя этажность
+        # Количество зданий и средняя этажность (средневзвешенная по площади застройки)
         building_count = len(buildings)
         avg_floors = (
-            sum(b.floors for b in buildings) / building_count
-            if building_count > 0
+            total_gfa / building_area
+            if building_area > 0
             else 0.0
         )
 

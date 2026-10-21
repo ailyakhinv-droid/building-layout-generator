@@ -37,6 +37,9 @@ class PlacementConfig:
         typology: Типология застройки ("AUTO", "U_SHAPE", "L_SHAPE", "LINEAR").
         courtyard_orientation: Раскрытие дворов ("SOUTH", "NORTH", "EAST", "WEST", "AUTO").
         variable_insolation: Переменный шаг инсоляции (уменьшенный разрыв с торцов).
+        cascade_floors: Каскадное понижение этажности к югу (дворам).
+        asymmetric_wings: Асимметричная длина крыльев (живой силуэт, раскрытие к свету).
+        min_wing_floors: Минимальная этажность южных торцов/крыльев.
     """
 
     target_floors: int | None = None
@@ -47,6 +50,9 @@ class PlacementConfig:
     typology: str = "AUTO"
     courtyard_orientation: str = "SOUTH"
     variable_insolation: bool = True
+    cascade_floors: bool = True
+    asymmetric_wings: bool = True
+    min_wing_floors: int = 8
 
 
 class PlacementEngine:
@@ -130,25 +136,69 @@ class PlacementEngine:
         end: SectionType,
         floors: int,
         num_middle: int,
+        cascade_floors: bool = False,
+        min_wing_floors: int = 8,
     ) -> list[PlacedSection]:
-        """Линейный корпус, центрированный в (0, 0) по оси X."""
+        """Линейный корпус, центрированный в (0, 0) по оси X, без наложений."""
         sections: list[PlacedSection] = []
-        we, wm = end.width, middle.width
-        total_len = we * 2 + num_middle * wm
-        x_cursor = -total_len / 2.0
+        num_total = num_middle + 2
 
-        fl_end = max(end.min_floors, min(floors, end.max_floors))
-        fl_mid = max(middle.min_floors, min(floors, middle.max_floors))
+        # Расчет этажности по позициям
+        floor_list = []
+        for idx in range(num_total):
+            if cascade_floors and floors > min_wing_floors:
+                # Силуэт: центр на целевой высоте, концы каскадно понижаются
+                dist = abs(idx - (num_total - 1) / 2.0) / max(1.0, (num_total - 1) / 2.0)
+                fl = round(floors - dist * (floors - min_wing_floors))
+                floor_list.append(max(min_wing_floors, min(floors, fl)))
+            else:
+                floor_list.append(floors)
 
-        sections.append(PlacedSection(end, x_cursor + we / 2.0, 0.0, 0.0, fl_end))
-        x_cursor += we
+        # 1. Первая торцевая секция
+        fl_end1 = floor_list[0]
+        sec_end1 = (
+            self._find_best_section(self.library.get_end_sections(), fl_end1)
+            if cascade_floors else end
+        ) or end
+        fl_end1 = max(sec_end1.min_floors, min(fl_end1, sec_end1.max_floors))
 
-        for _ in range(num_middle):
-            sections.append(PlacedSection(middle, x_cursor + wm / 2.0, 0.0, 0.0, fl_mid))
-            x_cursor += wm
+        # 2. Рядовые секции
+        mid_secs = []
+        for i in range(num_middle):
+            fl_m = floor_list[i + 1]
+            sec_m = (
+                self._find_best_section(self.library.get_middle_sections(), fl_m)
+                if cascade_floors else middle
+            ) or middle
+            fl_m = max(sec_m.min_floors, min(fl_m, sec_m.max_floors))
+            mid_secs.append((sec_m, fl_m))
 
-        sections.append(PlacedSection(end, x_cursor + we / 2.0, 0.0, 0.0, fl_end))
-        return sections
+        # 3. Вторая торцевая секция
+        fl_end2 = floor_list[-1]
+        sec_end2 = (
+            self._find_best_section(self.library.get_end_sections(), fl_end2)
+            if cascade_floors else end
+        ) or end
+        fl_end2 = max(sec_end2.min_floors, min(fl_end2, sec_end2.max_floors))
+
+        # Выстраиваем цепочку вдоль оси X
+        x_curr = 0.0
+        sections.append(PlacedSection(sec_end1, x_curr + sec_end1.width / 2.0, 0.0, 0.0, fl_end1))
+        x_curr += sec_end1.width
+
+        for sec_m, fl_m in mid_secs:
+            sections.append(PlacedSection(sec_m, x_curr + sec_m.width / 2.0, 0.0, 0.0, fl_m))
+            x_curr += sec_m.width
+
+        sections.append(PlacedSection(sec_end2, x_curr + sec_end2.width / 2.0, 0.0, 0.0, fl_end2))
+        x_curr += sec_end2.width
+
+        # Центрирование
+        shift_x = x_curr / 2.0
+        return [
+            PlacedSection(s.section_type, s.x - shift_x, s.y, s.angle, s.floors)
+            for s in sections
+        ]
 
     def _build_u_shape_local(
         self,
@@ -157,49 +207,120 @@ class PlacementEngine:
         end: SectionType,
         floors: int,
         num_back: int,
-        num_wing: int,
+        num_wing_left: int,
+        num_wing_right: int,
+        cascade_floors: bool = True,
+        min_wing_floors: int = 8,
     ) -> list[PlacedSection]:
-        """П-образный корпус со двором, центрированный в (0, 0)."""
+        """П-образный корпус со двором, центрированный в (0, 0), без наложений секций."""
         sections: list[PlacedSection] = []
-        wc, wm, we, d = corner.width, middle.width, end.width, middle.depth
 
-        fl_cor = max(corner.min_floors, min(floors, corner.max_floors))
-        fl_mid = max(middle.min_floors, min(floors, middle.max_floors))
-        fl_end = max(end.min_floors, min(floors, end.max_floors))
+        # 1. Заднее крыло (основание скобы, северная часть)
+        fl_back = floors
+        if cascade_floors and floors > min_wing_floors:
+            sec_back = self._find_best_section(self.library.get_middle_sections(), fl_back) or middle
+        else:
+            sec_back = middle
+        fl_back = max(sec_back.min_floors, min(fl_back, sec_back.max_floors))
+        wm_back = sec_back.width
+        dm_back = sec_back.depth
 
-        wing_len = num_wing * wm + we
-        y_shift = wing_len / 2.0
+        # Угловые секции
+        sec_cor_l = corner
+        sec_cor_r = corner
+        fl_cor_l = max(sec_cor_l.min_floors, min(floors, sec_cor_l.max_floors))
+        fl_cor_r = max(sec_cor_r.min_floors, min(floors, sec_cor_r.max_floors))
+        wc_l, dc_l = sec_cor_l.width, sec_cor_l.depth
+        wc_r, dc_r = sec_cor_r.width, sec_cor_r.depth
 
-        l_back_mid = num_back * wm
-        xc1 = -(l_back_mid + wc) / 2.0
-        xc2 = +(l_back_mid + wc) / 2.0
+        # Координаты основания:
+        xc1 = wc_l / 2.0
+        yc1 = -dc_l / 2.0
+        sections.append(PlacedSection(sec_cor_l, xc1, yc1, 0.0, fl_cor_l))
 
-        # Угловые секции заднего фасада
-        sections.append(PlacedSection(corner, xc1, y_shift, 0.0, fl_cor))
-        sections.append(PlacedSection(corner, xc2, y_shift, 0.0, fl_cor))
-
-        # Заднее крыло
+        x_back_start = wc_l
         for i in range(num_back):
-            x = xc1 + wc / 2.0 + (i + 0.5) * wm
-            sections.append(PlacedSection(middle, x, y_shift, 0.0, fl_mid))
+            xm = x_back_start + (i + 0.5) * wm_back
+            ym = -dm_back / 2.0
+            sections.append(PlacedSection(sec_back, xm, ym, 0.0, fl_back))
 
-        # Левое крыло (в сторону двора Y-)
-        left_x = xc1 - wc / 2.0 + d / 2.0
-        for j in range(num_wing):
-            y = y_shift - d / 2.0 - (j + 0.5) * wm
-            sections.append(PlacedSection(middle, left_x, y, 90.0, fl_mid))
-        end_l_y = y_shift - d / 2.0 - num_wing * wm - we / 2.0
-        sections.append(PlacedSection(end, left_x, end_l_y, 90.0, fl_end))
+        x_back_end = x_back_start + num_back * wm_back
 
-        # Правое крыло (в сторону двора Y-)
-        right_x = xc2 + wc / 2.0 - d / 2.0
-        for k in range(num_wing):
-            y = y_shift - d / 2.0 - (k + 0.5) * wm
-            sections.append(PlacedSection(middle, right_x, y, 90.0, fl_mid))
-        end_r_y = y_shift - d / 2.0 - num_wing * wm - we / 2.0
-        sections.append(PlacedSection(end, right_x, end_r_y, 90.0, fl_end))
+        xc2 = x_back_end + wc_r / 2.0
+        yc2 = -dc_r / 2.0
+        sections.append(PlacedSection(sec_cor_r, xc2, yc2, 0.0, fl_cor_r))
 
-        return sections
+        x_right_outer = x_back_end + wc_r
+
+        # 2. Левое крыло (в сторону юга -Y)
+        K_l = num_wing_left + 1
+        y_curr_l = -dc_l
+        for j in range(num_wing_left):
+            if cascade_floors and floors > min_wing_floors:
+                step_ratio = (j + 1) / K_l
+                fl_j = round(floors - step_ratio * (floors - min_wing_floors))
+                sec_j = self._find_best_section(self.library.get_middle_sections(), fl_j) or middle
+            else:
+                sec_j = middle
+                fl_j = floors
+            fl_j = max(sec_j.min_floors, min(fl_j, sec_j.max_floors))
+
+            xj = sec_j.depth / 2.0
+            yj = y_curr_l - sec_j.width / 2.0
+            sections.append(PlacedSection(sec_j, xj, yj, 90.0, fl_j))
+            y_curr_l -= sec_j.width
+
+        # Торец левого крыла
+        if cascade_floors and floors > min_wing_floors:
+            sec_end_l = self._find_best_section(self.library.get_end_sections(), min_wing_floors) or end
+            fl_end_l = min_wing_floors
+        else:
+            sec_end_l = end
+            fl_end_l = floors
+        fl_end_l = max(sec_end_l.min_floors, min(fl_end_l, sec_end_l.max_floors))
+        xe_l = sec_end_l.depth / 2.0
+        ye_l = y_curr_l - sec_end_l.width / 2.0
+        sections.append(PlacedSection(sec_end_l, xe_l, ye_l, 90.0, fl_end_l))
+
+        # 3. Правое крыло (в сторону юга -Y)
+        K_r = num_wing_right + 1
+        y_curr_r = -dc_r
+        for k in range(num_wing_right):
+            if cascade_floors and floors > min_wing_floors:
+                step_ratio = (k + 1) / K_r
+                fl_k = round(floors - step_ratio * (floors - min_wing_floors))
+                sec_k = self._find_best_section(self.library.get_middle_sections(), fl_k) or middle
+            else:
+                sec_k = middle
+                fl_k = floors
+            fl_k = max(sec_k.min_floors, min(fl_k, sec_k.max_floors))
+
+            xk = x_right_outer - sec_k.depth / 2.0
+            yk = y_curr_r - sec_k.width / 2.0
+            sections.append(PlacedSection(sec_k, xk, yk, 90.0, fl_k))
+            y_curr_r -= sec_k.width
+
+        # Торец правого крыла
+        if cascade_floors and floors > min_wing_floors:
+            sec_end_r = self._find_best_section(self.library.get_end_sections(), min_wing_floors) or end
+            fl_end_r = min_wing_floors
+        else:
+            sec_end_r = end
+            fl_end_r = floors
+        fl_end_r = max(sec_end_r.min_floors, min(fl_end_r, sec_end_r.max_floors))
+        xe_r = x_right_outer - sec_end_r.depth / 2.0
+        ye_r = y_curr_r - sec_end_r.width / 2.0
+        sections.append(PlacedSection(sec_end_r, xe_r, ye_r, 90.0, fl_end_r))
+
+        # 4. Центрирование в (0, 0)
+        fps = [s.footprint for s in sections]
+        cx = (min(f.bounds[0] for f in fps) + max(f.bounds[2] for f in fps)) / 2.0
+        cy = (min(f.bounds[1] for f in fps) + max(f.bounds[3] for f in fps)) / 2.0
+
+        return [
+            PlacedSection(s.section_type, s.x - cx, s.y - cy, s.angle, s.floors)
+            for s in sections
+        ]
 
     def _build_l_shape_local(
         self,
@@ -209,40 +330,80 @@ class PlacementEngine:
         floors: int,
         num_mid_x: int,
         num_mid_y: int,
+        cascade_floors: bool = True,
+        min_wing_floors: int = 8,
     ) -> list[PlacedSection]:
-        """Г-образный корпус, центрированный в (0, 0)."""
+        """Г-образный корпус, центрированный в (0, 0), без наложений секций."""
         sections: list[PlacedSection] = []
-        wc, wm, we, d = corner.width, middle.width, end.width, middle.depth
 
         fl_cor = max(corner.min_floors, min(floors, corner.max_floors))
-        fl_mid = max(middle.min_floors, min(floors, middle.max_floors))
-        fl_end = max(end.min_floors, min(floors, end.max_floors))
+        wc, dc = corner.width, corner.depth
 
-        wing_x = num_mid_x * wm + we
-        wing_y = num_mid_y * wm + we
+        # Угловая секция в верхнем правом стыке
+        xc = -wc / 2.0
+        yc = -dc / 2.0
+        sections.append(PlacedSection(corner, xc, yc, 0.0, fl_cor))
 
-        x_shift = wing_x / 2.0
-        y_shift = wing_y / 2.0
+        # 1. Горизонтальное крыло влево (-X)
+        fl_x = floors
+        if cascade_floors and floors > min_wing_floors:
+            sec_x = self._find_best_section(self.library.get_middle_sections(), fl_x) or middle
+        else:
+            sec_x = middle
+        fl_x = max(sec_x.min_floors, min(fl_x, sec_x.max_floors))
+        wm_x, dm_x = sec_x.width, sec_x.depth
 
-        # Угловая секция
-        sections.append(PlacedSection(corner, x_shift, y_shift, 0.0, fl_cor))
-
-        # Крыло по X влево
-        x_curr = x_shift - wc / 2.0
+        x_curr = -wc
         for _ in range(num_mid_x):
-            sections.append(PlacedSection(middle, x_curr - wm / 2.0, y_shift, 0.0, fl_mid))
-            x_curr -= wm
-        sections.append(PlacedSection(end, x_curr - we / 2.0, y_shift, 0.0, fl_end))
+            xm = x_curr - wm_x / 2.0
+            ym = -dm_x / 2.0
+            sections.append(PlacedSection(sec_x, xm, ym, 0.0, fl_x))
+            x_curr -= wm_x
 
-        # Крыло по Y вниз
-        wing_y_x = x_shift + wc / 2.0 - d / 2.0
-        y_curr = y_shift - d / 2.0
-        for _ in range(num_mid_y):
-            sections.append(PlacedSection(middle, wing_y_x, y_curr - wm / 2.0, 90.0, fl_mid))
-            y_curr -= wm
-        sections.append(PlacedSection(end, wing_y_x, y_curr - we / 2.0, 90.0, fl_end))
+        sec_end_x = end
+        fl_end_x = max(sec_end_x.min_floors, min(fl_x, sec_end_x.max_floors))
+        xe = x_curr - sec_end_x.width / 2.0
+        ye = -sec_end_x.depth / 2.0
+        sections.append(PlacedSection(sec_end_x, xe, ye, 0.0, fl_end_x))
 
-        return sections
+        # 2. Вертикальное крыло вниз (-Y) с каскадным понижением к югу
+        K_y = num_mid_y + 1
+        y_curr = -dc
+        for j in range(num_mid_y):
+            if cascade_floors and floors > min_wing_floors:
+                step_ratio = (j + 1) / K_y
+                fl_j = round(floors - step_ratio * (floors - min_wing_floors))
+                sec_j = self._find_best_section(self.library.get_middle_sections(), fl_j) or middle
+            else:
+                sec_j = middle
+                fl_j = floors
+            fl_j = max(sec_j.min_floors, min(fl_j, sec_j.max_floors))
+
+            xv = -sec_j.depth / 2.0
+            yv = y_curr - sec_j.width / 2.0
+            sections.append(PlacedSection(sec_j, xv, yv, 90.0, fl_j))
+            y_curr -= sec_j.width
+
+        if cascade_floors and floors > min_wing_floors:
+            sec_end_y = self._find_best_section(self.library.get_end_sections(), min_wing_floors) or end
+            fl_end_y = min_wing_floors
+        else:
+            sec_end_y = end
+            fl_end_y = floors
+        fl_end_y = max(sec_end_y.min_floors, min(fl_end_y, sec_end_y.max_floors))
+        xev = -sec_end_y.depth / 2.0
+        yev = y_curr - sec_end_y.width / 2.0
+        sections.append(PlacedSection(sec_end_y, xev, yev, 90.0, fl_end_y))
+
+        # 3. Центрирование
+        fps = [s.footprint for s in sections]
+        cx = (min(f.bounds[0] for f in fps) + max(f.bounds[2] for f in fps)) / 2.0
+        cy = (min(f.bounds[1] for f in fps) + max(f.bounds[3] for f in fps)) / 2.0
+
+        return [
+            PlacedSection(s.section_type, s.x - cx, s.y - cy, s.angle, s.floors)
+            for s in sections
+        ]
 
     def _transform_sections(
         self,
@@ -334,20 +495,44 @@ class PlacementEngine:
             px = centroid.x + ox * ux[0] + target_oy * uy[0]
             py = centroid.y + ox * ux[1] + target_oy * uy[1]
 
+            if placement_config.asymmetric_wings:
+                if col % 2 == 0:
+                    cand_wings = [(3, 1), (2, 1), (2, 2), (1, 1)]
+                else:
+                    cand_wings = [(1, 3), (1, 2), (2, 2), (1, 1)]
+                cand_l_shapes = [(num_back, 3), (num_back, 2), (num_back, 1)]
+            else:
+                cand_wings = [(2, 2), (2, 1), (1, 1)]
+                cand_l_shapes = [(num_back, 2), (num_back, 1)]
+
             # 1. Пробуем поставить П-образный корпус со двором
-            cand_u = self._create_u_building(
-                px, py, court_angle, middle, corner, end, floors, num_back, num_wing
-            )
-            if cand_u and self._fits_in_buildable(cand_u) and self._check_constraints(cand_u, buildings, placement_config):
-                buildings.append(cand_u)
+            placed = False
+            for n_wl, n_wr in cand_wings:
+                cand_u = self._create_u_building(
+                    px, py, court_angle, middle, corner, end, floors,
+                    num_back, n_wl, n_wr,
+                    cascade_floors=placement_config.cascade_floors,
+                    min_wing_floors=placement_config.min_wing_floors,
+                )
+                if cand_u and self._fits_in_buildable(cand_u) and self._check_constraints(cand_u, buildings, placement_config):
+                    buildings.append(cand_u)
+                    placed = True
+                    break
+
+            if placed:
                 continue
 
             # 2. Если скоба не вошла, пробуем Г-образный блок
-            cand_l = self._create_l_building(
-                px, py, court_angle, middle, corner, end, floors, num_mid_x=num_back, num_mid_y=num_wing
-            )
-            if cand_l and self._fits_in_buildable(cand_l) and self._check_constraints(cand_l, buildings, placement_config):
-                buildings.append(cand_l)
+            for nx, ny in cand_l_shapes:
+                cand_l = self._create_l_building(
+                    px, py, court_angle, middle, corner, end, floors,
+                    num_mid_x=nx, num_mid_y=ny,
+                    cascade_floors=placement_config.cascade_floors,
+                    min_wing_floors=placement_config.min_wing_floors,
+                )
+                if cand_l and self._fits_in_buildable(cand_l) and self._check_constraints(cand_l, buildings, placement_config):
+                    buildings.append(cand_l)
+                    break
 
         # 3. Дозаполняем оставшиеся свободные зоны участка (северная улица, фланги)
         self._fill_remaining_space(
@@ -404,11 +589,24 @@ class PlacementEngine:
             px = centroid.x + ox * ux[0] + target_oy * uy[0]
             py = centroid.y + ox * ux[1] + target_oy * uy[1]
 
-            cand = self._create_u_building(
-                px, py, court_angle, middle, corner, end, floors, num_back, num_wing
-            )
-            if cand and self._fits_in_buildable(cand) and self._check_constraints(cand, buildings, placement_config):
-                buildings.append(cand)
+            if placement_config.asymmetric_wings:
+                if col % 2 == 0:
+                    cand_wings = [(3, 1), (2, 1), (2, 2), (1, 1)]
+                else:
+                    cand_wings = [(1, 3), (1, 2), (2, 2), (1, 1)]
+            else:
+                cand_wings = [(2, 2), (2, 1), (1, 1)]
+
+            for n_wl, n_wr in cand_wings:
+                cand = self._create_u_building(
+                    px, py, court_angle, middle, corner, end, floors,
+                    num_back, n_wl, n_wr,
+                    cascade_floors=placement_config.cascade_floors,
+                    min_wing_floors=placement_config.min_wing_floors,
+                )
+                if cand and self._fits_in_buildable(cand) and self._check_constraints(cand, buildings, placement_config):
+                    buildings.append(cand)
+                    break
 
         self._fill_remaining_space(
             buildable, buildings, angle, middle, end, floors, placement_config
@@ -451,11 +649,21 @@ class PlacementEngine:
             px = centroid.x + ox * ux[0]
             py = centroid.y + ox * ux[1]
 
-            cand = self._create_l_building(
-                px, py, court_angle, middle, corner, end, floors, num_x, num_y
-            )
-            if cand and self._fits_in_buildable(cand) and self._check_constraints(cand, buildings, placement_config):
-                buildings.append(cand)
+            if placement_config.asymmetric_wings:
+                cand_l = [(num_x, 3), (num_x, 2), (num_x, 1)]
+            else:
+                cand_l = [(num_x, 2), (num_x, 1)]
+
+            for nx, ny in cand_l:
+                cand = self._create_l_building(
+                    px, py, court_angle, middle, corner, end, floors,
+                    num_mid_x=nx, num_mid_y=ny,
+                    cascade_floors=placement_config.cascade_floors,
+                    min_wing_floors=placement_config.min_wing_floors,
+                )
+                if cand and self._fits_in_buildable(cand) and self._check_constraints(cand, buildings, placement_config):
+                    buildings.append(cand)
+                    break
 
         self._fill_remaining_space(
             buildable, buildings, angle, middle, end, floors, placement_config
@@ -502,12 +710,18 @@ class PlacementEngine:
         end: SectionType,
         floors: int,
         num_back: int,
-        num_wing: int,
+        num_wing_left: int = 2,
+        num_wing_right: int = 2,
+        cascade_floors: bool = True,
+        min_wing_floors: int = 8,
     ) -> Building | None:
         """Создать П-образное здание в точке (cx, cy)."""
         try:
             local_secs = self._build_u_shape_local(
-                middle, corner, end, floors, num_back, num_wing
+                middle, corner, end, floors, num_back,
+                num_wing_left, num_wing_right,
+                cascade_floors=cascade_floors,
+                min_wing_floors=min_wing_floors,
             )
             placed_secs = self._transform_sections(local_secs, cx, cy, angle)
             return Building(sections=placed_secs, typology="U_SHAPE")
@@ -525,11 +739,15 @@ class PlacementEngine:
         floors: int,
         num_mid_x: int,
         num_mid_y: int,
+        cascade_floors: bool = True,
+        min_wing_floors: int = 8,
     ) -> Building | None:
         """Создать Г-образное здание в точке (cx, cy)."""
         try:
             local_secs = self._build_l_shape_local(
-                middle, corner, end, floors, num_mid_x, num_mid_y
+                middle, corner, end, floors, num_mid_x, num_mid_y,
+                cascade_floors=cascade_floors,
+                min_wing_floors=min_wing_floors,
             )
             placed_secs = self._transform_sections(local_secs, cx, cy, angle)
             return Building(sections=placed_secs, typology="L_SHAPE")
@@ -561,14 +779,22 @@ class PlacementEngine:
             num_middle = placement_config.max_sections_per_building - 2
 
         midpoint = center_line.interpolate(line_len / 2.0)
-        local_secs = self._build_linear_local(middle, end, floors, num_middle)
+        local_secs = self._build_linear_local(
+            middle, end, floors, num_middle,
+            cascade_floors=placement_config.cascade_floors,
+            min_wing_floors=placement_config.min_wing_floors,
+        )
         placed_secs = self._transform_sections(local_secs, midpoint.x, midpoint.y, angle)
         building = Building(sections=placed_secs, typology="LINEAR")
 
         if not self._fits_in_buildable(building):
             while num_middle > 0:
                 num_middle -= 1
-                local_secs = self._build_linear_local(middle, end, floors, num_middle)
+                local_secs = self._build_linear_local(
+                    middle, end, floors, num_middle,
+                    cascade_floors=placement_config.cascade_floors,
+                    min_wing_floors=placement_config.min_wing_floors,
+                )
                 placed_secs = self._transform_sections(local_secs, midpoint.x, midpoint.y, angle)
                 building = Building(sections=placed_secs, typology="LINEAR")
                 if self._fits_in_buildable(building):

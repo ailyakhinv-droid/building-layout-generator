@@ -212,6 +212,21 @@ max_sections = st.sidebar.slider(
     help="Максимальное количество секций в одном здании",
 )
 
+st.sidebar.subheader("🏙️ Пластика и разноэтажность")
+cascade_floors = st.sidebar.checkbox(
+    "Понижение этажности к югу",
+    value=True,
+    help="Северные секции повышенной этажности, южные крылья каскадно спускаются до 7–9 эт. для инсоляции дворов",
+)
+asymmetric_wings = st.sidebar.checkbox(
+    "Асимметричные крылья",
+    value=True,
+    help="Разная длина крыльев у П- и Г-образных скоб для живой урбанистической композиции",
+)
+min_wing_fl = 8
+if cascade_floors:
+    min_wing_fl = st.sidebar.slider("Этажность южных торцов", 5, 10, 8)
+
 
 # ─── Генерация ───────────────────────────────────────────────────────
 
@@ -234,6 +249,9 @@ if generate_btn:
                 typology=typology_val,
                 courtyard_orientation=court_orient_val,
                 variable_insolation=var_insolation,
+                cascade_floors=cascade_floors,
+                asymmetric_wings=asymmetric_wings,
+                min_wing_floors=min_wing_fl,
             )
 
             if gen_mode == "Заданная этажность":
@@ -323,9 +341,10 @@ if "buildings" in st.session_state:
     apt_data = []
     for i, building in enumerate(buildings):
         apts = building.total_apartments
+        fl_str = f"{building.floors}" if building.min_floors == building.floors else f"{building.min_floors}–{building.floors}"
         apt_data.append({
             "Дом": f"Д{i + 1}",
-            "Этажность": building.floors,
+            "Этажность": fl_str,
             "Секций": len(building.sections),
             "Студии": apts.get("studio", 0),
             "1-комн.": apts.get("1k", 0),
@@ -350,6 +369,9 @@ if "buildings" in st.session_state:
                         typology=typology_val,
                         courtyard_orientation=court_orient_val,
                         variable_insolation=var_insolation,
+                        cascade_floors=cascade_floors,
+                        asymmetric_wings=asymmetric_wings,
+                        min_wing_floors=min_wing_fl,
                         max_sections_per_building=max_sections,
                     )
                 )

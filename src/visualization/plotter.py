@@ -106,6 +106,18 @@ def plot_site_plan(
                 linewidth=1.0,
                 alpha=0.75,
             )
+            # Отметка этажности и кода на каждой секции
+            s_code = getattr(section.section_type, "section_code", "") or section.section_type.name.split()[0]
+            ax.annotate(
+                f"{s_code}\n{section.floors}э",
+                xy=(section.x, section.y),
+                fontsize=6.5,
+                color="#111111",
+                fontweight="bold",
+                ha="center",
+                va="center",
+                zorder=7,
+            )
 
         # Выделяем внутренний двор для П-образных и Г-образных корпусов
         if getattr(building, "typology", "LINEAR") in ("U_SHAPE", "L_SHAPE", "COURTYARD"):
@@ -136,7 +148,7 @@ def plot_site_plan(
             except Exception:
                 pass
 
-        # Подпись здания с указанием типологии
+        # Подпись здания с указанием типологии и диапазона этажей
         if show_labels:
             centroid = building.footprint.centroid
             typo_name = {
@@ -145,7 +157,12 @@ def plot_site_plan(
                 "COURTYARD": "Квартал",
                 "LINEAR": "Линейн."
             }.get(getattr(building, "typology", "LINEAR"), "")
-            label_text = f"Д{i + 1} ({typo_name})\n{building.floors} эт."
+            fl_text = (
+                f"{building.floors} эт."
+                if building.min_floors == building.floors
+                else f"{building.min_floors}–{building.floors} эт."
+            )
+            label_text = f"Д{i + 1} ({typo_name})\n{fl_text}"
             ax.annotate(
                 label_text,
                 xy=(centroid.x, centroid.y),
@@ -154,7 +171,7 @@ def plot_site_plan(
                 ha="center",
                 va="center",
                 color="white",
-                bbox=dict(boxstyle="round,pad=0.3", facecolor="#333333", alpha=0.8),
+                bbox=dict(boxstyle="round,pad=0.3", facecolor="#333333", alpha=0.85),
                 zorder=10,
             )
 
