@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -37,10 +38,20 @@ from src.core.cadastre import (
     create_site_from_cadastre,
     validate_cadastral_number,
     parse_cadastral_components,
+    resolve_cadastral_location,
+)
+from src.core.geo_utils import (
+    CITY_PRESETS,
+    MSK_PRESETS,
+    msk_to_wgs84_coords,
+    detect_msk_by_coordinates,
+    get_msk_key_for_region,
+    geocode_address,
 )
 from src.visualization.map_view import generate_leaflet_map_html
 from src.visualization.viewer_3d import generate_3d_viewer_html
 from src.export.html_3d_export import export_3d_html
+from src.export.dxf_export import export_dxf
 
 
 # ─── Настройка страницы ──────────────────────────────────────────────
@@ -84,49 +95,118 @@ st.sidebar.header("📐 Параметры участка")
 
 site_mode = st.sidebar.radio(
     "Способ задания участка",
-    ["Кадастровый номер (OSM подложка)", "Прямоугольник", "Координаты", "Загрузка CAD (DWG / DXF)"],
-    help="Выберите способ задания границ участка: по кадастровому номеру РФ с подложкой OpenStreetMap, типовой прямоугольник, координаты вершин или импорт из CAD чертежа",
+    [
+        "1. По кадастровому номеру (с ручным поворотом)",
+        "2. По чертежу DWG / DXF (с присвоением номера)",
+    ],
+    help="Выберите способ: по кадастровому номеру любого региона РФ или по файлу чертежа с привязкой к кадастровому номеру",
 )
 
-if site_mode == "Кадастровый номер (OSM подложка)":
-    # 1. Поле прямого ввода кадастрового номера
-    entered_cad = st.sidebar.text_input(
-        "Кадастровый номер участка (РФ)",
-        value=st.session_state.get("last_cadastral", "50:27:0010101:500"),
-        help="Введите кадастровый номер любого региона РФ (например, 50:27:..., 78:34:..., 23:43:..., 66:41:..., 16:50:...). Регион и город определятся автоматически.",
-    )
-    st.session_state["last_cadastral"] = entered_cad.strip()
-
+if site_mode == "1. По кадастровому номеру (с ручным поворотом)":
     # Быстрые пресеты по городам РФ для тестирования
     cad_quick_samples = {
-        "(свой номер выше)": "",
-        "50:27:0010101:500 (МО, Подольск — 3.3 га)": "50:27:0010101:500",
-        "50:04:0010101:300 (МО, Дмитров — 3.2 га)": "50:04:0010101:300",
+        "63:01:0709002:2320 (Самара, пос. Зубчаниновка — 4.2 га)": "63:01:0709002:2320",
+        "63:01:0603003:54 (Самара, Промышленный — 3.5 га)": "63:01:0603003:54",
+        "72:23:0216002:123 (Тюмень, Алебашево / Заречный — 3.3 га)": "72:23:0216002:123",
+        "72:17:1707001:500 (Тюмень, д. Патрушева — 3.3 га)": "72:17:1707001:500",
+        "72:17:0000000:100 (Тюмень, Московский тракт — 3.2 га)": "72:17:0000000:100",
+        "22:63:010101:200 (Барнаул / Алтайский край — 3.2 га)": "22:63:010101:200",
         "77:17:0120316:1024 (Москва, Коммунарка — 3.6 га)": "77:17:0120316:1024",
-        "78:34:0004286:115 (СПб, Приморский — 3.4 га)": "78:34:0004286:115",
+        "78:34:0004286:115 (Санкт-Петербург, Приморский — 3.4 га)": "78:34:0004286:115",
+        "50:27:0010101:500 (Московская обл., Подольск — 3.3 га)": "50:27:0010101:500",
         "23:43:0106012:450 (Краснодар, Зап. обход — 4.3 га)": "23:43:0106012:450",
         "66:41:0101001:500 (Екатеринбург, Академический)": "66:41:0101001:500",
         "16:50:010101:200 (Казань, Ново-Савиновский)": "16:50:010101:200",
-        "54:35:010101:300 (Новосибирск)": "54:35:010101:300",
-        "52:18:0010101:400 (Нижний Новгород)": "52:18:0010101:400",
-        "42:24:010101:500 (Кемерово / Кузбасс)": "42:24:010101:500",
-        "74:36:010101:200 (Челябинск)": "74:36:010101:200",
+        "(ввести свой номер вручную)": "",
     }
-    sel_sample = st.sidebar.selectbox(
-        "Или выберите пример из каталога",
-        list(cad_quick_samples.keys()),
-        index=0,
-        help="Выберите пример, чтобы автоматически подставить его кадастровый номер",
-    )
-    if sel_sample != "(свой номер выше)":
-        sample_code = cad_quick_samples[sel_sample]
-        if sample_code != entered_cad:
-            entered_cad = sample_code
-            st.session_state["last_cadastral"] = sample_code
-            st.rerun()
 
-    # Опциональная настройка параметров и координат
-    with st.sidebar.expander("📍 Настройка координат и площади", expanded=False):
+    if "cad_input_str" not in st.session_state:
+        st.session_state["cad_input_str"] = "63:01:0709002:2320"
+
+    def _on_cad_sample_select():
+        sel = st.session_state.get("cad_sample_selector")
+        if sel and sel in cad_quick_samples and cad_quick_samples[sel]:
+            st.session_state["cad_input_str"] = cad_quick_samples[sel]
+
+    sample_list = list(cad_quick_samples.keys())
+    curr_input = st.session_state.get("cad_input_str", "63:01:0709002:2320")
+    matching_idx = 0
+    for idx, name in enumerate(sample_list):
+        if cad_quick_samples[name] == curr_input:
+            matching_idx = idx
+            break
+
+    st.sidebar.selectbox(
+        "Примеры участков из каталога",
+        sample_list,
+        index=matching_idx,
+        key="cad_sample_selector",
+        on_change=_on_cad_sample_select,
+        help="Выберите пример участка для быстрой загрузки",
+    )
+
+    entered_cad = st.sidebar.text_input(
+        "Кадастровый номер участка (РФ)",
+        key="cad_input_str",
+        help="Введите кадастровый номер любого региона РФ (например, 63:01:0709002:2320, 72:23:0216002:123, 22:63:...)",
+    )
+
+    # ─── Умный геокодинг адреса через ArcGIS API (из geocode.ipynb) ──
+    col_s_m1_inp, col_s_m1_btn = st.sidebar.columns([3, 1])
+    m1_search_query = col_s_m1_inp.text_input(
+        "🔍 Найти адрес / место (ArcGIS)",
+        placeholder="Тюмень, Алебашево",
+        key="m1_addr_search_input",
+        help="Поиск географических координат через ArcGIS API (из блокнота geocode.ipynb)",
+    )
+    if col_s_m1_btn.button("Найти", key="btn_m1_search"):
+        if m1_search_query.strip():
+            with st.spinner("Поиск координат..."):
+                found_geo = geocode_address(m1_search_query.strip())
+                if found_geo:
+                    st.session_state["m1_lat"] = found_geo[0]
+                    st.session_state["m1_lon"] = found_geo[1]
+                    st.session_state["m1_addr_found"] = found_geo[2]
+                else:
+                    st.sidebar.warning("Адрес не найден. Уточните запрос.")
+
+    if "m1_addr_found" in st.session_state and st.session_state["m1_addr_found"]:
+        st.sidebar.caption(f"✓ {st.session_state['m1_addr_found']}")
+
+    # Автоматическое определение по кадастровому номеру
+    c_reg, c_dist, c_norm, def_lat, def_lon = resolve_cadastral_location(entered_cad.strip() or "63:01:0709002:2320")
+
+    # Сброс координат при смене кадастрового номера, если не искали адрес вручную
+    if "last_entered_cad" not in st.session_state or st.session_state["last_entered_cad"] != entered_cad:
+        st.session_state["last_entered_cad"] = entered_cad
+        st.session_state["m1_lat"] = def_lat
+        st.session_state["m1_lon"] = def_lon
+        st.session_state.pop("m1_addr_found", None)
+
+    col_m1_lat, col_m1_lon = st.sidebar.columns(2)
+    use_lat = col_m1_lat.number_input(
+        "Широта (Lat)",
+        value=float(st.session_state.get("m1_lat", def_lat)),
+        format="%.5f",
+        step=0.0001,
+        key="m1_lat_num_input",
+    )
+    use_lon = col_m1_lon.number_input(
+        "Долгота (Lon)",
+        value=float(st.session_state.get("m1_lon", def_lon)),
+        format="%.5f",
+        step=0.0001,
+        key="m1_lon_num_input",
+    )
+    st.session_state["m1_lat"] = use_lat
+    st.session_state["m1_lon"] = use_lon
+
+    st.sidebar.markdown(
+        f"[🌐 Проверить на Яндекс.Картах ↗](https://yandex.ru/maps/?pt={use_lon:.6f},{use_lat:.6f}&z=16&l=map)"
+    )
+
+    # Опциональная настройка параметров и чертежа
+    with st.sidebar.expander("⚙️ Параметры контура и геометрии", expanded=False):
         custom_area = st.number_input(
             "Площадь участка, м²",
             min_value=5000,
@@ -135,52 +215,24 @@ if site_mode == "Кадастровый номер (OSM подложка)":
             step=1000,
             help="Используется для расчёта формы, если введён произвольный номер",
         )
-        col_lat, col_lon = st.columns(2)
-        override_lat = col_lat.number_input(
-            "Широта (Lat)", value=0.0, format="%.5f", help="Оставьте 0.0 для автоопределения по кадастровому номеру"
-        )
-        override_lon = col_lon.number_input(
-            "Долгота (Lon)", value=0.0, format="%.5f", help="Оставьте 0.0 для автоопределения по кадастровому номеру"
-        )
-        ov_lat = override_lat if override_lat != 0.0 else None
-        ov_lon = override_lon if override_lon != 0.0 else None
-
         enable_red_line = st.checkbox(
             "Добавить красную линию (отступ УДС)",
             value=False,
-            help="По умолчанию выключено. Включает градостроительную красную линию вдоль южной границы участка.",
+            help="По умолчанию выключено. Включает красную линию вдоль южной границы участка.",
         )
-
-        egrn_coords_raw = st.text_area(
-            "Координаты из выписки ЕГРН (WGS-84: lon, lat)",
-            placeholder="37.5458, 55.4312\n37.5490, 55.4312\n37.5490, 55.4330\n...",
-            help="Вставьте координаты вершин участка в формате долгота, широта, если у вас есть официальная выписка ЕГРН",
-        )
-        custom_wgs = None
-        if egrn_coords_raw.strip():
-            custom_wgs = []
-            for line in egrn_coords_raw.strip().split("\n"):
-                parts = line.strip().replace(";", ",").split(",")
-                if len(parts) >= 2:
-                    try:
-                        custom_wgs.append((float(parts[0].strip()), float(parts[1].strip())))
-                    except ValueError:
-                        pass
-
         cad_override_file = st.file_uploader(
-            "📎 Прикрепить чертёж (.dxf, .dwg) — опционально",
+            "📎 Прикрепить контур из чертежа (.dxf, .dwg) — опционально",
             type=["dxf", "dwg"],
             key="cad_sub_uploader",
-            help="Если прикрепить чертёж, генератор возьмет точную геометрию контура и красных линий из CAD, посадив её на координаты кадастрового номера",
+            help="Заменяет синтетический контур точной геометрией из чертежа, сохраняя привязку к кадастровому номеру",
         )
 
     try:
         parcel_info = get_cadastral_parcel(
             entered_cad,
             custom_area_sqm=custom_area,
-            custom_wgs84_coords=custom_wgs,
-            override_lat=ov_lat,
-            override_lon=ov_lon,
+            override_lat=use_lat,
+            override_lon=use_lon,
             add_red_line=enable_red_line,
         )
         site = create_site_from_cadastre(parcel_info)
@@ -194,9 +246,13 @@ if site_mode == "Кадастровый номер (OSM подложка)":
                     normalize_origin=True,
                 )
                 site.boundary = sub_site.boundary
+                site.base_offset = sub_site.base_offset
                 if sub_site.red_lines:
                     site.red_lines = sub_site.red_lines
-                st.sidebar.caption(f"📐 Геометрия взята из `{cad_override_file.name}` ({site.area:,.0f} м²)")
+                st.sidebar.caption(f"📐 Геометрия контура взята из чертежа `{cad_override_file.name}` ({site.area:,.0f} м²)")
+            except DWGConversionError as e:
+                st.sidebar.warning(str(e))
+                st.sidebar.info("💡 Решение: в AutoCAD / nanoCAD сохраните чертёж как DXF (команда `DXFOUT`) и прикрепите файл .dxf.")
             except Exception as e:
                 st.sidebar.warning(f"Не удалось применить геометрию из CAD: {e}")
 
@@ -206,71 +262,104 @@ if site_mode == "Кадастровый номер (OSM подложка)":
             f"✓ **{parcel_info.region_name}**\n\n*{parcel_info.district_name}*: {site.area:,.0f} м² ({site.area / 10000.0:.2f} га)"
         )
         st.sidebar.caption(f"📍 {parcel_info.address}")
-        st.sidebar.caption(f"🌐 Центр WGS-84: `{parcel_info.center_lat:.5f}, {parcel_info.center_lon:.5f}`")
+        if site.geo_center:
+            st.sidebar.caption(f"🌐 Центр WGS-84: `{site.geo_center[0]:.5f}, {site.geo_center[1]:.5f}`")
         if site.red_lines:
             st.sidebar.caption(f"⛔ Красная линия УДС активна ({len(site.red_lines)} шт.)")
 
     except Exception as e:
         st.sidebar.error(f"Ошибка получения участка: {e}")
-        site = create_rectangular_site(200, 150, geo_center=(59.934280, 30.335099))
+        site = create_rectangular_site(200, 150, geo_center=(use_lat, use_lon))
+        site.address = f"{c_reg}, {c_dist} (демо-участок)"
+        st.session_state["cadastral_norm_id"] = "russia_sp42"
 
-elif site_mode == "Прямоугольник":
-    col1, col2 = st.sidebar.columns(2)
-    site_width = col1.number_input("Ширина, м", 50, 1000, 200, step=10)
-    site_height = col2.number_input("Высота, м", 50, 1000, 150, step=10)
-    site = create_rectangular_site(site_width, site_height, geo_center=(59.934280, 30.335099))
-
-elif site_mode == "Координаты":
-    coords_text = st.sidebar.text_area(
-        "Координаты вершин (WGS-84 или метры)",
-        value="0, 0\n200, 0\n200, 150\n0, 150",
-        height=140,
-        help="Поддерживаются:\n• Географические координаты WGS-84 (широта, долгота или наоборот), например: 59.9342, 30.3350;\n• Локальные метры: x, y (0, 0 / 200, 0...).",
-    )
-
-    with st.sidebar.expander("📍 Город / привязка (для метрических координат)", expanded=False):
-        coord_city_presets = {
-            "Санкт-Петербург / ЛО": (59.934280, 30.335099),
-            "Москва": (55.751244, 37.618423),
-            "Московская область (Подольск)": (55.431200, 37.545800),
-            "Екатеринбург": (56.838926, 60.605703),
-            "Казань": (55.788740, 49.122140),
-            "Краснодар": (45.071200, 38.912500),
-            "Новосибирск": (55.008353, 82.935733),
-            "Нижний Новгород": (56.296504, 43.936059),
-        }
-        sel_coord_city = st.selectbox(
-            "Город посадки на карту",
-            list(coord_city_presets.keys()),
-            index=0,
-            help="Если введены метры, участок привяжется к выбранному городу. При вводе градусов WGS-84 координаты определятся автоматически.",
-        )
-        coord_geo_center = coord_city_presets[sel_coord_city]
-
-    try:
-        coords = []
-        for line in coords_text.strip().split("\n"):
-            clean_line = line.strip().replace(";", ",")
-            if not clean_line:
-                continue
-            parts = [p.strip() for p in clean_line.split(",") if p.strip()]
-            if len(parts) >= 2:
-                coords.append((float(parts[0]), float(parts[1])))
-        site = parse_coordinates(coords, geo_center=coord_geo_center)
-        if site.geo_center and site.address and "WGS-84" in site.address:
-            st.sidebar.success(f"✓ Распознаны WGS-84: `[{site.geo_center[0]:.5f}, {site.geo_center[1]:.5f}]`")
-            st.sidebar.caption(f"📐 Вычисленная площадь: {site.area:,.0f} м² ({site.area / 10000.0:.2f} га)")
-        elif site.geo_center:
-            st.sidebar.caption(f"📍 Метрические координаты привязаны к: **{sel_coord_city}**")
-    except Exception as e:
-        st.sidebar.error(f"Ошибка разбора координат: {e}")
-        st.stop()
 else:
+    # ─── 2. По чертежу DWG / DXF (с присвоением номера) ─────────────────
     cad_file = st.sidebar.file_uploader(
-        "Чертеж границы (.dxf, .dwg)",
+        "Загрузите чертёж границы (.dxf, .dwg)",
         type=["dxf", "dwg"],
-        help="Загрузите чертеж генплана с контуром участка. DXF читается нативно, DWG конвертируется через ODA.",
+        help="Загрузите чертёж генплана с контуром участка. DXF читается нативно, DWG конвертируется через ODA.",
     )
+
+    dwg_quick_regions = {
+        "Самара, пос. Зубчаниновка (63:01:0709002:2320)": "63:01:0709002:2320",
+        "Тюмень, Алебашево / Заречный (72:23:0216002:123)": "72:23:0216002:123",
+        "Тюмень, д. Патрушева (72:17:1707001:500)": "72:17:1707001:500",
+        "Тюмень, Московский тракт (72:17:0000000:100)": "72:17:0000000:100",
+        "Барнаул / Алтайский край (22:63:010101:200)": "22:63:010101:200",
+        "Москва, Коммунарка (77:17:0120316:1024)": "77:17:0120316:1024",
+        "Санкт-Петербург, Приморский (78:34:0004286:115)": "78:34:0004286:115",
+        "Московская обл., Подольск (50:27:0010101:500)": "50:27:0010101:500",
+        "Краснодар, Зап. обход (23:43:0106012:450)": "23:43:0106012:450",
+        "Екатеринбург, Академический (66:41:0101001:500)": "66:41:0101001:500",
+        "Казань, Ново-Савиновский (16:50:010101:200)": "16:50:010101:200",
+        "(ввести свой номер вручную)": "",
+    }
+
+    if "assigned_cad_number" not in st.session_state:
+        st.session_state["assigned_cad_number"] = "63:01:0709002:2320"
+
+    def _on_dwg_region_change():
+        sel_r = st.session_state.get("dwg_region_selector")
+        if sel_r and sel_r in dwg_quick_regions and dwg_quick_regions[sel_r]:
+            st.session_state["assigned_cad_number"] = dwg_quick_regions[sel_r]
+
+    curr_dwg_cad = st.session_state.get("assigned_cad_number", "63:01:0709002:2320")
+    matched_dwg_idx = 0
+    for idx, k in enumerate(dwg_quick_regions.keys()):
+        if dwg_quick_regions[k] == curr_dwg_cad:
+            matched_dwg_idx = idx
+            break
+
+    st.sidebar.selectbox(
+        "Быстрый выбор региона привязки чертежа",
+        list(dwg_quick_regions.keys()),
+        index=matched_dwg_idx,
+        key="dwg_region_selector",
+        on_change=_on_dwg_region_change,
+        help="Выберите регион для быстрой подстановки кадастрового номера",
+    )
+
+    assigned_cad = st.sidebar.text_input(
+        "Присвоить кадастровый номер чертежу",
+        key="assigned_cad_number",
+        help="Укажите кадастровый номер для точного определения региона, нормативов застройки и точки посадки на карту",
+    )
+
+    clean_assigned = assigned_cad.strip() or "63:01:0709002:2320"
+    reg_name, dist_name, norm_id, c_lat, c_lon = resolve_cadastral_location(clean_assigned)
+    st.session_state["cadastral_norm_id"] = norm_id
+
+    # ─── Поиск адреса через ArcGIS API (из geocode.ipynb) ───────────
+    st.sidebar.markdown("##### 📍 Привязка участка к карте OpenStreetMap")
+    col_s2_inp, col_s2_btn = st.sidebar.columns([3, 1])
+    dwg_addr_query = col_s2_inp.text_input(
+        "🔍 Найти адрес / место (ArcGIS)",
+        placeholder="Тюмень, Алебашево",
+        key="dwg_search_query_input",
+        help="Геокодирование через ArcGIS (из блокнота geocode.ipynb) без API-ключей",
+    )
+    if col_s2_btn.button("Найти", key="btn_dwg_addr_search"):
+        if dwg_addr_query.strip():
+            with st.spinner("Поиск координат..."):
+                found_g = geocode_address(dwg_addr_query.strip())
+                if found_g:
+                    st.session_state["dwg_manual_lat"] = found_g[0]
+                    st.session_state["dwg_manual_lon"] = found_g[1]
+                    st.session_state["dwg_addr_msg"] = f"✓ {found_g[2]}"
+                else:
+                    st.sidebar.warning("Адрес не найден. Уточните запрос.")
+
+    if "dwg_addr_msg" in st.session_state and st.session_state["dwg_addr_msg"]:
+        st.sidebar.caption(st.session_state["dwg_addr_msg"])
+
+    # Сброс координат при смене кадастрового номера, если не искали адрес вручную
+    if "last_assigned_cad" not in st.session_state or st.session_state["last_assigned_cad"] != clean_assigned:
+        st.session_state["last_assigned_cad"] = clean_assigned
+        st.session_state["dwg_manual_lat"] = c_lat
+        st.session_state["dwg_manual_lon"] = c_lon
+        st.session_state.pop("dwg_addr_msg", None)
+
     if cad_file is not None:
         try:
             file_bytes = cad_file.getvalue()
@@ -310,34 +399,91 @@ else:
                 normalize_origin=True,
             )
 
+            comps = parse_cadastral_components(clean_assigned)
+            site.cadastral_number = comps["formatted"] if comps else clean_assigned
+            site.address = f"{reg_name}, {dist_name} (чертёж: {cad_file.name})"
+
             st.sidebar.success(
-                f"✓ Участок: {site.area:,.0f} м² ({cad_meta['vertices_count']} вершин)"
+                f"✓ Контур участка: {site.area:,.0f} м² ({cad_meta['vertices_count']} вершин)"
             )
-            if site.base_offset != (0.0, 0.0):
-                st.sidebar.caption(f"📍 МСК привязка: ({site.base_offset[0]:,.0f}, {site.base_offset[1]:,.0f})")
             if cad_meta["red_lines_count"] > 0:
                 st.sidebar.caption(f"⛔ Красных линий: {cad_meta['red_lines_count']} шт.")
 
-            # Опциональная посадка CAD-чертежа на карту OSM по кадастровому номеру
-            cad_geocode_num = st.sidebar.text_input(
-                "Кадастровый номер для посадки на карту OSM (опционально)",
-                value=st.session_state.get("cad_osm_number", ""),
-                placeholder="Например: 50:27:0010101:500 или 78:34:...",
-                help="Укажите кадастровый номер, чтобы точно посадить CAD-чертёж на векторную карту OpenStreetMap и автоматически применить региональные нормативы (РНГП/МНГП)",
+            # Геопривязка контура чертежа
+            is_msk = abs(site.base_offset[0]) > 500 or abs(site.base_offset[1]) > 500
+
+            cad_lat, cad_lon = None, None
+            detected_msk = None
+            if is_msk:
+                reg_code = comps["region_code"] if comps else "63"
+                detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
+                if not detected_msk:
+                    detected_msk = detect_msk_by_coordinates(site.base_offset[0], site.base_offset[1])
+                if not detected_msk:
+                    detected_msk = "МСК-72 Зона 1 (Тюмень)" if reg_code == "72" else ("МСК-63 Зона 1 (Самара)" if reg_code == "63" else "МСК-77 (Москва)")
+
+                target_center = (c_lat, c_lon)
+                cad_lat, cad_lon = msk_to_wgs84_coords(
+                    site.base_offset[0],
+                    site.base_offset[1],
+                    detected_msk,
+                    axis_order="auto",
+                    expected_center=target_center,
+                )
+                st.sidebar.markdown(
+                    f"**🛰️ Координаты в чертеже:** X=`{site.base_offset[0]:,.1f}` м, Y=`{site.base_offset[1]:,.1f}` м\n"
+                    f"• Система: **{detected_msk}** → `[{cad_lat:.5f}, {cad_lon:.5f}]`"
+                )
+            else:
+                st.sidebar.info("ℹ️ Чертёж в локальных координатах (0, 0). Контур привязывается по адресу или координатам ниже.")
+
+            # Выбор источника посадки
+            if is_msk and cad_lat and cad_lon:
+                landing_choice = st.sidebar.radio(
+                    "Способ посадки на карту:",
+                    [
+                        f"🛰️ По координатам чертежа МСК [{cad_lat:.5f}, {cad_lon:.5f}]",
+                        f"📍 По кадастровому номеру / адресу [{c_lat:.5f}, {c_lon:.5f}]",
+                        "✏️ Задать координаты вручную",
+                    ],
+                    index=0,
+                    key="dwg_landing_choice_radio",
+                )
+                if "🛰️ По координатам чертежа" in landing_choice:
+                    active_default_lat, active_default_lon = cad_lat, cad_lon
+                elif "📍 По кадастровому номеру" in landing_choice:
+                    active_default_lat = st.session_state.get("dwg_manual_lat", c_lat)
+                    active_default_lon = st.session_state.get("dwg_manual_lon", c_lon)
+                else:
+                    active_default_lat = st.session_state.get("dwg_manual_lat", cad_lat)
+                    active_default_lon = st.session_state.get("dwg_manual_lon", cad_lon)
+            else:
+                active_default_lat = st.session_state.get("dwg_manual_lat", c_lat)
+                active_default_lon = st.session_state.get("dwg_manual_lon", c_lon)
+
+            col_dwg_lat, col_dwg_lon = st.sidebar.columns(2)
+            final_lat = col_dwg_lat.number_input(
+                "Широта (Lat)",
+                value=float(active_default_lat),
+                format="%.5f",
+                step=0.0001,
+                key="dwg_final_lat_input",
             )
-            st.session_state["cad_osm_number"] = cad_geocode_num.strip()
+            final_lon = col_dwg_lon.number_input(
+                "Долгота (Lon)",
+                value=float(active_default_lon),
+                format="%.5f",
+                step=0.0001,
+                key="dwg_final_lon_input",
+            )
+            st.session_state["dwg_manual_lat"] = final_lat
+            st.session_state["dwg_manual_lon"] = final_lon
 
-            if cad_geocode_num.strip():
-                from src.core.cadastre import resolve_cadastral_location, parse_cadastral_components
-                reg_name, dist_name, norm_id, c_lat, c_lon = resolve_cadastral_location(cad_geocode_num.strip())
-                comps = parse_cadastral_components(cad_geocode_num.strip())
-
-                site.geo_center = (c_lat, c_lon)
-                site.cadastral_number = comps["formatted"] if comps else cad_geocode_num.strip()
-                site.address = f"{reg_name}, {dist_name} (импорт из {cad_file.name})"
-                st.session_state["cadastral_norm_id"] = norm_id
-
-                st.sidebar.caption(f"🌐 Геопривязка OSM: **{reg_name} ({dist_name})** `[{c_lat:.4f}, {c_lon:.4f}]`")
+            site.geo_center = (final_lat, final_lon)
+            st.sidebar.markdown(
+                f"[🌐 Проверить на Яндекс.Картах ↗](https://yandex.ru/maps/?pt={final_lon:.6f},{final_lat:.6f}&z=16&l=map)"
+            )
+            st.sidebar.caption(f"🏛️ Применены нормативы: **{reg_name}** ({dist_name})")
 
         except DWGConversionError as e:
             st.sidebar.warning(str(e))
@@ -347,10 +493,35 @@ else:
             st.sidebar.error(f"Ошибка обработки CAD файла: {e}")
             st.stop()
     else:
-        st.sidebar.info("Загрузите чертеж границы участка (.dxf или .dwg).")
+        st.sidebar.info("Загрузите чертёж границы участка (.dxf или .dwg).")
         st.sidebar.caption("💡 Совет: команда `DXFOUT` в AutoCAD или «Сохранить как → DXF».")
-        # Тестовый полигон по умолчанию пока файл не выбран
-        site = create_rectangular_site(200, 150)
+        active_demo_lat = st.session_state.get("dwg_manual_lat", c_lat)
+        active_demo_lon = st.session_state.get("dwg_manual_lon", c_lon)
+
+        col_d_lat, col_d_lon = st.sidebar.columns(2)
+        demo_lat = col_d_lat.number_input(
+            "Широта (Lat)",
+            value=float(active_demo_lat),
+            format="%.5f",
+            step=0.0001,
+            key="demo_lat_input",
+        )
+        demo_lon = col_d_lon.number_input(
+            "Долгота (Lon)",
+            value=float(active_demo_lon),
+            format="%.5f",
+            step=0.0001,
+            key="demo_lon_input",
+        )
+        st.session_state["dwg_manual_lat"] = demo_lat
+        st.session_state["dwg_manual_lon"] = demo_lon
+
+        site = create_rectangular_site(200, 150, geo_center=(demo_lat, demo_lon))
+        site.address = f"{reg_name}, {dist_name} (демо-участок)"
+        st.sidebar.markdown(
+            f"[🌐 Проверить на Яндекс.Картах ↗](https://yandex.ru/maps/?pt={demo_lon:.6f},{demo_lat:.6f}&z=16&l=map)"
+        )
+        st.sidebar.caption(f"📍 Демо-контур привязан к: **{reg_name} ({dist_name})** `[{demo_lat:.5f}, {demo_lon:.5f}]`")
 
 st.sidebar.markdown(f"**Площадь участка:** {site.area:,.0f} м²")
 
@@ -369,18 +540,22 @@ cardinal_presets = {
     "Юго-Запад (-45°)": -45,
 }
 
-sel_cardinal = st.sidebar.selectbox(
+if "site_rotation" not in st.session_state:
+    st.session_state["site_rotation"] = 0
+
+def _on_cardinal_select():
+    sel = st.session_state.get("sel_cardinal_widget")
+    if sel and sel in cardinal_presets and cardinal_presets[sel] is not None:
+        st.session_state["site_rotation"] = cardinal_presets[sel]
+
+st.sidebar.selectbox(
     "Назначить ориентацию фасада / улицы",
     list(cardinal_presets.keys()),
     index=0,
+    key="sel_cardinal_widget",
+    on_change=_on_cardinal_select,
     help="Быстро назначить ориентацию главного фасада участка по сторонам света (истинному северу)",
 )
-
-if sel_cardinal != "(произвольный угол)" and cardinal_presets[sel_cardinal] is not None:
-    preset_angle = cardinal_presets[sel_cardinal]
-    if st.session_state.get("site_rotation", 0) != preset_angle:
-        st.session_state["site_rotation"] = preset_angle
-        st.rerun()
 
 rot_btn1, rot_btn2, rot_btn3, rot_btn4 = st.sidebar.columns(4)
 current_rot = int(st.session_state.get("site_rotation", 0))
@@ -406,7 +581,7 @@ site_rot_val = col_rot_s.slider(
     "Точный угол к северу, °",
     min_value=-180,
     max_value=180,
-    value=current_rot,
+    value=int(st.session_state.get("site_rotation", 0)),
     step=1,
     help="Поверните участок, чтобы состыковать его границу с направлением улиц, дорог и кварталов на карте OSM",
 )
@@ -939,9 +1114,29 @@ if "buildings" in st.session_state:
 
     # Экспорт
     st.subheader("📥 Экспорт")
-    col_exp1, col_exp2, col_exp3 = st.columns(3)
+    col_exp1, col_exp2, col_exp3, col_exp4 = st.columns(4)
 
     with col_exp1:
+        if st.button("📐 Скачать DXF (AutoCAD)", use_container_width=True):
+            export_path_dxf = PROJECT_ROOT / "output" / "plan_cad.dxf"
+            export_dxf(
+                site=site,
+                buildings=buildings,
+                tep=tep,
+                filepath=export_path_dxf,
+                restore_cad_coords=True,
+            )
+            st.success(f"Сохранено: {export_path_dxf.name}")
+            with open(export_path_dxf, "rb") as f_dxf:
+                st.download_button(
+                    label="⬇️ Загрузить DXF",
+                    data=f_dxf,
+                    file_name="plan_cad.dxf",
+                    mime="application/dxf",
+                    use_container_width=True,
+                )
+
+    with col_exp2:
         if st.button("🏙️ Скачать 3D-модель (HTML)", use_container_width=True):
             export_path_3d = PROJECT_ROOT / "output" / "plan_3d.html"
             export_3d_html(
@@ -962,10 +1157,10 @@ if "buildings" in st.session_state:
                     use_container_width=True,
                 )
 
-    with col_exp2:
+    with col_exp3:
         if st.button("💾 Скачать GeoJSON", use_container_width=True):
             export_path = PROJECT_ROOT / "output" / "plan.geojson"
-            export_geojson(site, buildings, tep, export_path)
+            export_geojson(site, buildings, tep, export_path, as_wgs84=True)
             st.success(f"Сохранено: {export_path.name}")
             with open(export_path, "rb") as f_geo:
                 st.download_button(
@@ -976,7 +1171,7 @@ if "buildings" in st.session_state:
                     use_container_width=True,
                 )
 
-    with col_exp3:
+    with col_exp4:
         if st.button("📄 Скачать отчёт", use_container_width=True):
             report_path = PROJECT_ROOT / "output" / "report.txt"
             report_text = generate_report(

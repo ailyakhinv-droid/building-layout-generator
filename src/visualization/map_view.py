@@ -41,6 +41,7 @@ def generate_leaflet_map_html(
     buildings: list[Building] | None = None,
     tep: TEP | None = None,
     height: int = 580,
+    fallback_center: tuple[float, float] | None = None,
 ) -> str:
     """Сгенерировать HTML-код интерактивной карты Leaflet с подложкой OpenStreetMap.
 
@@ -49,14 +50,18 @@ def generate_leaflet_map_html(
         buildings: Список размещенных зданий (опционально).
         tep: Сводные ТЭП участка (опционально).
         height: Высота блока карты в пикселях.
+        fallback_center: Резервный центр (lat, lon), если geo_center не задан.
 
     Returns:
         HTML строка для рендеринга через st.components.v1.html.
     """
     if site.geo_center:
         center_lat, center_lon = site.geo_center
+    elif fallback_center:
+        center_lat, center_lon = fallback_center
     else:
-        center_lat, center_lon = 59.934280, 30.335099
+        # Универсальный географический центр (Москва) вместо жесткой привязки к СПб
+        center_lat, center_lon = 55.751244, 37.618423
 
     # 1. Формируем GeoJSON границы участка
     boundary_wgs = transform_geometry_to_wgs84(site.boundary, center_lat, center_lon)

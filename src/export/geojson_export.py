@@ -22,6 +22,7 @@ def export_geojson(
     buildings: list[Building],
     tep: TEP,
     filepath: str | Path,
+    as_wgs84: bool = True,
 ) -> None:
     """Экспортировать план застройки в GeoJSON.
 
@@ -30,36 +31,63 @@ def export_geojson(
         buildings: Размещённые здания.
         tep: Рассчитанные ТЭП.
         filepath: Путь для сохранения файла.
+        as_wgs84: Перевести ли координаты в географические WGS-84 (lon, lat)
+                 для совместимости с QGIS / Kepler.gl / картографическими сервисами.
     """
+    from src.core.geo_utils import transform_geometry_to_wgs84
+
+    use_wgs = as_wgs84 and (site.geo_center is not None)
+    c_lat, c_lon = site.geo_center if use_wgs else (0.0, 0.0)
+
+    def _geom_to_map(geom):
+        if use_wgs:
+            return mapping(transform_geometry_to_wgs84(geom, c_lat, c_lon))
+        return mapping(geom)
+
     features = []
 
     # Участок
     features.append({
         "type": "Feature",
-        "geometry": mapping(site.boundary),
+        "geometry": _geom_to_map(site.boundary),
         "properties": {
             "type": "site_boundary",
+            "cadastral_number": site.cadastral_number or "Не указан",
+            "address": site.address or "—",
             "area": round(site.area, 1),
+            "area_ha": round(site.area / 10000.0, 2),
         },
     })
 
     # Зона застройки
-    if site.buildable_area is not None:
+    if site.buildable_area is not None and not site.buildable_area.is_empty:
         features.append({
             "type": "Feature",
-            "geometry": mapping(site.buildable_area),
+            "geometry": _geom_to_map(site.buildable_area),
             "properties": {
                 "type": "buildable_area",
                 "area": round(site.buildable_area.area, 1),
             },
         })
 
+    # Красные линии
+    for idx, rl in enumerate(site.red_lines):
+        if not rl.is_empty:
+            features.append({
+                "type": "Feature",
+                "geometry": _geom_to_map(rl),
+                "properties": {
+                    "type": "red_line",
+                    "id": idx + 1,
+                },
+            })
+
     # Здания
     for i, building in enumerate(buildings):
         # Целое здание
         features.append({
             "type": "Feature",
-            "geometry": mapping(building.footprint),
+            "geometry": _geom_to_map(building.footprint),
             "properties": {
                 "type": "building",
                 "building_id": i + 1,
@@ -76,7 +104,7 @@ def export_geojson(
         for j, section in enumerate(building.sections):
             features.append({
                 "type": "Feature",
-                "geometry": mapping(section.footprint),
+                "geometry": _geom_to_map(section.footprint),
                 "properties": {
                     "type": "section",
                     "building_id": i + 1,
@@ -92,7 +120,7 @@ def export_geojson(
     centroid = site.boundary.centroid
     features.append({
         "type": "Feature",
-        "geometry": mapping(centroid),
+        "geometry": _geom_to_map(centroid),
         "properties": {
             "type": "tep_summary",
             **tep.to_dict(),

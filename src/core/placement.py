@@ -91,6 +91,8 @@ class PlacementEngine:
         if placement_config is None:
             placement_config = PlacementConfig()
 
+        self._placed_building_count: int = 0
+
         if placement_config.floor_height is not None:
             self._current_floor_height = float(placement_config.floor_height)
         else:
@@ -137,6 +139,13 @@ class PlacementEngine:
         middle = sections["middle"]
         end = sections.get("end", middle)
         corner = sections.get("corner", middle)
+        tower = sections.get("tower", middle)
+
+        self._middle_pool = sections.get("middle_pool", [middle])
+        self._end_pool = sections.get("end_pool", [end])
+        self._corner_pool = sections.get("corner_pool", [corner])
+        self._tower_pool = sections.get("tower_pool", [tower])
+        self._has_preferred_sections = bool(placement_config.preferred_section_ids)
 
         # 3. Этажность
         floors = placement_config.target_floors
@@ -192,13 +201,21 @@ class PlacementEngine:
         middle: SectionType,
         end: SectionType,
         floors: int,
-        num_middle: int,
+        num_middle: int | list[SectionType],
         cascade_floors: bool = False,
         min_wing_floors: int = 8,
     ) -> list[PlacedSection]:
         """Линейный корпус, центрированный в (0, 0) по оси X, без наложений."""
         sections: list[PlacedSection] = []
-        num_total = num_middle + 2
+
+        if isinstance(num_middle, list):
+            target_mid_sections = list(num_middle)
+            num_mid = len(target_mid_sections)
+        else:
+            num_mid = max(0, int(num_middle))
+            target_mid_sections = [middle] * num_mid
+
+        num_total = num_mid + 2
 
         # Расчет этажности по позициям
         floor_list = []
@@ -211,29 +228,33 @@ class PlacementEngine:
             else:
                 floor_list.append(floors)
 
+        end_candidates = self._end_pool if getattr(self, "_has_preferred_sections", False) else self.library.get_end_sections()
+        mid_candidates = self._middle_pool if getattr(self, "_has_preferred_sections", False) else self.library.get_middle_sections()
+
         # 1. Первая торцевая секция
         fl_end1 = floor_list[0]
         sec_end1 = (
-            self._find_best_section(self.library.get_end_sections(), fl_end1)
+            self._find_best_section(end_candidates, fl_end1)
             if cascade_floors else end
         ) or end
         fl_end1 = self._clamp_floors(sec_end1, fl_end1)
 
         # 2. Рядовые секции
         mid_secs = []
-        for i in range(num_middle):
+        for i in range(num_mid):
             fl_m = floor_list[i + 1]
+            base_m = target_mid_sections[i]
             sec_m = (
-                self._find_best_section(self.library.get_middle_sections(), fl_m)
-                if cascade_floors else middle
-            ) or middle
+                self._find_best_section(mid_candidates, fl_m)
+                if cascade_floors else base_m
+            ) or base_m
             fl_m = self._clamp_floors(sec_m, fl_m)
             mid_secs.append((sec_m, fl_m))
 
         # 3. Вторая торцевая секция
         fl_end2 = floor_list[-1]
         sec_end2 = (
-            self._find_best_section(self.library.get_end_sections(), fl_end2)
+            self._find_best_section(end_candidates, fl_end2)
             if cascade_floors else end
         ) or end
         fl_end2 = self._clamp_floors(sec_end2, fl_end2)
@@ -271,37 +292,47 @@ class PlacementEngine:
     ) -> list[PlacedSection]:
         """П-образный корпус со двором, центрированный в (0, 0), без наложений секций."""
         sections: list[PlacedSection] = []
-
-        # 1. Заднее крыло (основание скобы, северная часть)
-        fl_back = floors
-        if cascade_floors and floors > min_wing_floors:
-            sec_back = self._find_best_section(self.library.get_middle_sections(), fl_back) or middle
-        else:
-            sec_back = middle
-        fl_back = self._clamp_floors(sec_back, fl_back)
-        wm_back = sec_back.width
-        dm_back = sec_back.depth
+        end_candidates = self._end_pool if getattr(self, "_has_preferred_sections", False) else self.library.get_end_sections()
+        mid_candidates = self._middle_pool if getattr(self, "_has_preferred_sections", False) else self.library.get_middle_sections()
 
         # Угловые секции
         sec_cor_l = corner
         sec_cor_r = corner
         fl_cor_l = self._clamp_floors(sec_cor_l, floors)
         fl_cor_r = self._clamp_floors(sec_cor_r, floors)
+        cor_fl = max(fl_cor_l, fl_cor_r)
         wc_l, dc_l = sec_cor_l.width, sec_cor_l.depth
         wc_r, dc_r = sec_cor_r.width, sec_cor_r.depth
+
+        # 1. Заднее крыло (основание скобы, северная часть)
+        # Архитектурный переход: шаг высоты между угловой и рядовой секцией сглаживается
+        max_step = 6
+        back_secs = []
+        for i in range(num_back):
+            if cascade_floors:
+                dist_from_corner = min(i + 1, num_back - i)
+                fl_allowed = min(floors, cor_fl + dist_from_corner * max_step)
+                fl_i = max(min_wing_floors, fl_allowed)
+                sec_i = self._find_best_section(mid_candidates, fl_i) or middle
+            else:
+                sec_i = middle
+                fl_i = floors
+            fl_i = self._clamp_floors(sec_i, fl_i)
+            back_secs.append((sec_i, fl_i))
 
         # Координаты основания:
         xc1 = wc_l / 2.0
         yc1 = -dc_l / 2.0
         sections.append(PlacedSection(sec_cor_l, xc1, yc1, 0.0, fl_cor_l, is_flipped=False))
 
-        x_back_start = wc_l
-        for i in range(num_back):
-            xm = x_back_start + (i + 0.5) * wm_back
-            ym = -dm_back / 2.0
-            sections.append(PlacedSection(sec_back, xm, ym, 0.0, fl_back))
+        x_curr = wc_l
+        for sec_b, fl_b in back_secs:
+            xm = x_curr + sec_b.width / 2.0
+            ym = -sec_b.depth / 2.0
+            sections.append(PlacedSection(sec_b, xm, ym, 0.0, fl_b))
+            x_curr += sec_b.width
 
-        x_back_end = x_back_start + num_back * wm_back
+        x_back_end = x_curr
 
         xc2 = x_back_end + wc_r / 2.0
         yc2 = -dc_r / 2.0
@@ -310,13 +341,16 @@ class PlacementEngine:
         x_right_outer = x_back_end + wc_r
 
         # 2. Левое крыло (в сторону юга -Y)
+        # Каскад понижается плавно, начиная от высоты левого угла
         K_l = num_wing_left + 1
         y_curr_l = -dc_l
+        wing_start_l = fl_cor_l
         for j in range(num_wing_left):
-            if cascade_floors and floors > min_wing_floors:
+            if cascade_floors and wing_start_l > min_wing_floors:
                 step_ratio = (j + 1) / K_l
-                fl_j = round(floors - step_ratio * (floors - min_wing_floors))
-                sec_j = self._find_best_section(self.library.get_middle_sections(), fl_j) or middle
+                fl_j = round(wing_start_l - step_ratio * (wing_start_l - min_wing_floors))
+                fl_j = max(min_wing_floors, min(wing_start_l, fl_j))
+                sec_j = self._find_best_section(mid_candidates, fl_j) or middle
             else:
                 sec_j = middle
                 fl_j = floors
@@ -328,8 +362,8 @@ class PlacementEngine:
             y_curr_l -= sec_j.width
 
         # Торец левого крыла
-        if cascade_floors and floors > min_wing_floors:
-            sec_end_l = self._find_best_section(self.library.get_end_sections(), min_wing_floors) or end
+        if cascade_floors and wing_start_l > min_wing_floors:
+            sec_end_l = self._find_best_section(end_candidates, min_wing_floors) or end
             fl_end_l = min_wing_floors
         else:
             sec_end_l = end
@@ -340,13 +374,16 @@ class PlacementEngine:
         sections.append(PlacedSection(sec_end_l, xe_l, ye_l, 90.0, fl_end_l))
 
         # 3. Правое крыло (в сторону юга -Y)
+        # Каскад понижается плавно, начиная от высоты правого угла
         K_r = num_wing_right + 1
         y_curr_r = -dc_r
+        wing_start_r = fl_cor_r
         for k in range(num_wing_right):
-            if cascade_floors and floors > min_wing_floors:
+            if cascade_floors and wing_start_r > min_wing_floors:
                 step_ratio = (k + 1) / K_r
-                fl_k = round(floors - step_ratio * (floors - min_wing_floors))
-                sec_k = self._find_best_section(self.library.get_middle_sections(), fl_k) or middle
+                fl_k = round(wing_start_r - step_ratio * (wing_start_r - min_wing_floors))
+                fl_k = max(min_wing_floors, min(wing_start_r, fl_k))
+                sec_k = self._find_best_section(mid_candidates, fl_k) or middle
             else:
                 sec_k = middle
                 fl_k = floors
@@ -358,8 +395,8 @@ class PlacementEngine:
             y_curr_r -= sec_k.width
 
         # Торец правого крыла
-        if cascade_floors and floors > min_wing_floors:
-            sec_end_r = self._find_best_section(self.library.get_end_sections(), min_wing_floors) or end
+        if cascade_floors and wing_start_r > min_wing_floors:
+            sec_end_r = self._find_best_section(end_candidates, min_wing_floors) or end
             fl_end_r = min_wing_floors
         else:
             sec_end_r = end
@@ -392,6 +429,8 @@ class PlacementEngine:
     ) -> list[PlacedSection]:
         """Г-образный корпус, центрированный в (0, 0), без наложений секций."""
         sections: list[PlacedSection] = []
+        end_candidates = self._end_pool if getattr(self, "_has_preferred_sections", False) else self.library.get_end_sections()
+        mid_candidates = self._middle_pool if getattr(self, "_has_preferred_sections", False) else self.library.get_middle_sections()
 
         fl_cor = self._clamp_floors(corner, floors)
         wc, dc = corner.width, corner.depth
@@ -402,23 +441,27 @@ class PlacementEngine:
         sections.append(PlacedSection(corner, xc, yc, 0.0, fl_cor, is_flipped=True))
 
         # 1. Горизонтальное крыло влево (-X)
-        fl_x = floors
-        if cascade_floors and floors > min_wing_floors:
-            sec_x = self._find_best_section(self.library.get_middle_sections(), fl_x) or middle
-        else:
-            sec_x = middle
-        fl_x = self._clamp_floors(sec_x, fl_x)
-        wm_x, dm_x = sec_x.width, sec_x.depth
-
+        max_step = 6
         x_curr = -wc
-        for _ in range(num_mid_x):
+        fl_last_x = fl_cor
+        for i in range(num_mid_x):
+            if cascade_floors:
+                fl_xi = min(floors, fl_cor + (i + 1) * max_step)
+                sec_x = self._find_best_section(mid_candidates, fl_xi) or middle
+            else:
+                sec_x = middle
+                fl_xi = floors
+            fl_xi = self._clamp_floors(sec_x, fl_xi)
+            fl_last_x = fl_xi
+            wm_x, dm_x = sec_x.width, sec_x.depth
             xm = x_curr - wm_x / 2.0
             ym = -dm_x / 2.0
-            sections.append(PlacedSection(sec_x, xm, ym, 0.0, fl_x))
+            sections.append(PlacedSection(sec_x, xm, ym, 0.0, fl_xi))
             x_curr -= wm_x
 
-        sec_end_x = end
-        fl_end_x = self._clamp_floors(sec_end_x, fl_x)
+        fl_end_x = fl_last_x if cascade_floors else floors
+        sec_end_x = (self._find_best_section(end_candidates, fl_end_x) if cascade_floors else end) or end
+        fl_end_x = self._clamp_floors(sec_end_x, fl_end_x)
         xe = x_curr - sec_end_x.width / 2.0
         ye = -sec_end_x.depth / 2.0
         sections.append(PlacedSection(sec_end_x, xe, ye, 0.0, fl_end_x))
@@ -426,11 +469,13 @@ class PlacementEngine:
         # 2. Вертикальное крыло вниз (-Y) с каскадным понижением к югу
         K_y = num_mid_y + 1
         y_curr = -dc
+        wing_start_y = fl_cor
         for j in range(num_mid_y):
-            if cascade_floors and floors > min_wing_floors:
+            if cascade_floors and wing_start_y > min_wing_floors:
                 step_ratio = (j + 1) / K_y
-                fl_j = round(floors - step_ratio * (floors - min_wing_floors))
-                sec_j = self._find_best_section(self.library.get_middle_sections(), fl_j) or middle
+                fl_j = round(wing_start_y - step_ratio * (wing_start_y - min_wing_floors))
+                fl_j = max(min_wing_floors, min(wing_start_y, fl_j))
+                sec_j = self._find_best_section(mid_candidates, fl_j) or middle
             else:
                 sec_j = middle
                 fl_j = floors
@@ -441,8 +486,8 @@ class PlacementEngine:
             sections.append(PlacedSection(sec_j, xv, yv, 90.0, fl_j))
             y_curr -= sec_j.width
 
-        if cascade_floors and floors > min_wing_floors:
-            sec_end_y = self._find_best_section(self.library.get_end_sections(), min_wing_floors) or end
+        if cascade_floors and wing_start_y > min_wing_floors:
+            sec_end_y = self._find_best_section(end_candidates, min_wing_floors) or end
             fl_end_y = min_wing_floors
         else:
             sec_end_y = end
@@ -911,9 +956,9 @@ class PlacementEngine:
         row_lines = self._compute_row_positions(buildable, angle, row_spacing, middle.depth)
         buildings: list[Building] = []
 
-        for line in row_lines:
+        for r_idx, line in enumerate(row_lines):
             cands = self._create_linears_on_line(
-                line, middle, end, floors, angle, placement_config
+                line, middle, end, floors, angle, placement_config, line_index=r_idx
             )
             for b in cands:
                 if self._check_constraints(b, buildings, placement_config):
@@ -979,6 +1024,76 @@ class PlacementEngine:
         except Exception:
             return None
 
+    def _find_middle_packing(
+        self,
+        avail_width: float,
+        candidate_sections: list[SectionType],
+        max_middle_secs: int,
+        target_floors: int | None = None,
+        preferred_lead: SectionType | None = None,
+    ) -> list[SectionType]:
+        """Подобрать оптимальный набор рядовых секций, максимально заполняющий доступную ширину."""
+        if avail_width <= 0 or max_middle_secs <= 0 or not candidate_sections:
+            return []
+
+        # Фильтруем рядовые секции подходящей ширины
+        valid = [s for s in candidate_sections if s.width <= avail_width and s.category.upper() == "MIDDLE"]
+        if not valid:
+            return []
+
+        # Формируем список кандидатов для первой секции (приоритет ведущей секции)
+        primaries = list(valid)
+        if preferred_lead and preferred_lead in valid:
+            primaries = [preferred_lead] + [s for s in valid if s != preferred_lead]
+
+        best_pack: list[SectionType] = []
+        best_w = 0.0
+        best_fl_diff = float("inf")
+        best_has_lead = False
+
+        for primary in primaries:
+            pack: list[SectionType] = []
+            cur_w = 0.0
+            while len(pack) < max_middle_secs and (cur_w + primary.width) <= avail_width:
+                pack.append(primary)
+                cur_w += primary.width
+
+            for alt in sorted(valid, key=lambda s: s.width, reverse=True):
+                while len(pack) < max_middle_secs and (cur_w + alt.width) <= avail_width:
+                    pack.append(alt)
+                    cur_w += alt.width
+
+            if not pack:
+                continue
+
+            has_lead = bool(preferred_lead and preferred_lead in pack)
+            if target_floors is not None:
+                fl_diff = sum(abs(s.default_floors - target_floors) for s in pack) / len(pack)
+            else:
+                fl_diff = 0.0
+
+            is_better = False
+            if not best_pack:
+                is_better = True
+            elif cur_w > (best_w + 8.0):
+                is_better = True
+            elif abs(cur_w - best_w) <= 8.0:
+                if has_lead and not best_has_lead:
+                    is_better = True
+                elif has_lead == best_has_lead:
+                    if fl_diff < (best_fl_diff - 1.0):
+                        is_better = True
+                    elif abs(fl_diff - best_fl_diff) <= 1.0 and cur_w > best_w:
+                        is_better = True
+
+            if is_better:
+                best_pack = pack
+                best_w = cur_w
+                best_fl_diff = fl_diff
+                best_has_lead = has_lead
+
+        return best_pack
+
     def _create_single_linear(
         self,
         center_line: LineString,
@@ -987,6 +1102,7 @@ class PlacementEngine:
         floors: int,
         angle: float,
         placement_config: PlacementConfig,
+        preferred_lead: SectionType | None = None,
     ) -> Building | None:
         """Создать один соразмерный линейный корпус на отрезке линии."""
         line_len = center_line.length
@@ -995,19 +1111,35 @@ class PlacementEngine:
             return None
 
         avail = line_len - end.width * 2
-        num_middle = max(0, int(avail / middle.width))
+        max_mid = max(0, placement_config.max_sections_per_building - 2)
 
-        total_secs = num_middle + 2
-        if total_secs > placement_config.max_sections_per_building:
-            num_middle = max(0, placement_config.max_sections_per_building - 2)
-            total_secs = num_middle + 2
+        # Кандидаты в рядовые секции: сначала активный пул, затем библиотека
+        pref_pool = getattr(self, "_middle_pool", [middle])
+        lead_sec = preferred_lead
+        if lead_sec is None:
+            lead_sec = (
+                pref_pool[getattr(self, "_placed_building_count", 0) % len(pref_pool)]
+                if pref_pool
+                else middle
+            )
 
+        cand_middles = list(pref_pool)
+        if not getattr(self, "_has_preferred_sections", False):
+            for s in self.library.get_middle_sections():
+                if s not in cand_middles:
+                    cand_middles.append(s)
+
+        chosen_middles = self._find_middle_packing(
+            avail, cand_middles, max_mid, target_floors=floors, preferred_lead=lead_sec
+        )
+
+        total_secs = len(chosen_middles) + 2
         if total_secs < placement_config.min_sections_per_building:
             return None
 
         midpoint = center_line.interpolate(line_len / 2.0)
         local_secs = self._build_linear_local(
-            middle, end, floors, num_middle,
+            middle, end, floors, chosen_middles,
             cascade_floors=placement_config.cascade_floors,
             min_wing_floors=placement_config.min_wing_floors,
         )
@@ -1015,19 +1147,23 @@ class PlacementEngine:
         building = Building(sections=placed_secs, typology="LINEAR")
 
         if not self._fits_in_buildable(building):
-            while num_middle > 0:
-                num_middle -= 1
+            while len(chosen_middles) > 0:
+                chosen_middles.pop()
+                if (len(chosen_middles) + 2) < placement_config.min_sections_per_building:
+                    return None
                 local_secs = self._build_linear_local(
-                    middle, end, floors, num_middle,
+                    middle, end, floors, chosen_middles,
                     cascade_floors=placement_config.cascade_floors,
                     min_wing_floors=placement_config.min_wing_floors,
                 )
                 placed_secs = self._transform_sections(local_secs, midpoint.x, midpoint.y, angle)
                 building = Building(sections=placed_secs, typology="LINEAR")
                 if self._fits_in_buildable(building):
+                    self._placed_building_count = getattr(self, "_placed_building_count", 0) + 1
                     return building
             return None
 
+        self._placed_building_count = getattr(self, "_placed_building_count", 0) + 1
         return building
 
     def _create_linears_on_line(
@@ -1038,6 +1174,7 @@ class PlacementEngine:
         floors: int,
         angle: float,
         placement_config: PlacementConfig,
+        line_index: int = 0,
     ) -> list[Building]:
         """Создать цепочку соразмерных линейных зданий (<= 90 м) с разрывами для проездов."""
         line_len = center_line.length
@@ -1051,27 +1188,53 @@ class PlacementEngine:
         max_bldg_len = min(norm_max_len, max_sec_len)
         passage_gap = float(self.config.get("passage_gap_min", 18.0))
 
+        pref_pool = getattr(self, "_middle_pool", [middle])
+        pool_len = len(pref_pool) if pref_pool else 1
+
         # Если линия короче допустимой длины одного дома, ставим один дом
         if line_len <= max_bldg_len:
-            b = self._create_single_linear(center_line, middle, end, floors, angle, placement_config)
+            lead_idx = line_index % pool_len
+            lead_sec = pref_pool[lead_idx] if pref_pool else middle
+            b = self._create_single_linear(
+                center_line, middle, end, floors, angle, placement_config, preferred_lead=lead_sec
+            )
             return [b] if b is not None else []
 
-        # Иначе делим длинную линию на соразмерные корпуса (<= max_bldg_len) с разрывами для проездов
-        num_bldgs = math.ceil((line_len - max_bldg_len) / (max_bldg_len + passage_gap)) + 1
-        avail_for_bldgs = line_len - (num_bldgs - 1) * passage_gap
-        target_len = avail_for_bldgs / num_bldgs
-
+        # Соразмерное деление длинной линии (<= max_bldg_len) с разрывами для проездов
         buildings: list[Building] = []
-        for b_idx in range(num_bldgs):
-            d_start = b_idx * (target_len + passage_gap)
-            d_end = d_start + target_len
-            p_start = center_line.interpolate(d_start)
-            p_end = center_line.interpolate(d_end)
+        d_curr = 0.0
+        bldg_in_line = 0
+
+        while d_curr < (line_len - min_len):
+            rem_len = line_len - d_curr
+            cur_max = min(max_bldg_len, rem_len)
+            if cur_max < min_len:
+                break
+
+            p_start = center_line.interpolate(d_curr)
+            p_end = center_line.interpolate(d_curr + cur_max)
             seg = LineString([p_start, p_end])
 
-            b = self._create_single_linear(seg, middle, end, floors, angle, placement_config)
-            if b is not None:
-                buildings.append(b)
+            lead_idx = (line_index + bldg_in_line) % pool_len
+            lead_sec = pref_pool[lead_idx] if pref_pool else middle
+
+            b = self._create_single_linear(
+                seg, middle, end, floors, angle, placement_config, preferred_lead=lead_sec
+            )
+            if b is None:
+                d_curr += passage_gap
+                continue
+
+            # Определяем фактическую длину построенного корпуса вдоль линии
+            b_coords = list(b.footprint.exterior.coords)
+            rad_ang = math.radians(angle)
+            dir_vec = (math.cos(rad_ang), math.sin(rad_ang))
+            projs = [c[0] * dir_vec[0] + c[1] * dir_vec[1] for c in b_coords]
+            actual_len = max(min_len, max(projs) - min(projs))
+
+            buildings.append(b)
+            bldg_in_line += 1
+            d_curr += actual_len + passage_gap
 
         return buildings
 
@@ -1259,38 +1422,62 @@ class PlacementEngine:
 
     def _select_sections(
         self, placement_config: PlacementConfig
-    ) -> dict[str, SectionType] | None:
+    ) -> dict[str, Any] | None:
         """Выбрать секции для расстановки с учетом этажности и предпочтений."""
         target_fl = placement_config.target_floors
 
         if placement_config.preferred_section_ids:
-            sections = {}
+            sections: dict[str, Any] = {}
+            pref_middles: list[SectionType] = []
+            pref_ends: list[SectionType] = []
+            pref_corners: list[SectionType] = []
+            pref_towers: list[SectionType] = []
+
             for sid in placement_config.preferred_section_ids:
                 s = self.library.get_by_id(sid)
                 if s:
                     cat = s.category.upper()
                     if cat == "MIDDLE":
-                        sections["middle"] = s
+                        pref_middles.append(s)
                     elif cat == "END":
-                        sections["end"] = s
+                        pref_ends.append(s)
                     elif cat == "CORNER":
-                        sections["corner"] = s
+                        pref_corners.append(s)
                     elif cat == "TOWER" or s.id.lower().startswith("tower"):
-                        sections["tower"] = s
-            if "middle" not in sections:
-                sections["middle"] = self._find_best_section(
-                    self.library.get_middle_sections(), target_fl
-                )
-            if "end" not in sections:
+                        pref_towers.append(s)
+
+            if pref_middles:
+                sections["middle"] = self._find_best_section(pref_middles, target_fl)
+                sections["middle_pool"] = pref_middles
+            else:
+                sections["middle"] = self._find_best_section(self.library.get_middle_sections(), target_fl)
+                sections["middle_pool"] = self.library.get_middle_sections()
+
+            if pref_ends:
+                sections["end"] = self._find_best_section(pref_ends, target_fl)
+                sections["end_pool"] = pref_ends
+            else:
                 best_end = self._find_best_section(self.library.get_end_sections(), target_fl)
                 sections["end"] = best_end if best_end else sections.get("middle")
-            if "corner" not in sections:
+                sections["end_pool"] = self.library.get_end_sections()
+
+            if pref_corners:
+                sections["corner"] = self._find_best_section(pref_corners, target_fl)
+                sections["corner_pool"] = pref_corners
+            else:
                 best_cor = self._find_best_section(self.library.get_corner_sections(), target_fl)
                 sections["corner"] = best_cor if best_cor else sections.get("middle")
-            if "tower" not in sections:
+                sections["corner_pool"] = self.library.get_corner_sections()
+
+            if pref_towers:
+                sections["tower"] = self._find_best_section(pref_towers, target_fl)
+                sections["tower_pool"] = pref_towers
+            else:
                 towers = self.library.get_tower_sections()
                 best_tower = self._find_best_section(towers, target_fl) if towers else None
                 sections["tower"] = best_tower if best_tower else sections.get("middle")
+                sections["tower_pool"] = towers
+
             return sections if ("middle" in sections or "tower" in sections) else None
 
         middles = self.library.get_middle_sections()
@@ -1306,10 +1493,16 @@ class PlacementEngine:
         best_corner = self._find_best_section(corners, target_fl) if corners else best_middle
         best_tower = self._find_best_section(towers, target_fl) if towers else best_middle
 
-        result: dict[str, SectionType] = {"middle": best_middle}
-        result["end"] = best_end if best_end else best_middle
-        result["corner"] = best_corner if best_corner else best_middle
-        result["tower"] = best_tower if best_tower else best_middle
+        result: dict[str, Any] = {
+            "middle": best_middle,
+            "end": best_end if best_end else best_middle,
+            "corner": best_corner if best_corner else best_middle,
+            "tower": best_tower if best_tower else best_middle,
+            "middle_pool": middles,
+            "end_pool": ends,
+            "corner_pool": corners,
+            "tower_pool": towers,
+        }
         return result
 
     def _compute_row_positions(

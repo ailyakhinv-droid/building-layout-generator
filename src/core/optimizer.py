@@ -93,71 +93,38 @@ class Optimizer:
         Returns:
             Лучший найденный результат.
         """
-        # Определяем диапазон этажности из библиотеки
-        middles = self.library.get_middle_sections()
-        if not middles:
-            raise ValueError("В библиотеке нет рядовых секций.")
-
-        min_f = min(s.min_floors for s in middles)
-        max_f = max(s.max_floors for s in middles)
-
         # Определяем целевой показатель
         target_far = target_tep.get("target_far")
         target_apts = target_tep.get("target_apartments")
         target_gfa = target_tep.get("target_gfa")
 
-        best_result: OptimizationResult | None = None
-        best_diff = float("inf")
-
-        # Бинарный поиск по этажности
-        low, high = min_f, max_f
-
-        for iteration in range(max_iterations):
-            floors = (low + high) // 2
-
-            result = self._try_placement(floors)
-            if result is None:
-                high = floors - 1
-                continue
-
-            # Вычисляем отклонение от цели
-            diff = 0.0
-            if target_far is not None:
-                diff = abs(result.tep.far - target_far)
-            elif target_apts is not None:
-                diff = abs(result.tep.apartments_total - target_apts)
-            elif target_gfa is not None:
-                diff = abs(result.tep.total_gfa - target_gfa)
-
-            # Обновляем лучший результат
-            if diff < best_diff:
-                best_diff = diff
-                best_result = result
-
-            # Корректируем диапазон поиска
-            if target_far is not None:
-                if result.tep.far < target_far:
-                    low = floors + 1
-                else:
-                    high = floors - 1
-            elif target_apts is not None:
-                if result.tep.apartments_total < target_apts:
-                    low = floors + 1
-                else:
-                    high = floors - 1
-            elif target_gfa is not None:
-                if result.tep.total_gfa < target_gfa:
-                    low = floors + 1
-                else:
-                    high = floors - 1
-
-            if low > high:
-                break
-
-        if best_result is None:
+        # Генерируем варианты для текущей типологии
+        variants = self.generate_variants(explore_typologies=False)
+        if not variants:
             raise ValueError("Не удалось найти допустимый вариант расстановки.")
 
-        return best_result
+        def calc_diff(v: OptimizationResult) -> float:
+            if target_far is not None:
+                return abs(v.tep.far - target_far)
+            elif target_apts is not None:
+                return abs(v.tep.apartments_total - target_apts)
+            elif target_gfa is not None:
+                return abs(v.tep.total_gfa - target_gfa)
+            return 0.0
+
+        # Сортируем: сначала с минимальным отклонением, при близком — с соблюдением нормативов
+        best = min(variants, key=lambda v: (calc_diff(v), 0 if v.normative_ok else 1))
+        diff = calc_diff(best)
+
+        metric_name = "FAR" if target_far is not None else ("квартир" if target_apts is not None else "GFA")
+        target_val = target_far if target_far is not None else (target_apts if target_apts is not None else target_gfa)
+        actual_val = best.tep.far if target_far is not None else (best.tep.apartments_total if target_apts is not None else best.tep.total_gfa)
+        best.note = (
+            f"Подобрано: {best.floors} эт. ({best.typology}), "
+            f"{metric_name}={actual_val} "
+            f"(цель: {target_val}, отклонение: {diff:.2f})."
+        )
+        return best
 
     def optimize_maximize(
         self,
@@ -207,6 +174,50 @@ class Optimizer:
             )
             return best
 
+    def _get_floors_range(self, typology: str | None = None) -> range:
+        """Определить допустимый диапазон этажности с учетом секций, типологии и высотных лимитов."""
+        typ = (typology or self.base_placement_config.typology).upper()
+
+        sections_to_check = []
+        if self.base_placement_config.preferred_section_ids:
+            for sid in self.base_placement_config.preferred_section_ids:
+                s = self.library.get_by_id(sid)
+                if s:
+                    sections_to_check.append(s)
+
+        if not sections_to_check:
+            if typ in ("TOWER", "TOWERS", "POINT"):
+                sections_to_check = self.library.get_tower_sections() or self.library.get_middle_sections()
+            else:
+                sections_to_check = self.library.get_middle_sections()
+
+        if not sections_to_check:
+            sections_to_check = self.library.get_all()
+
+        if not sections_to_check:
+            return range(1, 26)
+
+        min_f = min(s.min_floors for s in sections_to_check)
+        max_f = max(s.max_floors for s in sections_to_check)
+
+        # Проверяем ограничение максимальной высоты здания (если задано)
+        max_h = self.base_placement_config.max_building_height_m or self.config.get("max_building_height_m")
+        floor_h = self.base_placement_config.floor_height or self.config.get("floor_height", 3.0)
+        ground_h = (
+            self.base_placement_config.ground_floor_height
+            if self.base_placement_config.ground_floor_height is not None
+            else self.config.get("ground_floor_height", floor_h)
+        )
+        if max_h and max_h > 0:
+            extra_first = max(0.0, float(ground_h) - float(floor_h))
+            max_f_from_h = max(1, int((float(max_h) - extra_first) // float(floor_h)))
+            max_f = min(max_f, max_f_from_h)
+
+        if min_f > max_f:
+            min_f = max_f
+
+        return range(min_f, max_f + 1)
+
     def generate_variants(
         self,
         floors_range: range | None = None,
@@ -215,37 +226,12 @@ class Optimizer:
         """Сгенерировать варианты застройки с шагом в 1 этаж.
 
         Args:
-            floors_range: Диапазон этажности. Если None — от мин до макс по секциям с шагом 1.
+            floors_range: Диапазон этажности. Если None — определяется автоматически.
             explore_typologies: Если True — перебрать все типологии застройки.
 
         Returns:
             Список вариантов с ТЭП.
         """
-        if floors_range is None:
-            middles = self.library.get_middle_sections()
-            if not middles:
-                return []
-            min_f = min(s.min_floors for s in middles)
-            max_f = max(s.max_floors for s in middles)
-
-            # Проверяем ограничение максимальной высоты здания (если задано)
-            max_h = self.base_placement_config.max_building_height_m or self.config.get("max_building_height_m")
-            floor_h = self.base_placement_config.floor_height or self.config.get("floor_height", 3.0)
-            ground_h = (
-                self.base_placement_config.ground_floor_height
-                if self.base_placement_config.ground_floor_height is not None
-                else self.config.get("ground_floor_height", floor_h)
-            )
-            if max_h and max_h > 0:
-                extra_first = max(0.0, float(ground_h) - float(floor_h))
-                max_f_from_h = max(1, int((float(max_h) - extra_first) // float(floor_h)))
-                max_f = min(max_f, max_f_from_h)
-            if min_f > max_f:
-                min_f = max_f
-
-            # Шаг строго 1 этаж, чтобы не пропускать оптимум
-            floors_range = range(min_f, max_f + 1, 1)
-
         typs_to_check = (
             ["AUTO", "TOWER", "U_SHAPE", "L_SHAPE", "LINEAR"]
             if explore_typologies
@@ -255,7 +241,8 @@ class Optimizer:
         variants: list[OptimizationResult] = []
 
         for typ in typs_to_check:
-            for floors in floors_range:
+            cur_range = floors_range or self._get_floors_range(typ)
+            for floors in cur_range:
                 result = self._try_placement(floors, typology=typ)
                 if result is not None:
                     variants.append(result)
@@ -294,6 +281,10 @@ class Optimizer:
                 cascade_floors=self.base_placement_config.cascade_floors,
                 asymmetric_wings=self.base_placement_config.asymmetric_wings,
                 min_wing_floors=self.base_placement_config.min_wing_floors,
+                floor_height=self.base_placement_config.floor_height,
+                ground_floor_height=self.base_placement_config.ground_floor_height,
+                max_building_height_m=self.base_placement_config.max_building_height_m,
+                allow_towers_in_mixed=self.base_placement_config.allow_towers_in_mixed,
             )
             buildings = engine.generate(placement_config)
 

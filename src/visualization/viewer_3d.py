@@ -72,15 +72,17 @@ def _to_wgs84(geom: shapely.Geometry, center_lat: float, center_lon: float) -> s
     return transform_geometry_to_wgs84(geom, center_lat, center_lon)
 
 
-def _get_site_geo_center(site: Site) -> tuple[float, float]:
+def _get_site_geo_center(site: Site, fallback_center: tuple[float, float] | None = None) -> tuple[float, float]:
     """Получить географический центр для привязки координат (lat, lon)."""
     if site.geo_center:
         return site.geo_center
     if _is_wgs84_geometry(site.boundary):
         c = site.boundary.centroid
         return (c.y, c.x)
-    # Точка отсчета по умолчанию (Санкт-Петербург / ЛО)
-    return (59.934280, 30.335099)
+    if fallback_center:
+        return fallback_center
+    # Резервная точка отсчета (Москва) вместо Санкт-Петербурга
+    return (55.751244, 37.618423)
 
 
 def build_3d_geojson_data(
