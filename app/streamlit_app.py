@@ -73,7 +73,9 @@ if "map_lat" in st.query_params and "map_lon" in st.query_params:
         st.session_state["interactive_map_lon"] = q_lon
         st.session_state["use_interactive_pos"] = True
         if "map_rot" in st.query_params:
-            st.session_state["site_rotation"] = int(round(float(st.query_params["map_rot"])))
+            rot_val = int(round(float(st.query_params["map_rot"])))
+            st.session_state["site_rotation"] = rot_val
+            st.session_state["slider_site_rotation"] = rot_val
         st.query_params.clear()
     except Exception:
         pass
@@ -482,6 +484,7 @@ if "interactive_map_lat" in st.session_state:
         del st.session_state["interactive_map_lon"]
         st.session_state["use_interactive_pos"] = False
         st.session_state["site_rotation"] = 0
+        st.session_state["slider_site_rotation"] = 0
         st.rerun()
 else:
     st.sidebar.info(
@@ -506,11 +509,15 @@ cardinal_presets = {
 
 if "site_rotation" not in st.session_state:
     st.session_state["site_rotation"] = 0
+if "slider_site_rotation" not in st.session_state:
+    st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
 
 def _on_cardinal_select():
     sel = st.session_state.get("sel_cardinal_widget")
     if sel and sel in cardinal_presets and cardinal_presets[sel] is not None:
-        st.session_state["site_rotation"] = cardinal_presets[sel]
+        new_rot = cardinal_presets[sel]
+        st.session_state["site_rotation"] = new_rot
+        st.session_state["slider_site_rotation"] = new_rot
 
 st.sidebar.selectbox(
     "Назначить ориентацию фасада / улицы",
@@ -526,19 +533,26 @@ current_rot = int(st.session_state.get("site_rotation", 0))
 
 if rot_btn1.button("↺ -15°", use_container_width=True, help="Повернуть против часовой стрелки на 15°"):
     st.session_state["site_rotation"] = current_rot - 15
+    st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
     st.rerun()
 
 if rot_btn2.button("↺ -5°", use_container_width=True, help="Повернуть против часовой стрелки на 5°"):
     st.session_state["site_rotation"] = current_rot - 5
+    st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
     st.rerun()
 
 if rot_btn3.button("↻ +5°", use_container_width=True, help="Повернуть по часовой стрелке на 5°"):
     st.session_state["site_rotation"] = current_rot + 5
+    st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
     st.rerun()
 
 if rot_btn4.button("↻ +15°", use_container_width=True, help="Повернуть по часовой стрелке на 15°"):
     st.session_state["site_rotation"] = current_rot + 15
+    st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
     st.rerun()
+
+def _on_slider_rotate():
+    st.session_state["site_rotation"] = st.session_state["slider_site_rotation"]
 
 col_rot_s, col_rot_n = st.sidebar.columns([3, 2])
 site_rot_val = col_rot_s.slider(
@@ -547,6 +561,8 @@ site_rot_val = col_rot_s.slider(
     max_value=180,
     value=int(st.session_state.get("site_rotation", 0)),
     step=1,
+    key="slider_site_rotation",
+    on_change=_on_slider_rotate,
     help="Поверните участок, чтобы состыковать его границу с направлением улиц, дорог и кварталов на карте OSM",
 )
 st.session_state["site_rotation"] = site_rot_val
@@ -561,6 +577,7 @@ col_rot_n.metric("Азимут оси", f"{p_axis:.0f}°")
 
 if site_rot_val != 0 and st.sidebar.button("Сбросить поворот (0°)", use_container_width=True):
     st.session_state["site_rotation"] = 0
+    st.session_state["slider_site_rotation"] = 0
     st.rerun()
 
 st.sidebar.caption("💡 *При загрузке чертежа DXF или вставке координат ЕГРН истинный север и форма считываются автоматически.*")
@@ -614,6 +631,7 @@ typology_choice = st.sidebar.selectbox(
     "Типология застройки",
     [
         "Квартальная / Смешанная (AUTO)",
+        "Периметральные урбан-блоки (R2-Style)",
         "Точечная / Башенная (Towers)",
         "П-образные дворы (U-Shape)",
         "Г-образные корпуса (L-Shape)",
@@ -623,12 +641,51 @@ typology_choice = st.sidebar.selectbox(
 )
 typology_map = {
     "Квартальная / Смешанная (AUTO)": "AUTO",
+    "Периметральные урбан-блоки (R2-Style)": "PERIMETER",
     "Точечная / Башенная (Towers)": "TOWER",
     "П-образные дворы (U-Shape)": "U_SHAPE",
     "Г-образные корпуса (L-Shape)": "L_SHAPE",
     "Линейная застройка (Пластины)": "LINEAR",
 }
 typology_val = typology_map[typology_choice]
+
+urban_block_size = 100.0
+internal_road_width = 16.0
+perimeter_layout_style = "U_SHAPE"
+if typology_val == "PERIMETER":
+    st.sidebar.markdown("##### 🧱 Концепция урбан-блоков (R2)")
+    peri_style_choice = st.sidebar.selectbox(
+        "Конфигурация двора урбан-блока",
+        [
+            "П-образный (раскрытый двор)",
+            "Замкнутый квартал (с проездами/арками)",
+            "Двухсторонний фронт (пластины)",
+        ],
+        help="Архитектурно-пространственная модель застройки урбан-блока",
+    )
+    peri_style_map = {
+        "П-образный (раскрытый двор)": "U_SHAPE",
+        "Замкнутый квартал (с проездами/арками)": "CLOSED",
+        "Двухсторонний фронт (пластины)": "LINEAR_WINGS",
+    }
+    perimeter_layout_style = peri_style_map[peri_style_choice]
+
+    urban_block_size = st.sidebar.slider(
+        "Целевой размер квартала (м)",
+        min_value=70.0,
+        max_value=160.0,
+        value=100.0,
+        step=5.0,
+        help="Определяет плотность нарезки сетки улиц (70–90 м: 4–6 кварталов, 100–120 м: 2–4 квартала, >140 м: единый крупный блок)",
+    )
+    internal_road_width = st.sidebar.slider(
+        "Ширина проезда между кварталами (м)",
+        min_value=12.0,
+        max_value=24.0,
+        value=16.0,
+        step=2.0,
+        help="Ширина коридора улично-дорожной сети между кварталами (проезжая часть + тротуары)",
+    )
 
 allow_towers_in_mixed = True
 if typology_val == "AUTO":
@@ -791,6 +848,22 @@ site_fingerprint = (
     site.address,
     tuple(round(b, 2) for b in site.boundary.bounds),
     site.rotation_deg,
+    target_floors,
+    typology_val,
+    max_sections,
+    court_orient_val,
+    var_insolation,
+    cascade_floors,
+    asymmetric_wings,
+    min_wing_fl,
+    floor_height_val,
+    max_height_val,
+    tuple(pref_section_ids or ()),
+    gen_mode,
+    config.get("boundary_setback", 3.0),
+    config.get("red_line_setback", 5.0),
+    config.get("max_bcr", 0.4),
+    config.get("max_far", 2.5),
 )
 site_has_changed = (
     "last_site_fingerprint" in st.session_state
@@ -822,6 +895,9 @@ if generate_btn or ("buildings" not in st.session_state) or site_has_changed:
                 max_building_height_m=max_height_val if max_height_val > 0.0 else None,
                 preferred_section_ids=pref_section_ids if pref_section_ids else None,
                 allow_towers_in_mixed=allow_towers_in_mixed,
+                urban_block_size=urban_block_size,
+                internal_road_width=internal_road_width,
+                perimeter_layout_style=perimeter_layout_style,
             )
 
             if gen_mode == "Заданная этажность":

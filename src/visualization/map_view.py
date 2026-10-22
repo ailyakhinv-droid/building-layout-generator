@@ -608,7 +608,9 @@ def generate_leaflet_map_html(
         var origCenter = boundaryPolygon.getBounds().getCenter();
         var origLat = origCenter.lat;
         var origLng = origCenter.lng;
+        var initialSiteRotation = {current_rot_deg};
         var currentSiteRotation = {current_rot_deg};
+        var activeRotationDeltaDeg = 0.0;
 
         function extractFirstLatLng(val) {{
             if (!val) return null;
@@ -629,7 +631,6 @@ def generate_leaflet_map_html(
 
         function calculateTransformState() {{
             var newCenter = boundaryPolygon.getBounds().getCenter();
-            var currRaw = boundaryPolygon.getLatLngs();
 
             var dLat = newCenter.lat - origLat;
             var dLon = newCenter.lng - origLng;
@@ -637,24 +638,7 @@ def generate_leaflet_map_html(
             var shiftEastM = dLon * (111320.0 * Math.cos(origLat * Math.PI / 180.0));
             var distM = Math.sqrt(shiftNorthM * shiftNorthM + shiftEastM * shiftEastM);
 
-            var deltaAngleDeg = 0.0;
-            if (boundaryPolygon.transform && Math.abs(boundaryPolygon.transform._angle) > 1e-4) {{
-                deltaAngleDeg = boundaryPolygon.transform._angle * 180.0 / Math.PI;
-            }} else {{
-                var p0_o = extractFirstLatLng(origLatLngs);
-                var p0_c = extractFirstLatLng(currRaw);
-                if (p0_o && p0_c) {{
-                    var dx0 = (p0_o.lng - origLng) * (111320.0 * Math.cos(origLat * Math.PI / 180.0));
-                    var dy0 = (p0_o.lat - origLat) * 111320.0;
-                    var dx1 = (p0_c.lng - newCenter.lng) * (111320.0 * Math.cos(newCenter.lat * Math.PI / 180.0));
-                    var dy1 = (p0_c.lat - newCenter.lat) * 111320.0;
-                    if (!isNaN(dx0) && !isNaN(dy0) && !isNaN(dx1) && !isNaN(dy1)) {{
-                        var a0 = Math.atan2(dy0, dx0);
-                        var a1 = Math.atan2(dy1, dx1);
-                        deltaAngleDeg = (a1 - a0) * 180.0 / Math.PI;
-                    }}
-                }}
-            }}
+            var deltaAngleDeg = activeRotationDeltaDeg;
             while (deltaAngleDeg > 180.0) deltaAngleDeg -= 360.0;
             while (deltaAngleDeg < -180.0) deltaAngleDeg += 360.0;
             if (isNaN(deltaAngleDeg) || !isFinite(deltaAngleDeg)) deltaAngleDeg = 0.0;
@@ -728,6 +712,11 @@ def generate_leaflet_map_html(
         }});
 
         boundaryPolygon.on('rotate', function(e) {{
+            if (e && e.rotation !== undefined) {{
+                activeRotationDeltaDeg = e.rotation * 180.0 / Math.PI;
+            }} else if (boundaryPolygon.transform && boundaryPolygon.transform._angle) {{
+                activeRotationDeltaDeg = boundaryPolygon.transform._angle * 180.0 / Math.PI;
+            }}
             if (boundaryPolygon.transform && boundaryPolygon.transform._matrix) {{
                 var mat = boundaryPolygon.transform._matrix;
                 var mArr = mat._matrix ? mat.clone().flip()._matrix : mat;
@@ -735,17 +724,23 @@ def generate_leaflet_map_html(
                     attachedLayers[i].layer._transform(mArr);
                 }}
             }}
-            var rotDeg = currentSiteRotation + (boundaryPolygon.transform._angle * 180.0 / Math.PI);
+            var rotDeg = (currentSiteRotation + activeRotationDeltaDeg) % 360.0;
             while (rotDeg > 180.0) rotDeg -= 360.0;
             while (rotDeg < -180.0) rotDeg += 360.0;
 
             var hudActions = document.getElementById('hudActions');
             var hudInfo = document.getElementById('hudInfo');
             hudActions.style.display = 'flex';
-            hudInfo.innerHTML = '📍 Сдвиг: <b>контур</b> &bull; 🧭 Поворот: <b>' + (rotDeg >= 0 ? '+' : '') + rotDeg.toFixed(1) + '&deg;</b>';
+            hudInfo.innerHTML = '📍 Поворот: <b>' + (rotDeg >= 0 ? '+' : '') + rotDeg.toFixed(1) + '&deg;</b> &bull; Зафиксировать положение:';
         }});
 
         boundaryPolygon.on('dragend rotateend transformed', function(e) {{
+            if (e && (e.type === 'rotateend' || e.rotation !== undefined)) {{
+                if (e.rotation !== undefined) {{
+                    activeRotationDeltaDeg = e.rotation * 180.0 / Math.PI;
+                }}
+            }}
+
             // 1. Сбрасываем временные CSS-матрицы у всех прикреплённых слоёв
             for (var i = 0; i < attachedLayers.length; i++) {{
                 attachedLayers[i].layer._transform(null);
@@ -786,6 +781,7 @@ def generate_leaflet_map_html(
             for (var i = 0; i < attachedLayers.length; i++) {{
                 attachedLayers[i].layer._transform(null);
             }}
+            activeRotationDeltaDeg = 0.0;
             boundaryPolygon.setLatLngs(origLatLngs);
             if (boundaryPolygon.transform) {{
                 boundaryPolygon.transform.reset();
@@ -795,7 +791,7 @@ def generate_leaflet_map_html(
                     }});
                 }}
             }}
-            updateAttachedLayers({{ deltaAngleDeg: 0, newCenter: origCenter, finalRotationDeg: currentSiteRotation, distM: 0 }});
+            updateAttachedLayers({{ deltaAngleDeg: 0, newCenter: origCenter, finalRotationDeg: initialSiteRotation, distM: 0 }});
             document.getElementById('hudActions').style.display = 'none';
             document.getElementById('hudInfo').innerHTML = '<span>✋ Тяните контур или корпуса &bull; 🔄 Крутите за оранжевый маркер сверху</span>';
         }};

@@ -233,7 +233,7 @@ class Optimizer:
             Список вариантов с ТЭП.
         """
         typs_to_check = (
-            ["AUTO", "TOWER", "U_SHAPE", "L_SHAPE", "LINEAR"]
+            ["AUTO", "PERIMETER", "TOWER", "U_SHAPE", "L_SHAPE", "LINEAR"]
             if explore_typologies
             else [self.base_placement_config.typology]
         )
@@ -285,6 +285,9 @@ class Optimizer:
                 ground_floor_height=self.base_placement_config.ground_floor_height,
                 max_building_height_m=self.base_placement_config.max_building_height_m,
                 allow_towers_in_mixed=self.base_placement_config.allow_towers_in_mixed,
+                urban_block_size=self.base_placement_config.urban_block_size,
+                internal_road_width=self.base_placement_config.internal_road_width,
+                perimeter_layout_style=self.base_placement_config.perimeter_layout_style,
             )
             buildings = engine.generate(placement_config)
 

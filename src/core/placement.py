@@ -58,6 +58,9 @@ class PlacementConfig:
     ground_floor_height: float | None = None
     max_building_height_m: float | None = None
     allow_towers_in_mixed: bool = True
+    urban_block_size: float = 100.0
+    internal_road_width: float = 16.0
+    perimeter_layout_style: str = "U_SHAPE"
 
 
 class PlacementEngine:
@@ -178,6 +181,18 @@ class PlacementEngine:
         elif typology == "L_SHAPE":
             return self._generate_l_shape_layout(
                 buildable, primary_angle, middle, corner, end, floors, placement_config
+            )
+        elif typology in ("PERIMETER", "URBAN_BLOCK", "COURTYARD"):
+            from src.core.perimeter_placement import PerimeterPlacementEngine
+            engine = PerimeterPlacementEngine(self.site, self.library, self.config)
+            return engine.generate(
+                buildable,
+                primary_angle,
+                self._middle_pool,
+                self._corner_pool,
+                self._end_pool,
+                floors,
+                placement_config,
             )
         else:  # AUTO / MIXED — естественная квартальная компоновка
             return self._generate_mixed_layout(
