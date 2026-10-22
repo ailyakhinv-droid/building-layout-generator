@@ -1,15 +1,17 @@
-"""Модуль интерактивной картографической визуализации на подложке OpenStreetMap.
+"""Модуль интерактивной картографической визуализации на подложке OpenStreetMap / Esri Satellite.
 
-Использует библиотеку Leaflet для отображения:
-- Векторной карты OpenStreetMap (и светлой схемы CartoDB).
-- Кадастровой границы земельного участка.
-- Красных линий и зоны допустимой застройки.
-- Сгенерированных жилых корпусов с дифференциацией по типам и всплывающими карточками ТЭП.
+Использует библиотеку Leaflet и плагин Leaflet.Path.Transform для прямого манипулирования контуром:
+- Прямое перетаскивание контура участка мышью (как в Figma/AutoCAD).
+- Прямой поворот контура за верхний оранжевый маркер с автоповоротом всех корпусов застройки.
+- Индивидуальные секции зданий (рядовые, угловые, торцевые) с возможностью включения/выключения видимости.
+- Подложки: OpenStreetMap, Esri World Imagery (высокодетальный спутник), CartoDB Positron.
+- Автоматический пересчёт ТЭП и генерации при сохранении положения контура.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from shapely.geometry import mapping
@@ -21,7 +23,6 @@ from src.core.geo_utils import (
 from src.models.building import Building
 from src.models.site import Site
 from src.models.tep import TEP
-
 
 # Палитра цветов для корпусов на карте
 BUILDING_MAP_COLORS = [
@@ -35,6 +36,13 @@ BUILDING_MAP_COLORS = [
     "#34495E",  # Графитовый
 ]
 
+# Кэш JS-кода Leaflet.Path.Transform (загружается локально)
+_LPT_PATH = Path(__file__).parent / "leaflet-path-transform.js"
+if _LPT_PATH.exists():
+    _LPT_JS_CODE = _LPT_PATH.read_text(encoding="utf-8")
+else:
+    _LPT_JS_CODE = ""
+
 
 def generate_leaflet_map_html(
     site: Site,
@@ -42,15 +50,17 @@ def generate_leaflet_map_html(
     tep: TEP | None = None,
     height: int = 580,
     fallback_center: tuple[float, float] | None = None,
+    show_sections: bool = True,
 ) -> str:
-    """Сгенерировать HTML-код интерактивной карты Leaflet с подложкой OpenStreetMap.
+    """Сгенерировать HTML-код интерактивной карты Leaflet с возможностью прямого перетаскивания и поворота контура мышью.
 
     Args:
-        site: Земельный участок (должен содержать geo_center).
+        site: Земельный участок (содержит boundary, geo_center, rotation_deg).
         buildings: Список размещенных зданий (опционально).
         tep: Сводные ТЭП участка (опционально).
         height: Высота блока карты в пикселях.
         fallback_center: Резервный центр (lat, lon), если geo_center не задан.
+        show_sections: Показывать ли слой отдельных секций на карте по умолчанию.
 
     Returns:
         HTML строка для рендеринга через st.components.v1.html.
@@ -60,8 +70,9 @@ def generate_leaflet_map_html(
     elif fallback_center:
         center_lat, center_lon = fallback_center
     else:
-        # Универсальный географический центр (Москва) вместо жесткой привязки к СПб
         center_lat, center_lon = 55.751244, 37.618423
+
+    current_rot_deg = float(getattr(site, "rotation_deg", 0.0) or 0.0)
 
     # 1. Формируем GeoJSON границы участка
     boundary_wgs = transform_geometry_to_wgs84(site.boundary, center_lat, center_lon)
@@ -100,20 +111,22 @@ def generate_leaflet_map_html(
             "properties": {"type": "red_line", "id": idx + 1},
         })
 
-    # 4. Формируем GeoJSON корпусов зданий
+    # 4. Формируем GeoJSON общих контуров корпусов зданий
     building_features = []
+    # 5. Формируем GeoJSON индивидуальных секций (для детального отображения планировки)
+    section_features = []
+
     if buildings:
         for idx, b in enumerate(buildings):
             b_footprint = b.footprint
             b_wgs = transform_geometry_to_wgs84(b_footprint, center_lat, center_lon)
             color = BUILDING_MAP_COLORS[idx % len(BUILDING_MAP_COLORS)]
 
-            # Оценка квартир и площадей
             apts_dict = b.total_apartments
             apts_count = sum(apts_dict.values())
             footprint_area = b.total_building_area
             total_gfa = b.total_gfa
-            living_area = total_gfa * 0.72  # Коэффициент выхода жилой площади ~72%
+            living_area = total_gfa * 0.72
 
             building_features.append({
                 "type": "Feature",
@@ -133,11 +146,55 @@ def generate_leaflet_map_html(
                 },
             })
 
-    # Упаковываем все в JSON строки (с сохранением кириллицы)
+            # Разбивка по секциям
+            for s_idx, sec in enumerate(b.sections):
+                sec_wgs = transform_geometry_to_wgs84(sec.footprint, center_lat, center_lon)
+                cat_val = (
+                    sec.section_type.category.value
+                    if hasattr(sec.section_type.category, "value")
+                    else str(sec.section_type.category)
+                )
+
+                cat_name_ru = "Рядовая"
+                cat_color = "#3498DB"  # синий
+                if "CORNER" in cat_val:
+                    cat_name_ru = "Угловая"
+                    cat_color = "#E67E22"  # оранжевый
+                elif "END" in cat_val:
+                    cat_name_ru = "Торцевая"
+                    cat_color = "#9B59B6"  # фиолетовый
+
+                s_code = getattr(sec.section_type, "section_code", "") or sec.section_type.name.split()[0]
+                apts_floor = getattr(sec.section_type, "total_apts_per_floor", 0)
+
+                section_features.append({
+                    "type": "Feature",
+                    "geometry": mapping(sec_wgs),
+                    "properties": {
+                        "building_id": idx + 1,
+                        "section_idx": s_idx + 1,
+                        "section_id": sec.section_type.id,
+                        "name": sec.section_type.name,
+                        "category": cat_val,
+                        "category_ru": cat_name_ru,
+                        "code": s_code,
+                        "floors": sec.floors,
+                        "width": sec.section_type.width,
+                        "depth": sec.section_type.depth,
+                        "floor_area": sec.section_type.floor_area,
+                        "apts_per_floor": apts_floor,
+                        "color": cat_color,
+                        "building_color": color,
+                    },
+                })
+
     boundary_json = json.dumps(boundary_feature, ensure_ascii=False)
     buildable_json = json.dumps(buildable_feature, ensure_ascii=False) if buildable_feature else "null"
     red_lines_json = json.dumps(red_line_features, ensure_ascii=False)
     buildings_json = json.dumps(building_features, ensure_ascii=False)
+    sections_json = json.dumps(section_features, ensure_ascii=False)
+
+    add_sections_to_map = "sectionsLayer.addTo(map);" if show_sections else "// sectionsLayer доступен в переключателе слоев"
 
     html_code = f"""<!DOCTYPE html>
 <html>
@@ -146,18 +203,51 @@ def generate_leaflet_map_html(
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script>
+    {_LPT_JS_CODE}
+    </script>
     <style>
         html, body {{
             height: 100%;
             margin: 0;
             padding: 0;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            overflow: hidden;
         }}
         #map {{
             width: 100%;
             height: {height}px;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }}
+        .interactive-boundary-polygon,
+        .leaflet-interactive {{
+            cursor: grab !important;
+        }}
+        .interactive-boundary-polygon:active,
+        .leaflet-interactive:active {{
+            cursor: grabbing !important;
+        }}
+        .leaflet-grab {{
+            cursor: default !important;
+        }}
+        /* Яркий, крупный и заметный маркер поворота (Rotate Handle) */
+        .transform-handler--rotate {{
+            r: 12px !important;
+            fill: #FF5722 !important;
+            stroke: #FFFFFF !important;
+            stroke-width: 3.5px !important;
+            filter: drop-shadow(0 2px 8px rgba(0,0,0,0.65)) !important;
+            cursor: grab !important;
+            transition: transform 0.15s ease;
+        }}
+        .transform-handler--rotate:hover {{
+            r: 14px !important;
+            fill: #E64A19 !important;
+        }}
+        .transform-handler--rotate:active {{
+            cursor: grabbing !important;
+            fill: #D84315 !important;
         }}
         .custom-popup .leaflet-popup-content-wrapper {{
             border-radius: 8px;
@@ -197,36 +287,108 @@ def generate_leaflet_map_html(
             font-size: 12px;
             line-height: 1.6;
         }}
-        .legend-item {{
+        /* Плавающий HUD управления положением участка (Figma / AutoCAD стиль, нижний док) */
+        .transform-hud {{
+            position: absolute;
+            bottom: 22px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: rgba(24, 32, 47, 0.94);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 30px;
+            padding: 7px 18px;
+            box-shadow: 0 4px 22px rgba(0, 0, 0, 0.38);
+            color: #FFFFFF;
+            font-size: 13px;
+            font-weight: 500;
+            pointer-events: auto;
+            transition: all 0.25s ease;
+        }}
+        .hud-inner {{
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 12px;
         }}
-        .legend-swatch {{
-            width: 14px;
-            height: 14px;
-            border-radius: 2px;
-            display: inline-block;
+        .hud-info {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }}
+        .hud-actions {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        .hud-btn {{
+            border: none;
+            border-radius: 20px;
+            padding: 5px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.15s ease, transform 0.1s ease;
+        }}
+        .hud-btn:active {{
+            transform: scale(0.96);
+        }}
+        .hud-btn-save {{
+            background: #27AE60;
+            color: #FFFFFF;
+        }}
+        .hud-btn-save:hover {{
+            background: #2ECC71;
+        }}
+        .hud-btn-reset {{
+            background: rgba(255, 255, 255, 0.15);
+            color: #ECEFF1;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+        }}
+        .hud-btn-reset:hover {{
+            background: rgba(255, 255, 255, 0.25);
+            color: #FFFFFF;
         }}
     </style>
 </head>
 <body>
     <div id="map"></div>
+
+    <!-- Плавающий HUD прямого управления контуром -->
+    <div id="transformHud" class="transform-hud">
+        <div class="hud-inner">
+            <div class="hud-info" id="hudInfo">
+                <span>✋ Тяните контур или корпуса &bull; 🔄 Крутите за оранжевый маркер сверху</span>
+            </div>
+            <div class="hud-actions" id="hudActions" style="display:none;">
+                <button type="button" class="hud-btn hud-btn-save" onclick="applySiteTransform()">💾 Применить</button>
+                <button type="button" class="hud-btn hud-btn-reset" onclick="resetSiteTransform()">↺ Сброс</button>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // Инициализация базовых слоёв карт
+        // Базовые картографические подложки
         var osmStandard = L.tileLayer('https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
             maxZoom: 19,
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            attribution: '&copy; OpenStreetMap contributors'
         }});
 
         var cartoPositron = L.tileLayer('https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
             maxZoom: 19,
-            attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+            attribution: '&copy; OpenStreetMap &copy; CARTO'
         }});
 
         var osmHot = L.tileLayer('https://{{s}}.tile.openstreetmap.fr/hot/{{z}}/{{x}}/{{y}}.png', {{
             maxZoom: 19,
-            attribution: '&copy; OpenStreetMap contributors, Tiles style by HOT'
+            attribution: '&copy; OpenStreetMap, HOT'
+        }});
+
+        var esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
+            maxZoom: 19,
+            attribution: 'Tiles &copy; Esri &mdash; World Imagery'
         }});
 
         var map = L.map('map', {{
@@ -235,10 +397,9 @@ def generate_leaflet_map_html(
             layers: [osmStandard]
         }});
 
-        // Контрол масштаба
         L.control.scale({{ metric: true, imperial: false, position: 'bottomleft' }}).addTo(map);
 
-        // Стрелка севера (North Arrow)
+        // Стрелка истинного севера
         var northArrow = L.control({{ position: 'topleft' }});
         northArrow.onAdd = function(map) {{
             var div = L.DomUtil.create('div', 'map-legend');
@@ -260,29 +421,35 @@ def generate_leaflet_map_html(
         var buildableData = {buildable_json};
         var redLinesData = {red_lines_json};
         var buildingsData = {buildings_json};
+        var sectionsData = {sections_json};
 
-        // 1. Слой границы участка (четкий темно-синий контур)
-        var boundaryLayer = L.geoJSON(boundaryData, {{
-            style: {{
-                color: '#1B4F72',
-                weight: 3.5,
-                opacity: 0.95,
-                fillColor: '#3498DB',
-                fillOpacity: 0.12
-            }},
-            onEachFeature: function(feature, layer) {{
-                var p = feature.properties;
-                var html = '<div class="popup-card">' +
-                    '<h4 style="border-color:#1B4F72; color:#1B4F72;">📐 Граница участка</h4>' +
-                    '<div class="popup-row"><span class="popup-label">Кадастр. №:</span><span class="popup-val">' + p.cadastral_number + '</span></div>' +
-                    '<div class="popup-row"><span class="popup-label">Площадь:</span><span class="popup-val">' + Number(p.area).toLocaleString() + ' м² (' + p.area_ha + ' га)</span></div>' +
-                    '<div class="popup-row"><span class="popup-label">Адрес:</span><span class="popup-val">' + p.address + '</span></div>' +
-                    '</div>';
-                layer.bindPopup(html, {{ className: 'custom-popup' }});
+        // Извлечение колец координат участка
+        var rawCoords = boundaryData.geometry.coordinates;
+        var boundaryLatLngs;
+        if (boundaryData.geometry.type === 'Polygon') {{
+            boundaryLatLngs = rawCoords.map(function(ring) {{
+                return ring.map(function(pt) {{ return [pt[1], pt[0]]; }});
+            }});
+            if (boundaryLatLngs.length === 1) {{
+                boundaryLatLngs = boundaryLatLngs[0];
             }}
+        }} else {{
+            boundaryLatLngs = rawCoords[0][0].map(function(pt) {{ return [pt[1], pt[0]]; }});
+        }}
+
+        // 1. Интерактивный контур участка с прямым перетаскиванием и вращением
+        var boundaryPolygon = L.polygon(boundaryLatLngs, {{
+            color: '#1B4F72',
+            weight: 3.5,
+            opacity: 0.95,
+            fillColor: '#3498DB',
+            fillOpacity: 0.15,
+            className: 'interactive-boundary-polygon',
+            transform: true,
+            draggable: true
         }}).addTo(map);
 
-        // 2. Слой допустимой зоны застройки (изумрудно-бирюзовый пунктир)
+        // 2. Слой допустимой зоны застройки
         var buildableLayer = null;
         if (buildableData) {{
             buildableLayer = L.geoJSON(buildableData, {{
@@ -297,14 +464,14 @@ def generate_leaflet_map_html(
                     var html = '<div class="popup-card">' +
                         '<h4 style="border-color:#16A085; color:#16A085;">🟩 Зона застройки</h4>' +
                         '<div class="popup-row"><span class="popup-label">Площадь зоны:</span><span class="popup-val">' + Number(feature.properties.area).toLocaleString() + ' м²</span></div>' +
-                        '<div><i>С учётом нормативных отступов от границ</i></div>' +
+                        '<div><i>С учётом нормативных отступов</i></div>' +
                         '</div>';
                     layer.bindPopup(html, {{ className: 'custom-popup' }});
                 }}
             }}).addTo(map);
         }}
 
-        // 3. Слой красных линий (только если они явно заданы)
+        // 3. Слой красных линий
         var redLinesLayer = null;
         if (redLinesData && redLinesData.length > 0) {{
             redLinesLayer = L.geoJSON(redLinesData, {{
@@ -319,14 +486,14 @@ def generate_leaflet_map_html(
             }}).addTo(map);
         }}
 
-        // 4. Слой жилых корпусов
+        // 4. Слой общих контуров корпусов
         var buildingsLayer = L.geoJSON(buildingsData, {{
             style: function(feature) {{
                 return {{
                     color: '#1A5276',
-                    weight: 1.5,
+                    weight: 2.0,
                     fillColor: feature.properties.color || '#2E86AB',
-                    fillOpacity: 0.8
+                    fillOpacity: 0.75
                 }};
             }},
             onEachFeature: function(feature, layer) {{
@@ -334,50 +501,353 @@ def generate_leaflet_map_html(
                 var html = '<div class="popup-card">' +
                     '<h4 style="border-color:' + p.color + '; color:#2C3E50;">🏢 ' + p.name + '</h4>' +
                     '<div class="popup-row"><span class="popup-label">Этажность:</span><span class="popup-val">' + p.floors + ' эт.</span></div>' +
+                    '<div class="popup-row"><span class="popup-label">Секций:</span><span class="popup-val">' + p.sections_count + '</span></div>' +
                     '<div class="popup-row"><span class="popup-label">Типология:</span><span class="popup-val">' + p.typology + '</span></div>' +
-                    '<div class="popup-row"><span class="popup-label">Число секций:</span><span class="popup-val">' + p.sections_count + ' шт.</span></div>' +
                     '<div class="popup-row"><span class="popup-label">Пятно застройки:</span><span class="popup-val">' + Number(p.footprint_area).toLocaleString() + ' м²</span></div>' +
-                    '<div class="popup-row"><span class="popup-label">GFA (общая):</span><span class="popup-val">' + Number(p.gfa).toLocaleString() + ' м²</span></div>' +
-                    '<div class="popup-row"><span class="popup-label">Жилая площадь:</span><span class="popup-val">' + Number(p.living_area).toLocaleString() + ' м²</span></div>' +
-                    '<div class="popup-row"><span class="popup-label">Квартир:</span><span class="popup-val">~' + p.apartments + ' шт.</span></div>' +
+                    '<div class="popup-row"><span class="popup-label">Общая площадь:</span><span class="popup-val">' + Number(p.gfa).toLocaleString() + ' м²</span></div>' +
+                    '<div class="popup-row"><span class="popup-label">Жилая площадь:</span><span class="popup-val">~' + Number(p.living_area).toLocaleString() + ' м²</span></div>' +
+                    '<div class="popup-row"><span class="popup-label">Квартир:</span><span class="popup-val">' + p.apartments + '</span></div>' +
                     '</div>';
                 layer.bindPopup(html, {{ className: 'custom-popup' }});
-
-                // Подсветка при наведении
-                layer.on('mouseover', function(e) {{
-                    this.setStyle({{ fillOpacity: 0.95, weight: 2.5, color: '#000' }});
-                }});
-                layer.on('mouseout', function(e) {{
-                    buildingsLayer.resetStyle(this);
-                }});
+                layer.on('mouseover', function() {{ this.setStyle({{ fillOpacity: 0.95, weight: 2.5, color: '#000' }}); }});
+                layer.on('mouseout', function() {{ buildingsLayer.resetStyle(this); }});
             }}
         }}).addTo(map);
 
+        // 5. Слой индивидуальных секций (детальная планировка)
+        var sectionsLayer = L.geoJSON(sectionsData, {{
+            style: function(feature) {{
+                var p = feature.properties;
+                return {{
+                    color: '#FFFFFF',
+                    weight: 1.5,
+                    fillColor: p.color || '#3498DB',
+                    fillOpacity: 0.88
+                }};
+            }},
+            onEachFeature: function(feature, layer) {{
+                var p = feature.properties;
+                var html = '<div class="popup-card">' +
+                    '<h4 style="border-color:' + p.color + '; color:#2C3E50;">🧱 ' + p.name + '</h4>' +
+                    '<div class="popup-row"><span class="popup-label">Тип секции:</span><span class="popup-val"><b>' + p.category_ru + '</b> (' + p.code + ')</span></div>' +
+                    '<div class="popup-row"><span class="popup-label">Корпус:</span><span class="popup-val">Корпус ' + p.building_id + ', секция ' + p.section_idx + '</span></div>' +
+                    '<div class="popup-row"><span class="popup-label">Этажность:</span><span class="popup-val">' + p.floors + ' эт.</span></div>' +
+                    '<div class="popup-row"><span class="popup-label">Габариты:</span><span class="popup-val">' + p.width + ' × ' + p.depth + ' м</span></div>' +
+                    '<div class="popup-row"><span class="popup-label">Квартир/эт:</span><span class="popup-val">' + p.apts_per_floor + '</span></div>' +
+                    '</div>';
+                layer.bindPopup(html, {{ className: 'custom-popup' }});
+                layer.on('mouseover', function() {{ this.setStyle({{ fillOpacity: 1.0, weight: 2.5, color: '#000' }}); }});
+                layer.on('mouseout', function() {{ sectionsLayer.resetStyle(this); }});
+            }}
+        }});
+
+        {add_sections_to_map}
+
+        // Включаем вращение и перетаскивание контура
+        boundaryPolygon.transform.enable({{
+            rotation: true,
+            scaling: false,
+            uniformScaling: false,
+            handleLength: 40,
+            handlerOptions: {{
+                radius: 12,
+                fillColor: '#FF5722',
+                color: '#FFFFFF',
+                weight: 3.5,
+                fillOpacity: 1
+            }},
+            rotateHandleOptions: {{
+                color: '#FF5722',
+                weight: 3,
+                dashArray: '5, 5'
+            }},
+            boundsOptions: {{
+                color: '#FF5722',
+                weight: 1.5,
+                dashArray: '5, 5',
+                fill: false
+            }}
+        }});
+
+        // Информационный попап по клику на контур (только если не было перетаскивания)
+        boundaryPolygon.on('click', function(e) {{
+            if (boundaryPolygon.dragging && boundaryPolygon.dragging.moved()) return;
+            var p = boundaryData.properties;
+            var html = '<div class="popup-card">' +
+                '<h4 style="border-color:#1B4F72; color:#1B4F72;">📐 Граница участка</h4>' +
+                '<div class="popup-row"><span class="popup-label">Кадастр. №:</span><span class="popup-val">' + p.cadastral_number + '</span></div>' +
+                '<div class="popup-row"><span class="popup-label">Площадь:</span><span class="popup-val">' + Number(p.area).toLocaleString() + ' м² (' + p.area_ha + ' га)</span></div>' +
+                '<div class="popup-row"><span class="popup-label">Адрес:</span><span class="popup-val">' + p.address + '</span></div>' +
+                '</div>';
+            boundaryPolygon.bindPopup(html, {{ className: 'custom-popup' }}).openPopup(e.latlng);
+        }});
+
+        // ─── Связанная трансформация всех слоёв (AutoCAD / Figma блок) ──────
+        var attachedLayers = [];
+
+        function registerAttached(layerGroup) {{
+            if (!layerGroup) return;
+            layerGroup.eachLayer(function(l) {{
+                if (l.getLatLngs) {{
+                    attachedLayers.push({{ layer: l, origLatLngs: JSON.parse(JSON.stringify(l.getLatLngs())) }});
+                    // Делегируем mousedown для бесшовного перемещения всей застройки целиком при клике на любой корпус/секция
+                    l.on('mousedown', function(e) {{
+                        if (boundaryPolygon.dragging) {{
+                            boundaryPolygon.dragging._onDragStart(e);
+                        }}
+                    }});
+                }}
+            }});
+        }}
+        registerAttached(buildableLayer);
+        registerAttached(redLinesLayer);
+        registerAttached(buildingsLayer);
+        registerAttached(sectionsLayer);
+
+        var origLatLngs = JSON.parse(JSON.stringify(boundaryLatLngs));
+        var origCenter = boundaryPolygon.getBounds().getCenter();
+        var origLat = origCenter.lat;
+        var origLng = origCenter.lng;
+        var currentSiteRotation = {current_rot_deg};
+
+        function extractFirstLatLng(val) {{
+            if (!val) return null;
+            if (val.lat !== undefined && !isNaN(val.lat)) {{
+                return {{ lat: Number(val.lat), lng: Number(val.lng) }};
+            }}
+            if (Array.isArray(val)) {{
+                if (val.length >= 2 && typeof val[0] === 'number') {{
+                    return {{ lat: Number(val[0]), lng: Number(val[1]) }};
+                }}
+                for (var i = 0; i < val.length; i++) {{
+                    var res = extractFirstLatLng(val[i]);
+                    if (res) return res;
+                }}
+            }}
+            return null;
+        }}
+
+        function calculateTransformState() {{
+            var newCenter = boundaryPolygon.getBounds().getCenter();
+            var currRaw = boundaryPolygon.getLatLngs();
+
+            var dLat = newCenter.lat - origLat;
+            var dLon = newCenter.lng - origLng;
+            var shiftNorthM = dLat * 111320.0;
+            var shiftEastM = dLon * (111320.0 * Math.cos(origLat * Math.PI / 180.0));
+            var distM = Math.sqrt(shiftNorthM * shiftNorthM + shiftEastM * shiftEastM);
+
+            var deltaAngleDeg = 0.0;
+            if (boundaryPolygon.transform && Math.abs(boundaryPolygon.transform._angle) > 1e-4) {{
+                deltaAngleDeg = boundaryPolygon.transform._angle * 180.0 / Math.PI;
+            }} else {{
+                var p0_o = extractFirstLatLng(origLatLngs);
+                var p0_c = extractFirstLatLng(currRaw);
+                if (p0_o && p0_c) {{
+                    var dx0 = (p0_o.lng - origLng) * (111320.0 * Math.cos(origLat * Math.PI / 180.0));
+                    var dy0 = (p0_o.lat - origLat) * 111320.0;
+                    var dx1 = (p0_c.lng - newCenter.lng) * (111320.0 * Math.cos(newCenter.lat * Math.PI / 180.0));
+                    var dy1 = (p0_c.lat - newCenter.lat) * 111320.0;
+                    if (!isNaN(dx0) && !isNaN(dy0) && !isNaN(dx1) && !isNaN(dy1)) {{
+                        var a0 = Math.atan2(dy0, dx0);
+                        var a1 = Math.atan2(dy1, dx1);
+                        deltaAngleDeg = (a1 - a0) * 180.0 / Math.PI;
+                    }}
+                }}
+            }}
+            while (deltaAngleDeg > 180.0) deltaAngleDeg -= 360.0;
+            while (deltaAngleDeg < -180.0) deltaAngleDeg += 360.0;
+            if (isNaN(deltaAngleDeg) || !isFinite(deltaAngleDeg)) deltaAngleDeg = 0.0;
+
+            var finalRot = (currentSiteRotation + deltaAngleDeg) % 360.0;
+            while (finalRot > 180.0) finalRot -= 360.0;
+            while (finalRot < -180.0) finalRot += 360.0;
+
+            return {{
+                newCenter: newCenter,
+                shiftNorthM: shiftNorthM,
+                shiftEastM: shiftEastM,
+                distM: distM,
+                deltaAngleDeg: deltaAngleDeg,
+                finalRotationDeg: finalRot
+            }};
+        }}
+
+        function updateAttachedLayers(state) {{
+            var rad = (state.deltaAngleDeg || 0.0) * Math.PI / 180.0;
+            var cosA = Math.cos(rad);
+            var sinA = Math.sin(rad);
+            var mLat = 111320.0;
+            var mLonOrig = 111320.0 * Math.cos(origLat * Math.PI / 180.0);
+            var mLonNew = 111320.0 * Math.cos(state.newCenter.lat * Math.PI / 180.0);
+
+            function transformPt(pt) {{
+                var plat = pt.lat !== undefined ? Number(pt.lat) : Number(pt[0]);
+                var plng = pt.lng !== undefined ? Number(pt.lng) : Number(pt[1]);
+                if (isNaN(plat) || isNaN(plng)) return state.newCenter;
+                var x = (plng - origLng) * mLonOrig;
+                var y = (plat - origLat) * mLat;
+                var xr = x * cosA - y * sinA;
+                var yr = x * sinA + y * cosA;
+                return L.latLng(state.newCenter.lat + yr / mLat, state.newCenter.lng + xr / mLonNew);
+            }}
+
+            function recurseCoords(coords) {{
+                if (!Array.isArray(coords)) return transformPt(coords);
+                if (coords.length === 0) return coords;
+                if (coords[0].lat !== undefined || (Array.isArray(coords[0]) && typeof coords[0][0] === 'number')) {{
+                    return coords.map(transformPt);
+                }}
+                return coords.map(recurseCoords);
+            }}
+
+            for (var i = 0; i < attachedLayers.length; i++) {{
+                var item = attachedLayers[i];
+                item.layer.setLatLngs(recurseCoords(item.origLatLngs));
+            }}
+        }}
+
+        // Синхронное перемещение и вращение всех слоёв в реальном времени (60 FPS)
+        boundaryPolygon.on('drag', function(e) {{
+            if (boundaryPolygon.dragging && boundaryPolygon.dragging._matrix) {{
+                var mat = boundaryPolygon.dragging._matrix;
+                for (var i = 0; i < attachedLayers.length; i++) {{
+                    attachedLayers[i].layer._transform(mat);
+                }}
+            }}
+            var hudActions = document.getElementById('hudActions');
+            var hudInfo = document.getElementById('hudInfo');
+            hudActions.style.display = 'flex';
+            var dM = 0;
+            if (boundaryPolygon.dragging && boundaryPolygon.dragging._matrix) {{
+                var dx = boundaryPolygon.dragging._matrix[4] || 0;
+                var dy = boundaryPolygon.dragging._matrix[5] || 0;
+                dM = Math.sqrt(dx * dx + dy * dy) * (156543.03392 * Math.cos(origLat * Math.PI / 180.0) / Math.pow(2, map.getZoom()));
+            }}
+            hudInfo.innerHTML = '📍 Сдвиг: <b>~' + Math.round(dM) + ' м</b> &bull; 🧭 Поворот: <b>' + (currentSiteRotation >= 0 ? '+' : '') + currentSiteRotation.toFixed(1) + '&deg;</b>';
+        }});
+
+        boundaryPolygon.on('rotate', function(e) {{
+            if (boundaryPolygon.transform && boundaryPolygon.transform._matrix) {{
+                var mat = boundaryPolygon.transform._matrix;
+                var mArr = mat._matrix ? mat.clone().flip()._matrix : mat;
+                for (var i = 0; i < attachedLayers.length; i++) {{
+                    attachedLayers[i].layer._transform(mArr);
+                }}
+            }}
+            var rotDeg = currentSiteRotation + (boundaryPolygon.transform._angle * 180.0 / Math.PI);
+            while (rotDeg > 180.0) rotDeg -= 360.0;
+            while (rotDeg < -180.0) rotDeg += 360.0;
+
+            var hudActions = document.getElementById('hudActions');
+            var hudInfo = document.getElementById('hudInfo');
+            hudActions.style.display = 'flex';
+            hudInfo.innerHTML = '📍 Сдвиг: <b>контур</b> &bull; 🧭 Поворот: <b>' + (rotDeg >= 0 ? '+' : '') + rotDeg.toFixed(1) + '&deg;</b>';
+        }});
+
+        boundaryPolygon.on('dragend rotateend transformed', function(e) {{
+            // 1. Сбрасываем временные CSS-матрицы у всех прикреплённых слоёв
+            for (var i = 0; i < attachedLayers.length; i++) {{
+                attachedLayers[i].layer._transform(null);
+            }}
+
+            // 2. Вычисляем точное новое положение геометрии контура
+            var state = calculateTransformState();
+
+            // 3. Фиксируем новые точные координаты всех секций и корпусов
+            updateAttachedLayers(state);
+
+            // 4. Обновляем плавающую панель HUD
+            var hudActions = document.getElementById('hudActions');
+            var hudInfo = document.getElementById('hudInfo');
+            hudActions.style.display = 'flex';
+
+            var distStr = state.distM < 1000 ? Math.round(state.distM) + ' м' : (state.distM / 1000).toFixed(2) + ' км';
+            var rotSign = state.finalRotationDeg >= 0 ? '+' : '';
+            hudInfo.innerHTML = '📍 Сдвиг: <b>' + distStr + '</b> &bull; 🧭 Поворот: <b>' + rotSign + state.finalRotationDeg.toFixed(1) + '&deg;</b>';
+        }});
+
+        // Применить новое положение контура
+        window.applySiteTransform = function() {{
+            var state = calculateTransformState();
+            try {{
+                var u = new URL(window.top.location.href);
+                u.searchParams.set("map_lat", state.newCenter.lat.toFixed(6));
+                u.searchParams.set("map_lon", state.newCenter.lng.toFixed(6));
+                u.searchParams.set("map_rot", state.finalRotationDeg.toFixed(1));
+                window.top.location.href = u.toString();
+            }} catch(err) {{
+                console.error("Top navigation error:", err);
+            }}
+        }};
+
+        // Сбросить контур к исходному положению
+        window.resetSiteTransform = function() {{
+            for (var i = 0; i < attachedLayers.length; i++) {{
+                attachedLayers[i].layer._transform(null);
+            }}
+            boundaryPolygon.setLatLngs(origLatLngs);
+            if (boundaryPolygon.transform) {{
+                boundaryPolygon.transform.reset();
+                if (boundaryPolygon.transform._handlersGroup) {{
+                    boundaryPolygon.transform._handlersGroup.eachLayer(function(l) {{
+                        if (l.bringToFront) l.bringToFront();
+                    }});
+                }}
+            }}
+            updateAttachedLayers({{ deltaAngleDeg: 0, newCenter: origCenter, finalRotationDeg: currentSiteRotation, distM: 0 }});
+            document.getElementById('hudActions').style.display = 'none';
+            document.getElementById('hudInfo').innerHTML = '<span>✋ Тяните контур или корпуса &bull; 🔄 Крутите за оранжевый маркер сверху</span>';
+        }};
+
         // Переключатель слоёв
         var baseMaps = {{
-            "🗺️ OpenStreetMap (Векторная схема)": osmStandard,
+            "🗺️ OpenStreetMap (Схема)": osmStandard,
+            "🛰️ Спутник Esri World Imagery": esriSat,
             "🏢 CartoDB Positron (Светлая)": cartoPositron,
             "🚑 OSM Humanitarian": osmHot
         }};
 
         var overlayMaps = {{
-            "📐 Граница участка (Кадастр)": boundaryLayer,
-            "🏢 Корпуса застройки": buildingsLayer
+            "📐 Граница участка (перемещение/поворот)": boundaryPolygon,
+            "🏢 Корпуса застройки (контуры)": buildingsLayer,
+            "🧱 Секции корпусов (планировка)": sectionsLayer
         }};
         if (buildableLayer) overlayMaps["🟩 Зона застройки"] = buildableLayer;
         if (redLinesLayer) overlayMaps["⛔ Красная линия (УДС)"] = redLinesLayer;
 
         L.control.layers(baseMaps, overlayMaps, {{ collapsed: false, position: 'topright' }}).addTo(map);
 
-        // Автоматическое масштабирование под границы участка
+        // Автоматический зум по границе участка и правильная инициализация маркера поворота
         try {{
-            var bounds = boundaryLayer.getBounds();
+            var bounds = boundaryPolygon.getBounds();
             if (bounds.isValid()) {{
-                map.fitBounds(bounds, {{ padding: [50, 50], maxZoom: 17 }});
+                map.fitBounds(bounds, {{ padding: [65, 45], maxZoom: 17 }});
             }}
         }} catch(e) {{
             console.error(e);
         }}
+
+        // Обновление хэндлеров после зума fitBounds
+        if (boundaryPolygon.transform) {{
+            boundaryPolygon.transform.reset();
+            if (boundaryPolygon.transform._handlersGroup) {{
+                boundaryPolygon.transform._handlersGroup.eachLayer(function(l) {{
+                    if (l.bringToFront) l.bringToFront();
+                }});
+            }}
+        }}
+
+        map.on('zoomend viewreset', function() {{
+            if (boundaryPolygon.transform && boundaryPolygon.transform._enabled) {{
+                boundaryPolygon.transform.reset();
+                if (boundaryPolygon.transform._handlersGroup) {{
+                    boundaryPolygon.transform._handlersGroup.eachLayer(function(l) {{
+                        if (l.bringToFront) l.bringToFront();
+                    }});
+                }}
+            }}
+        }});
     </script>
 </body>
 </html>"""

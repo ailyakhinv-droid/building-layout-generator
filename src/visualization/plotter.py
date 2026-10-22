@@ -56,6 +56,7 @@ def plot_site_plan(
     show_labels: bool = True,
     show_dimensions: bool = True,
     figsize: tuple[float, float] = (14, 10),
+    show_sections: bool = True,
 ) -> plt.Figure:
     """Отрисовать план застройки.
 
@@ -94,30 +95,52 @@ def plot_site_plan(
     for i, building in enumerate(buildings):
         color = BUILDING_COLORS[i % len(BUILDING_COLORS)]
 
-        # Рисуем каждую секцию отдельно
-        for j, section in enumerate(building.sections):
-            footprint = section.footprint
-            cat_color = SECTION_CATEGORY_COLORS.get(
-                section.section_type.category, color
-            )
+        if show_sections:
+            # Рисуем каждую секцию отдельно
+            for j, section in enumerate(building.sections):
+                footprint = section.footprint
+                cat_color = SECTION_CATEGORY_COLORS.get(
+                    section.section_type.category, color
+                )
+                _draw_polygon(
+                    ax, footprint,
+                    facecolor=cat_color,
+                    edgecolor="#222222",
+                    linewidth=1.0,
+                    alpha=0.75,
+                )
+                # Отметка этажности и кода на каждой секции
+                s_code = getattr(section.section_type, "section_code", "") or section.section_type.name.split()[0]
+                ax.annotate(
+                    f"{s_code}\n{section.floors}э",
+                    xy=(section.x, section.y),
+                    fontsize=6.5,
+                    color="#111111",
+                    fontweight="bold",
+                    ha="center",
+                    va="center",
+                    zorder=7,
+                )
+        else:
+            # Рисуем общий контур корпуса
             _draw_polygon(
-                ax, footprint,
-                facecolor=cat_color,
-                edgecolor="#222222",
-                linewidth=1.0,
-                alpha=0.75,
+                ax, building.footprint,
+                facecolor=color,
+                edgecolor="#1A5276",
+                linewidth=1.8,
+                alpha=0.85,
             )
-            # Отметка этажности и кода на каждой секции
-            s_code = getattr(section.section_type, "section_code", "") or section.section_type.name.split()[0]
+            c_pt = building.footprint.centroid
             ax.annotate(
-                f"{s_code}\n{section.floors}э",
-                xy=(section.x, section.y),
-                fontsize=6.5,
-                color="#111111",
+                f"Корпус {i + 1}\n{building.floors} эт.",
+                xy=(c_pt.x, c_pt.y),
+                fontsize=8,
+                color="#FFFFFF",
                 fontweight="bold",
                 ha="center",
                 va="center",
                 zorder=7,
+                bbox=dict(boxstyle="round,pad=0.2", facecolor=color, edgecolor="#1A5276", alpha=0.9),
             )
 
         # Выделяем внутренний двор для П-образных и Г-образных корпусов

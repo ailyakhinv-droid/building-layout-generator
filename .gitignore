@@ -20,6 +20,17 @@ output/*.dwg
 libs/
 external_libs/
 
+# Local knowledge base (never commit to git)
+knowledge_base/
+docs/local_kb/
+
+# Standalone HTML dashboard prototype (local only)
+dashboard_prototype/
+
+# Temporary node & scratch dirs
+node_modules/
+scratch/
+
 # OS specific
 Thumbs.db
 .DS_Store

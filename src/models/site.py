@@ -30,6 +30,7 @@ class Site:
     geo_center: tuple[float, float] | None = None  # (latitude, longitude)
     cadastral_number: str | None = None
     address: str | None = None
+    georef_source: str = ""
     rotation_deg: float = 0.0
     buildable_area: Polygon | None = field(default=None, init=False)
 

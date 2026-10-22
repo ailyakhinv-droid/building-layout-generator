@@ -521,6 +521,29 @@ PRESET_PARCELS: dict[str, dict[str, Any]] = {
         ],
         "red_lines": [],
     },
+    "72:23:0222001:16187": {
+        "region_code": "72",
+        "region_name": "Тюменская область",
+        "district_name": "г. Тюмень, Заречный р-н (Алебашево)",
+        "regional_norm_id": "russia_sp42",
+        "address": "Тюменская область, г. Тюмень, Заречный р-н, оз. Алебашево, уч. 16187",
+        "center_lat": 57.172000,
+        "center_lon": 65.558000,
+        "polygon_metric": [
+            (245.43, 218.52),
+            (231.72, 255.08),
+            (106.70, 207.70),
+            (27.02, 177.50),
+            (24.84, 183.49),
+            (0.00, 174.44),
+            (64.52, 0.00),
+            (165.43, 37.55),
+            (295.07, 86.17),
+        ],
+        "red_lines": [
+            [(-44.90, 296.02), (62.09, 325.57), (190.17, 365.85), (295.07, 86.17), (64.52, -0.30), (-5.90, 190.41)],
+        ],
+    },
     "72:23:0216002:123": {
         "region_code": "72",
         "region_name": "Тюменская область",
@@ -574,14 +597,14 @@ PRESET_PARCELS: dict[str, dict[str, Any]] = {
 
 def validate_cadastral_number(cad_num: str) -> bool:
     """Проверить валидность формата кадастрового номера РФ."""
-    clean = re.sub(r"[\s\-_]+", ":", cad_num.strip())
+    clean = re.sub(r"[\s\-_\.]+", ":", cad_num.strip())
     pattern = r"^\d{2}:\d{1,2}:\d{6,7}:\d+$"
     return bool(re.match(pattern, clean))
 
 
 def parse_cadastral_components(cad_num: str) -> dict[str, str] | None:
-    """Разобрать кадастровый номер на компоненты с поддержкой разделителей двоеточие/пробел/дефис."""
-    clean = re.sub(r"[\s\-_]+", ":", cad_num.strip())
+    """Разобрать кадастровый номер на компоненты с поддержкой разделителей двоеточие/точка/пробел/дефис."""
+    clean = re.sub(r"[\s\-_\.]+", ":", cad_num.strip())
     parts = clean.split(":")
     if len(parts) >= 2:
         reg_code = parts[0].zfill(2)
@@ -604,7 +627,7 @@ def resolve_cadastral_location(cad_num: str) -> tuple[str, str, str, float, floa
     Returns:
         Кортеж (region_name, district_name, norm_id, lat, lon).
     """
-    clean_num = cad_num.strip()
+    clean_num = re.sub(r"[\s\-_\.]+", ":", cad_num.strip())
     if clean_num in PRESET_PARCELS:
         p = PRESET_PARCELS[clean_num]
         return (p["region_name"], p.get("district_name", "—"), p["regional_norm_id"], p["center_lat"], p["center_lon"])
@@ -716,6 +739,83 @@ def resolve_cadastral_location(cad_num: str) -> tuple[str, str, str, float, floa
     return (f"Субъект РФ ({reg_code})", f"Округ {dist_code}", "russia_sp42", 55.7512, 37.6184)
 
 
+def smart_resolve_location(query: str) -> tuple[str, str, str, float, float]:
+    """Универсально определить регион, район, норматив и координаты по кадастровому номеру или адресу.
+
+    Поддерживает:
+    - Прямой ввод координат WGS-84 (например, '57.1720, 65.5580' или '53.2502 50.3184').
+    - Кадастровые номера любого формата (например, '72:23:0216002:123', '63:01:0709002:2320').
+    - Текстовые адреса и ориентиры через открытый ArcGIS API (например, 'Тюмень, Алебашево', 'Самара, Зубчаниновка').
+
+    Returns:
+        Кортеж (region_name, district_or_address, norm_id, lat, lon).
+    """
+    q = query.strip()
+    if not q:
+        return resolve_cadastral_location("63:01:0709002:2320")
+
+    # 0. Если введены точные координаты WGS-84 напрямую (например, "57.1754, 65.5810" или "57.1754 65.5810")
+    coord_match = re.search(r"^(\d{2}[\.,]\d+)[,\s;]+(\d{2,3}[\.,]\d+)$", q)
+    if coord_match:
+        lat = float(coord_match.group(1).replace(",", "."))
+        lon = float(coord_match.group(2).replace(",", "."))
+        if lat > 65.0 and 40.0 <= lon <= 70.0:
+            lat, lon = lon, lat
+        reg_name, norm_id = "Тюменская область", "russia_sp42"
+        if 52.0 <= lat <= 55.0 and 48.0 <= lon <= 53.0:
+            reg_name, norm_id = "Самарская область", "russia_sp42"
+        elif 55.0 <= lat <= 56.5 and 36.5 <= lon <= 38.5:
+            reg_name, norm_id = "г. Москва", "moscow_mngp"
+        elif 59.5 <= lat <= 60.5 and 29.5 <= lon <= 31.0:
+            reg_name, norm_id = "г. Санкт-Петербург", "spb_rngp"
+        elif 44.0 <= lat <= 46.5 and 37.0 <= lon <= 41.0:
+            reg_name, norm_id = "Краснодарский край", "krasnodar_rngp"
+        return (reg_name, f"Координаты [{lat:.5f}, {lon:.5f}]", norm_id, lat, lon)
+
+    # 1. Если строка содержит формат кадастрового номера (двоеточия, точки, код региона)
+    clean_q = re.sub(r"[\s\-_\.]+", ":", q)
+    if re.search(r"^\d{1,2}:\d+", clean_q) or ":" in clean_q:
+        return resolve_cadastral_location(clean_q)
+
+    # 2. Иначе пробуем геокодировать как текстовый адрес через ArcGIS (из geocode.ipynb)
+    try:
+        from src.core.geo_utils import geocode_address
+        geo = geocode_address(q)
+        if geo:
+            lat, lon, addr = geo
+            addr_low = addr.lower()
+            if "тюмен" in addr_low or (55.0 <= lat <= 60.0 and 64.0 <= lon <= 72.0):
+                reg_name = "Тюменская область"
+                norm_id = "russia_sp42"
+            elif "самар" in addr_low or (52.0 <= lat <= 55.0 and 48.0 <= lon <= 53.0):
+                reg_name = "Самарская область"
+                norm_id = "russia_sp42"
+            elif "москв" in addr_low or (55.2 <= lat <= 56.1 and 36.8 <= lon <= 38.0):
+                reg_name = "г. Москва"
+                norm_id = "moscow_mngp"
+            elif "петербург" in addr_low or "ленинград" in addr_low or (59.6 <= lat <= 60.3 and 29.5 <= lon <= 31.0):
+                reg_name = "г. Санкт-Петербург"
+                norm_id = "spb_rngp"
+            elif "алтай" in addr_low or "барнаул" in addr_low or (51.0 <= lat <= 54.5 and 81.0 <= lon <= 86.0):
+                reg_name = "Алтайский край"
+                norm_id = "russia_sp42"
+            elif "краснодар" in addr_low or (44.5 <= lat <= 46.5 and 37.5 <= lon <= 41.0):
+                reg_name = "Краснодарский край"
+                norm_id = "krasnodar_rngp"
+            elif "екатеринбург" in addr_low or "свердловск" in addr_low or (56.3 <= lat <= 57.5 and 59.5 <= lon <= 61.5):
+                reg_name = "Свердловская область"
+                norm_id = "russia_sp42"
+            else:
+                reg_name = "Субъект РФ"
+                norm_id = "russia_sp42"
+
+            return (reg_name, addr, norm_id, lat, lon)
+    except Exception:
+        pass
+
+    return resolve_cadastral_location(q)
+
+
 def get_cadastral_parcel(
     cadastral_number: str,
     custom_area_sqm: float | None = None,
@@ -740,14 +840,18 @@ def get_cadastral_parcel(
         Объект CadastralParcelInfo.
     """
     clean_num = cadastral_number.strip()
+    norm_num = re.sub(r"[\s\-_\.]+", ":", clean_num)
     import shapely.affinity
 
     # 1. Если номер совпадает с готовым пресетом
-    if clean_num in PRESET_PARCELS:
-        data = PRESET_PARCELS[clean_num]
+    target_preset = clean_num if clean_num in PRESET_PARCELS else (norm_num if norm_num in PRESET_PARCELS else None)
+    if target_preset:
+        data = PRESET_PARCELS[target_preset]
         poly = Polygon(data["polygon_metric"])
         rls = []
-        if add_red_line:
+        if "red_lines" in data and data["red_lines"]:
+            rls = [LineString(r) for r in data["red_lines"]]
+        elif add_red_line:
             side_x = poly.bounds[2] - poly.bounds[0]
             rls = [LineString([(0.0, 8.0), (side_x, 8.0)])]
 
