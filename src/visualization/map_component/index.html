@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+  iframe {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    border: none;
+    display: block;
+  }
+</style>
+<script>
+function setStreamlitValue(val) {
+    window.parent.postMessage({
+        isStreamlitMessage: true,
+        type: "streamlit:setComponentValue",
+        value: val
+    }, "*");
+}
+
+window.addEventListener("message", function(e) {
+    if (e.data && e.data.isMapTransform) {
+        setStreamlitValue(e.data.transform);
+    }
+    if (e.data && e.data.type === "streamlit:render") {
+        var iframe = document.getElementById("mapFrame");
+        var args = e.data.args || {};
+        if (iframe && args.html) {
+            iframe.srcdoc = args.html;
+        }
+        var h = args.height || 600;
+        window.parent.postMessage({
+            isStreamlitMessage: true,
+            type: "streamlit:setFrameHeight",
+            height: h
+        }, "*");
+    }
+});
+
+// Сообщаем Streamlit о готовности компонента
+window.parent.postMessage({
+    isStreamlitMessage: true,
+    type: "streamlit:componentReady",
+    apiVersion: 1
+}, "*");
+</script>
+</head>
+<body>
+  <iframe id="mapFrame" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+</body>
+</html>

@@ -14,6 +14,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import copy
 import yaml
 import streamlit as st
 import streamlit.components.v1 as components
@@ -49,7 +50,7 @@ from src.core.geo_utils import (
     get_msk_key_for_region,
     geocode_address,
 )
-from src.visualization.map_view import generate_leaflet_map_html
+from src.visualization.map_view import generate_leaflet_map_html, render_interactive_map
 from src.visualization.viewer_3d import generate_3d_viewer_html
 from src.export.html_3d_export import export_3d_html
 from src.export.dxf_export import export_dxf
@@ -65,20 +66,48 @@ st.set_page_config(
 )
 
 # Обработка интерактивной посадки с карты через параметры URL
-if "map_lat" in st.query_params and "map_lon" in st.query_params:
+if any(k in st.query_params for k in ("map_lat", "map_lon", "map_rot")):
     try:
-        q_lat = float(st.query_params["map_lat"])
-        q_lon = float(st.query_params["map_lon"])
-        st.session_state["interactive_map_lat"] = q_lat
-        st.session_state["interactive_map_lon"] = q_lon
-        st.session_state["use_interactive_pos"] = True
+        if "map_lat" in st.query_params and "map_lon" in st.query_params:
+            q_lat = float(st.query_params["map_lat"])
+            q_lon = float(st.query_params["map_lon"])
+            st.session_state["interactive_map_lat"] = q_lat
+            st.session_state["interactive_map_lon"] = q_lon
+            st.session_state["use_interactive_pos"] = True
         if "map_rot" in st.query_params:
             rot_val = int(round(float(st.query_params["map_rot"])))
+            while rot_val > 180:
+                rot_val -= 360
+            while rot_val < -180:
+                rot_val += 360
             st.session_state["site_rotation"] = rot_val
             st.session_state["slider_site_rotation"] = rot_val
         st.query_params.clear()
     except Exception:
         pass
+
+# Обработка отложенного обновления положения/поворота с карты (выполняется ДО инстанцирования виджетов)
+if "pending_map_update" in st.session_state:
+    try:
+        upd = st.session_state.pop("pending_map_update")
+        if upd.get("rot") is not None:
+            rot_val = int(round(float(upd["rot"])))
+            while rot_val > 180:
+                rot_val -= 360
+            while rot_val < -180:
+                rot_val += 360
+            st.session_state["site_rotation"] = rot_val
+            st.session_state["slider_site_rotation"] = rot_val
+        if upd.get("lat") is not None and upd.get("lon") is not None:
+            st.session_state["interactive_map_lat"] = float(upd["lat"])
+            st.session_state["interactive_map_lon"] = float(upd["lon"])
+            st.session_state["use_interactive_pos"] = True
+        if upd.get("lock"):
+            st.session_state["pending_lock_site"] = True
+    except Exception:
+        pass
+
+site_locked = bool(st.session_state.get("site_locked", False) and ("locked_site" in st.session_state))
 
 st.title("🏗️ Генератор застройки по ТЭП")
 st.markdown("Расстановка типовых секций на участке с расчётом технико-экономических показателей")
@@ -107,480 +136,614 @@ regional_norms = load_regional_norms()
 
 
 # ─── Боковая панель ──────────────────────────────────────────────────
-
-st.sidebar.header("📐 Параметры участка")
-
-site_mode = st.sidebar.radio(
-    "Способ задания участка",
-    [
-        "1. По кадастровому номеру (с ручным поворотом)",
-        "2. По чертежу DWG / DXF (с присвоением номера)",
-    ],
-    help="Выберите способ: по кадастровому номеру любого региона РФ или по файлу чертежа с привязкой к кадастровому номеру",
-)
-
-if site_mode == "1. По кадастровому номеру (с ручным поворотом)":
-    # Быстрые пресеты по городам РФ для тестирования
-    cad_quick_samples = {
-        "63:01:0709002:2320 (Самара, пос. Зубчаниновка — 4.2 га)": "63:01:0709002:2320",
-        "72:23:0222001:16187 (Тюмень, Алебашево — 4.4 га)": "72:23:0222001:16187",
-        "63:01:0603003:54 (Самара, Промышленный — 3.5 га)": "63:01:0603003:54",
-        "72:23:0216002:123 (Тюмень, Алебашево / Заречный — 3.3 га)": "72:23:0216002:123",
-        "72:17:1707001:500 (Тюмень, д. Патрушева — 3.3 га)": "72:17:1707001:500",
-        "72:17:0000000:100 (Тюмень, Московский тракт — 3.2 га)": "72:17:0000000:100",
-        "22:63:010101:200 (Барнаул / Алтайский край — 3.2 га)": "22:63:010101:200",
-        "77:17:0120316:1024 (Москва, Коммунарка — 3.6 га)": "77:17:0120316:1024",
-        "78:34:0004286:115 (Санкт-Петербург, Приморский — 3.4 га)": "78:34:0004286:115",
-        "50:27:0010101:500 (Московская обл., Подольск — 3.3 га)": "50:27:0010101:500",
-        "23:43:0106012:450 (Краснодар, Зап. обход — 4.3 га)": "23:43:0106012:450",
-        "66:41:0101001:500 (Екатеринбург, Академический)": "66:41:0101001:500",
-        "16:50:010101:200 (Казань, Ново-Савиновский)": "16:50:010101:200",
-        "(ввести свой номер вручную)": "",
-    }
-
-    if "cad_input_str" not in st.session_state:
-        st.session_state["cad_input_str"] = "63:01:0709002:2320"
-
-    def _on_cad_sample_select():
-        sel = st.session_state.get("cad_sample_selector")
-        if sel and sel in cad_quick_samples and cad_quick_samples[sel]:
-            st.session_state["cad_input_str"] = cad_quick_samples[sel]
-
-    sample_list = list(cad_quick_samples.keys())
-    curr_input = st.session_state.get("cad_input_str", "63:01:0709002:2320")
-    matching_idx = 0
-    for idx, name in enumerate(sample_list):
-        if cad_quick_samples[name] == curr_input:
-            matching_idx = idx
-            break
-
-    st.sidebar.selectbox(
-        "Примеры участков из каталога",
-        sample_list,
-        index=matching_idx,
-        key="cad_sample_selector",
-        on_change=_on_cad_sample_select,
-        help="Выберите пример участка для быстрой загрузки",
-    )
-
-    entered_location = st.sidebar.text_input(
-        "Кадастровый номер, адрес или координаты",
-        key="cad_input_str",
-        help="Введите кадастровый номер (72:23:0222001:16187), адрес ('Тюмень, Алебашево') или координаты WGS-84 ('57.1754, 65.5810')",
-    )
-
-    clean_query = entered_location.strip() or "63:01:0709002:2320"
-    reg_name, dist_name, norm_id, auto_lat, auto_lon = smart_resolve_location(clean_query)
-    st.session_state["cadastral_norm_id"] = norm_id
-
-    # Экспандер для тонких настроек и прикрепления DXF
-    with st.sidebar.expander("⚙️ Настройка площади и координат WGS-84", expanded=False):
-        custom_area = st.number_input(
-            "Площадь участка, м²",
-            min_value=5000,
-            max_value=300000,
-            value=32000,
-            step=1000,
-            help="Используется для расчёта формы синтетического участка",
+if site_locked:
+    st.sidebar.markdown("### 🏗️ Шаг 2 из 2: Застройка и ТЭП")
+    site = st.session_state["locked_site"]
+    with st.sidebar.container(border=True):
+        col_ls1, col_ls2 = st.columns([3, 1])
+        col_ls1.markdown("**🔒 Участок закреплен**")
+        if col_ls2.button("🔓", help="Вернуться к Этапу 1 для изменения положения или угла", key="btn_unlock_sb"):
+            st.session_state["site_locked"] = False
+            st.rerun()
+        st.caption(
+            f"📍 `{site.cadastral_number or 'По чертежу'}`\n\n"
+            f"📐 **{site.area / 10000:.2f} га** ({site.area:,.0f} м²)\n\n"
+            f"🧭 Поворот: **{site.rotation_deg:+.1f}°**\n\n"
+            f"🏢 {site.address or '—'}"
         )
-        col_m1_lat, col_m1_lon = st.columns(2)
-        override_lat = col_m1_lat.number_input(
-            "Широта (Lat)", value=float(auto_lat), format="%.5f", step=0.0001, key="m1_override_lat"
-        )
-        override_lon = col_m1_lon.number_input(
-            "Долгота (Lon)", value=float(auto_lon), format="%.5f", step=0.0001, key="m1_override_lon"
-        )
-        enable_red_line = st.checkbox(
-            "Добавить красную линию (отступ УДС)",
-            value=False,
-            help="Включает красную линию вдоль южной границы участка.",
-        )
-        cad_override_file = st.file_uploader(
-            "📎 Прикрепить контур из чертежа (.dxf, .dwg) — опционально",
-            type=["dxf", "dwg"],
-            key="cad_sub_uploader",
-            help="Заменяет синтетический контур точной геометрией из чертежа",
-        )
-
-    use_lat = override_lat if override_lat != 0.0 else auto_lat
-    use_lon = override_lon if override_lon != 0.0 else auto_lon
-
-    try:
-        parcel_info = get_cadastral_parcel(
-            clean_query,
-            custom_area_sqm=custom_area,
-            override_lat=use_lat,
-            override_lon=use_lon,
-            add_red_line=enable_red_line,
-        )
-        site = create_site_from_cadastre(parcel_info)
-        site.georef_source = f"По кадастровому номеру / адресу ({parcel_info.region_name})"
-
-        if cad_override_file is not None:
-            try:
-                sub_bytes = cad_override_file.getvalue()
-                sub_site, sub_meta = parse_cad_site(
-                    sub_bytes,
-                    filename=cad_override_file.name,
-                    normalize_origin=True,
-                )
-                site.boundary = sub_site.boundary
-                site.base_offset = sub_site.base_offset
-                if sub_site.red_lines:
-                    site.red_lines = sub_site.red_lines
-                st.sidebar.caption(f"📐 Контур из чертежа `{cad_override_file.name}` ({site.area:,.0f} м²)")
-            except Exception as e:
-                st.sidebar.warning(f"Не удалось применить геометрию из CAD: {e}")
-
-        st.session_state["cadastral_norm_id"] = parcel_info.regional_norm_id
-
-        st.sidebar.success(
-            f"✓ **{parcel_info.region_name}**\n\n*{parcel_info.district_name}*: {site.area:,.0f} м² ({site.area / 10000.0:.2f} га)"
-        )
-        st.sidebar.caption(f"📍 {parcel_info.address}")
-        st.sidebar.markdown(
-            f"[🌐 Проверить на Яндекс.Картах ↗](https://yandex.ru/maps/?pt={use_lon:.6f},{use_lat:.6f}&z=16&l=map)"
-        )
-        if site.red_lines:
-            st.sidebar.caption(f"⛔ Красная линия УДС активна ({len(site.red_lines)} шт.)")
-
-    except Exception as e:
-        st.sidebar.error(f"Ошибка получения участка: {e}")
-        site = create_rectangular_site(200, 150, geo_center=(use_lat, use_lon))
-        site.address = f"{reg_name}, {dist_name} (демо-участок)"
-        st.session_state["cadastral_norm_id"] = "russia_sp42"
-
 else:
-    # ─── 2. По чертежу DWG / DXF (с присвоением номера) ─────────────────
-    cad_file = st.sidebar.file_uploader(
-        "Загрузите чертёж границы (.dxf, .dwg)",
-        type=["dxf", "dwg"],
-        help="Загрузите чертёж генплана с контуром участка. DXF читается нативно, DWG конвертируется через ODA.",
+    st.sidebar.markdown("### 📍 Шаг 1 из 2: Посадка участка")
+    st.sidebar.caption("Задайте контур, настройте положение и ориентацию участка. Затем закрепите его для перехода к застройке.")
+
+    st.sidebar.header("📐 Параметры участка")
+
+    site_mode = st.sidebar.radio(
+        "Способ задания участка",
+        [
+            "1. По кадастровому номеру (с ручным поворотом)",
+            "2. По чертежу DWG / DXF (с присвоением номера)",
+        ],
+        key="site_mode_radio",
+        help="Выберите способ: по кадастровому номеру любого региона РФ или по файлу чертежа с привязкой к кадастровому номеру",
     )
 
-    dwg_quick_regions = {
-        "Самара, пос. Зубчаниновка (63:01:0709002:2320)": "63:01:0709002:2320",
-        "Тюмень, Алебашево (72:23:0222001:16187)": "72:23:0222001:16187",
-        "Тюмень, Заречный / Алебашево (72:23:0216002:123)": "72:23:0216002:123",
-        "Тюмень, д. Патрушева (72:17:1707001:500)": "72:17:1707001:500",
-        "Тюмень, Московский тракт (72:17:0000000:100)": "72:17:0000000:100",
-        "Барнаул / Алтайский край (22:63:010101:200)": "22:63:010101:200",
-        "Москва, Коммунарка (77:17:0120316:1024)": "77:17:0120316:1024",
-        "Санкт-Петербург, Приморский (78:34:0004286:115)": "78:34:0004286:115",
-        "Московская обл., Подольск (50:27:0010101:500)": "50:27:0010101:500",
-        "Краснодар, Зап. обход (23:43:0106012:450)": "23:43:0106012:450",
-        "Екатеринбург, Академический (66:41:0101001:500)": "66:41:0101001:500",
-        "Казань, Ново-Савиновский (16:50:010101:200)": "16:50:010101:200",
-        "(ввести свой номер вручную)": "",
-    }
+    if site_mode == "1. По кадастровому номеру (с ручным поворотом)":
+        # Быстрые пресеты по городам РФ для тестирования
+        cad_quick_samples = {
+            "63:01:0709002:2320 (Самара, пос. Зубчаниновка — 4.2 га)": "63:01:0709002:2320",
+            "72:23:0222001:16187 (Тюмень, Алебашево — 4.4 га)": "72:23:0222001:16187",
+            "63:01:0603003:54 (Самара, Промышленный — 3.5 га)": "63:01:0603003:54",
+            "72:23:0216002:123 (Тюмень, Алебашево / Заречный — 3.3 га)": "72:23:0216002:123",
+            "72:17:1707001:500 (Тюмень, д. Патрушева — 3.3 га)": "72:17:1707001:500",
+            "72:17:0000000:100 (Тюмень, Московский тракт — 3.2 га)": "72:17:0000000:100",
+            "22:63:010101:200 (Барнаул / Алтайский край — 3.2 га)": "22:63:010101:200",
+            "77:17:0120316:1024 (Москва, Коммунарка — 3.6 га)": "77:17:0120316:1024",
+            "78:34:0004286:115 (Санкт-Петербург, Приморский — 3.4 га)": "78:34:0004286:115",
+            "50:27:0010101:500 (Московская обл., Подольск — 3.3 га)": "50:27:0010101:500",
+            "23:43:0106012:450 (Краснодар, Зап. обход — 4.3 га)": "23:43:0106012:450",
+            "66:41:0101001:500 (Екатеринбург, Академический)": "66:41:0101001:500",
+            "16:50:010101:200 (Казань, Ново-Савиновский)": "16:50:010101:200",
+            "(ввести свой номер вручную)": "",
+        }
 
-    if "assigned_cad_number" not in st.session_state:
-        st.session_state["assigned_cad_number"] = "63:01:0709002:2320"
+        if "cad_input_str" not in st.session_state:
+            st.session_state["cad_input_str"] = "63:01:0709002:2320"
 
-    def _on_dwg_region_change():
-        sel_r = st.session_state.get("dwg_region_selector")
-        if sel_r and sel_r in dwg_quick_regions and dwg_quick_regions[sel_r]:
-            st.session_state["assigned_cad_number"] = dwg_quick_regions[sel_r]
+        def _on_cad_sample_select():
+            sel = st.session_state.get("cad_sample_selector")
+            if sel and sel in cad_quick_samples and cad_quick_samples[sel]:
+                st.session_state["cad_input_str"] = cad_quick_samples[sel]
 
-    curr_dwg_cad = st.session_state.get("assigned_cad_number", "63:01:0709002:2320")
-    matched_dwg_idx = 0
-    for idx, k in enumerate(dwg_quick_regions.keys()):
-        if dwg_quick_regions[k] == curr_dwg_cad:
-            matched_dwg_idx = idx
-            break
+        sample_list = list(cad_quick_samples.keys())
+        curr_input = st.session_state.get("cad_input_str", "63:01:0709002:2320")
+        matching_idx = 0
+        for idx, name in enumerate(sample_list):
+            if cad_quick_samples[name] == curr_input:
+                matching_idx = idx
+                break
 
-    st.sidebar.selectbox(
-        "Быстрый выбор региона привязки чертежа",
-        list(dwg_quick_regions.keys()),
-        index=matched_dwg_idx,
-        key="dwg_region_selector",
-        on_change=_on_dwg_region_change,
-        help="Выберите регион для быстрой подстановки кадастрового номера",
-    )
+        st.sidebar.selectbox(
+            "Примеры участков из каталога",
+            sample_list,
+            index=matching_idx,
+            key="cad_sample_selector",
+            on_change=_on_cad_sample_select,
+            help="Выберите пример участка для быстрой загрузки",
+        )
 
-    assigned_location = st.sidebar.text_input(
-        "Кадастровый номер, адрес или координаты",
-        key="assigned_cad_number",
-        help="Укажите кадастровый номер (72:23:0222001:16187), адрес ('Тюмень, Алебашево') или координаты WGS-84 ('57.1754, 65.5810')",
-    )
+        entered_location = st.sidebar.text_input(
+            "Кадастровый номер, адрес или координаты",
+            key="cad_input_str",
+            help="Введите кадастровый номер (72:23:0222001:16187), адрес ('Тюмень, Алебашево') или координаты WGS-84 ('57.1754, 65.5810')",
+        )
 
-    clean_dwg_query = assigned_location.strip() or "63:01:0709002:2320"
-    reg_name, dist_name, norm_id, c_lat, c_lon = smart_resolve_location(clean_dwg_query)
-    st.session_state["cadastral_norm_id"] = norm_id
+        clean_query = entered_location.strip() or "63:01:0709002:2320"
+        reg_name, dist_name, norm_id, auto_lat, auto_lon = smart_resolve_location(clean_query)
+        st.session_state["cadastral_norm_id"] = norm_id
 
-    if cad_file is not None:
-        try:
-            file_bytes = cad_file.getvalue()
-            layers_info = inspect_cad_layers(file_bytes, cad_file.name)
-            if not layers_info:
-                st.sidebar.error("В чертеже не найдено геометрических линий или полилиний.")
-                st.stop()
-
-            layer_names = [l.name for l in layers_info]
-            cand_idx = next((i for i, l in enumerate(layers_info) if l.is_candidate), 0)
-
-            # Экспандер настроек слоев и ручной посадки
-            with st.sidebar.expander("⚙️ Настройки слоёв и ручная корректировка", expanded=False):
-                sel_layer = st.selectbox(
-                    "Слой границы участка",
-                    layer_names,
-                    index=cand_idx,
-                    help="Слой CAD с внешним контуром границы",
-                )
-                rl_names = ["(нет)"] + layer_names
-                rl_cand_idx = 0
-                for idx, l in enumerate(layers_info):
-                    if l.is_red_line_candidate and l.name != sel_layer:
-                        rl_cand_idx = idx + 1
-                        break
-                sel_rl = st.selectbox("Слой красных линий", rl_names, index=rl_cand_idx)
-                rl_param = None if sel_rl == "(нет)" else sel_rl
-
-                col_rw1, col_rw2 = st.columns(2)
-                manual_lat = col_rw1.number_input(
-                    "Широта (Lat)", value=0.0, format="%.5f", step=0.0001,
-                    help="Оставьте 0.0 для автопосадки по чертежу/кадастру",
-                )
-                manual_lon = col_rw2.number_input(
-                    "Долгота (Lon)", value=0.0, format="%.5f", step=0.0001,
-                    help="Оставьте 0.0 для автопосадки по чертежу/кадастру",
-                )
-
-            site, cad_meta = parse_cad_site(
-                file_bytes,
-                filename=cad_file.name,
-                boundary_layer=sel_layer,
-                red_lines_layer=rl_param,
-                normalize_origin=True,
+        # Экспандер для тонких настроек и прикрепления DXF
+        with st.sidebar.expander("⚙️ Настройка площади и координат WGS-84", expanded=False):
+            custom_area = st.number_input(
+                "Площадь участка, м²",
+                min_value=5000,
+                max_value=300000,
+                value=32000,
+                step=1000,
+                help="Используется для расчёта формы синтетического участка",
+            )
+            col_m1_lat, col_m1_lon = st.columns(2)
+            override_lat = col_m1_lat.number_input(
+                "Широта (Lat)", value=float(auto_lat), format="%.5f", step=0.0001, key="m1_override_lat"
+            )
+            override_lon = col_m1_lon.number_input(
+                "Долгота (Lon)", value=float(auto_lon), format="%.5f", step=0.0001, key="m1_override_lon"
+            )
+            enable_red_line = st.checkbox(
+                "Добавить красную линию (отступ УДС)",
+                value=False,
+                help="Включает красную линию вдоль южной границы участка.",
+            )
+            cad_override_file = st.file_uploader(
+                "📎 Прикрепить контур из чертежа (.dxf, .dwg) — опционально",
+                type=["dxf", "dwg"],
+                key="cad_sub_uploader",
+                help="Заменяет синтетический контур точной геометрией из чертежа",
             )
 
-            comps = parse_cadastral_components(clean_dwg_query)
-            site.cadastral_number = comps["formatted"] if comps else clean_dwg_query
-            site.address = f"{reg_name}, {dist_name} (чертёж: {cad_file.name})"
+        use_lat = override_lat if override_lat != 0.0 else auto_lat
+        use_lon = override_lon if override_lon != 0.0 else auto_lon
 
-            # Проверяем, содержит ли чертёж геодезические координаты (МСК)
-            is_msk = abs(site.base_offset[0]) > 500 or abs(site.base_offset[1]) > 500
-            cad_lat, cad_lon = None, None
-            detected_msk = None
-            dist_km = 0.0
+        try:
+            parcel_info = get_cadastral_parcel(
+                clean_query,
+                custom_area_sqm=custom_area,
+                override_lat=use_lat,
+                override_lon=use_lon,
+                add_red_line=enable_red_line,
+            )
+            site = create_site_from_cadastre(parcel_info)
+            site.georef_source = f"По кадастровому номеру / адресу ({parcel_info.region_name})"
 
-            if is_msk:
-                reg_code = comps["region_code"] if comps else "63"
-                detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
-                if not detected_msk:
-                    detected_msk = detect_msk_by_coordinates(site.base_offset[0], site.base_offset[1])
-                if not detected_msk:
-                    detected_msk = "МСК-72 Зона 1 (Тюмень)" if reg_code == "72" else "МСК-63 Зона 1 (Самара)"
-
-                target_center = (c_lat, c_lon)
-                cad_lat, cad_lon = msk_to_wgs84_coords(
-                    site.base_offset[0],
-                    site.base_offset[1],
-                    detected_msk,
-                    axis_order="auto",
-                    expected_center=target_center,
-                )
-                cos_lat = math.cos(math.radians(c_lat))
-                dist_km = math.sqrt(((cad_lat - c_lat) * 111.0) ** 2 + ((cad_lon - c_lon) * 111.0 * cos_lat) ** 2)
-
-            # Выбор точки посадки на карту
-            if manual_lat != 0.0 and manual_lon != 0.0:
-                site.geo_center = (manual_lat, manual_lon)
-                site.georef_source = "Ручные координаты"
-                pos_desc = f"✏️ Ручные координаты: `[{manual_lat:.5f}, {manual_lon:.5f}]`"
-            elif is_msk and cad_lat is not None and cad_lon is not None:
-                opt_cadastre = f"📍 По кадастру/адресу: [{c_lat:.5f}, {c_lon:.5f}]"
-                opt_cad = f"🛰️ По координатам чертежа ({detected_msk}): [{cad_lat:.5f}, {cad_lon:.5f}]"
-                georef_options = [opt_cadastre, opt_cad]
-
-                # Если координаты чертежа расходятся с кадастровым районом более чем на 15 км —
-                # по умолчанию выбираем кадастр, чтобы участок не улетал в поле/другой район!
-                default_idx = 0 if dist_km > 15.0 else 1
-
-                if dist_km > 15.0:
-                    st.sidebar.warning(
-                        f"⚠️ Координаты в файле чертежа расходятся с выбранным адресом/кадастром ({dist_name}) на {dist_km:.0f} км. "
-                        "По умолчанию участок посажен по кадастровому номеру."
+            if cad_override_file is not None:
+                try:
+                    sub_bytes = cad_override_file.getvalue()
+                    sub_site, sub_meta = parse_cad_site(
+                        sub_bytes,
+                        filename=cad_override_file.name,
+                        normalize_origin=True,
                     )
+                    site.boundary = sub_site.boundary
+                    site.base_offset = sub_site.base_offset
+                    if sub_site.red_lines:
+                        site.red_lines = sub_site.red_lines
+                    st.sidebar.caption(f"📐 Контур из чертежа `{cad_override_file.name}` ({site.area:,.0f} м²)")
+                except Exception as e:
+                    st.sidebar.warning(f"Не удалось применить геометрию из CAD: {e}")
 
-                chosen_georef = st.sidebar.radio(
-                    "📍 Посадка участка на карту:",
-                    georef_options,
-                    index=default_idx,
-                    key="cad_georef_choice",
-                    help="Выберите, куда посадить контур: в район кадастрового номера или по абсолютным координатам МСК из чертежа",
-                )
-
-                if chosen_georef == opt_cadastre:
-                    site.geo_center = (c_lat, c_lon)
-                    site.georef_source = f"По кадастру/адресу ({dist_name})"
-                    pos_desc = f"📍 По кадастру/адресу: `[{c_lat:.5f}, {c_lon:.5f}]`"
-                else:
-                    site.geo_center = (cad_lat, cad_lon)
-                    site.georef_source = f"По координатам чертежа ({detected_msk})"
-                    pos_desc = f"🛰️ По чертежу ({detected_msk}): `[{cad_lat:.5f}, {cad_lon:.5f}]`"
-            else:
-                site.geo_center = (c_lat, c_lon)
-                site.georef_source = f"По кадастру/адресу ({dist_name})"
-                pos_desc = f"📍 По кадастру/адресу ({dist_name}): `[{c_lat:.5f}, {c_lon:.5f}]`"
+            st.session_state["cadastral_norm_id"] = parcel_info.regional_norm_id
 
             st.sidebar.success(
-                f"✓ **{site.area:,.0f} м²** ({site.area / 10000.0:.2f} га)\n\n"
-                f"{pos_desc}"
+                f"✓ **{parcel_info.region_name}**\n\n*{parcel_info.district_name}*: {site.area:,.0f} м² ({site.area / 10000.0:.2f} га)"
             )
+            st.sidebar.caption(f"📍 {parcel_info.address}")
             st.sidebar.markdown(
-                f"[🌐 Проверить на Яндекс.Картах ↗](https://yandex.ru/maps/?pt={site.geo_center[1]:.6f},{site.geo_center[0]:.6f}&z=16&l=map)"
+                f"[🌐 Проверить на Яндекс.Картах ↗](https://yandex.ru/maps/?pt={use_lon:.6f},{use_lat:.6f}&z=16&l=map)"
             )
-            if cad_meta["red_lines_count"] > 0:
-                st.sidebar.caption(f"⛔ Красных линий: {cad_meta['red_lines_count']} шт.")
-            st.sidebar.caption(f"🏛️ Нормативы: **{reg_name}** ({dist_name})")
+            if site.red_lines:
+                st.sidebar.caption(f"⛔ Красная линия УДС активна ({len(site.red_lines)} шт.)")
 
-        except DWGConversionError as e:
-            st.sidebar.warning(str(e))
-            st.sidebar.info("💡 Сохраните чертеж в AutoCAD/nanoCAD в формат DXF (`DXFOUT`) и загрузите .dxf файл.")
-            st.stop()
         except Exception as e:
-            st.sidebar.error(f"Ошибка обработки CAD файла: {e}")
-            st.stop()
-    else:
-        st.sidebar.info("Загрузите чертёж границы участка (.dxf или .dwg).")
-        st.sidebar.caption("💡 Совет: команда `DXFOUT` в AutoCAD или «Сохранить как → DXF».")
-        try:
-            parcel_info = get_cadastral_parcel(clean_dwg_query)
-            site = create_site_from_cadastre(parcel_info)
-            site.cadastral_number = parcel_info.cadastral_number
-            site.address = parcel_info.address
-            site.georef_source = f"По кадастровому номеру ({parcel_info.district_name})"
-            if parcel_info.source == "preset":
-                st.sidebar.success(
-                    f"✓ Контур участка загружен по кадастру: **{site.area:,.0f} м²** ({site.area / 10000.0:.2f} га)"
-                )
-            else:
-                st.sidebar.caption(f"📍 Контур по району: **{reg_name} ({dist_name})** `[{c_lat:.5f}, {c_lon:.5f}]`")
-        except Exception:
-            site = create_rectangular_site(200, 150, geo_center=(c_lat, c_lon))
-            site.cadastral_number = clean_dwg_query
+            st.sidebar.error(f"Ошибка получения участка: {e}")
+            site = create_rectangular_site(200, 150, geo_center=(use_lat, use_lon))
             site.address = f"{reg_name}, {dist_name} (демо-участок)"
-            site.georef_source = f"По кадастровому номеру / адресу ({dist_name})"
+            st.session_state["cadastral_norm_id"] = "russia_sp42"
 
-        st.sidebar.markdown(
-            f"[🌐 Проверить на Яндекс.Картах ↗](https://yandex.ru/maps/?pt={c_lon:.6f},{c_lat:.6f}&z=16&l=map)"
+    else:
+        # ─── 2. По чертежу DWG / DXF (с присвоением номера) ─────────────────
+        cad_file = st.sidebar.file_uploader(
+            "Загрузите чертёж границы (.dxf, .dwg)",
+            type=["dxf", "dwg"],
+            key="main_cad_uploader",
+            help="Загрузите чертёж генплана с контуром участка. DXF читается нативно, DWG конвертируется через ODA.",
         )
-        st.sidebar.caption(f"📍 Центр участка: **{reg_name} ({dist_name})** `[{c_lat:.5f}, {c_lon:.5f}]`")
 
-st.sidebar.markdown(f"**Площадь участка:** {site.area:,.0f} м²")
+        if cad_file is not None:
+            st.session_state["cad_file_bytes"] = cad_file.getvalue()
+            st.session_state["cad_file_name"] = cad_file.name
 
-# ─── Интерактивная посадка и микро-выравнивание на карте ───────────────
-st.sidebar.subheader("🎯 Посадка и выравнивание на карте")
+        has_cad = (cad_file is not None) or ("cad_file_bytes" in st.session_state)
 
-if "interactive_map_lat" in st.session_state:
-    inter_lat = st.session_state["interactive_map_lat"]
-    inter_lon = st.session_state["interactive_map_lon"]
-    st.sidebar.success(f"📍 Положение с карты:\n`[{inter_lat:.6f}, {inter_lon:.6f}]`")
-    site.geo_center = (inter_lat, inter_lon)
-    site.georef_source = f"Интерактивно на карте `[{inter_lat:.6f}, {inter_lon:.6f}]`"
-    if st.sidebar.button("↺ Сбросить к исходным координатам", key="btn_reset_inter_pt", use_container_width=True):
-        del st.session_state["interactive_map_lat"]
-        del st.session_state["interactive_map_lon"]
-        st.session_state["use_interactive_pos"] = False
+        dwg_quick_regions = {
+            "Самара, пос. Зубчаниновка (63:01:0709002:2320)": "63:01:0709002:2320",
+            "Тюмень, Алебашево (72:23:0222001:16187)": "72:23:0222001:16187",
+            "Тюмень, Заречный / Алебашево (72:23:0216002:123)": "72:23:0216002:123",
+            "Тюмень, д. Патрушева (72:17:1707001:500)": "72:17:1707001:500",
+            "Тюмень, Московский тракт (72:17:0000000:100)": "72:17:0000000:100",
+            "Барнаул / Алтайский край (22:63:010101:200)": "22:63:010101:200",
+            "Москва, Коммунарка (77:17:0120316:1024)": "77:17:0120316:1024",
+            "Санкт-Петербург, Приморский (78:34:0004286:115)": "78:34:0004286:115",
+            "Московская обл., Подольск (50:27:0010101:500)": "50:27:0010101:500",
+            "Краснодар, Зап. обход (23:43:0106012:450)": "23:43:0106012:450",
+            "Екатеринбург, Академический (66:41:0101001:500)": "66:41:0101001:500",
+            "Казань, Ново-Савиновский (16:50:010101:200)": "16:50:010101:200",
+            "(ввести свой номер вручную)": "",
+        }
+
+        if "assigned_cad_number" not in st.session_state:
+            st.session_state["assigned_cad_number"] = "63:01:0709002:2320"
+
+        def _on_dwg_region_change():
+            sel_r = st.session_state.get("dwg_region_selector")
+            if sel_r and sel_r in dwg_quick_regions and dwg_quick_regions[sel_r]:
+                st.session_state["assigned_cad_number"] = dwg_quick_regions[sel_r]
+
+        curr_dwg_cad = st.session_state.get("assigned_cad_number", "63:01:0709002:2320")
+        matched_dwg_idx = 0
+        for idx, k in enumerate(dwg_quick_regions.keys()):
+            if dwg_quick_regions[k] == curr_dwg_cad:
+                matched_dwg_idx = idx
+                break
+
+        st.sidebar.selectbox(
+            "Быстрый выбор региона привязки чертежа",
+            list(dwg_quick_regions.keys()),
+            index=matched_dwg_idx,
+            key="dwg_region_selector",
+            on_change=_on_dwg_region_change,
+            help="Выберите регион для быстрой подстановки кадастрового номера",
+        )
+
+        assigned_location = st.sidebar.text_input(
+            "Кадастровый номер, адрес или координаты",
+            key="assigned_cad_number",
+            help="Укажите кадастровый номер (72:23:0222001:16187), адрес ('Тюмень, Алебашево') или координаты WGS-84 ('57.1754, 65.5810')",
+        )
+
+        clean_dwg_query = assigned_location.strip() or "63:01:0709002:2320"
+        reg_name, dist_name, norm_id, c_lat, c_lon = smart_resolve_location(clean_dwg_query)
+        st.session_state["cadastral_norm_id"] = norm_id
+
+        if has_cad:
+            try:
+                file_bytes = cad_file.getvalue() if cad_file is not None else st.session_state["cad_file_bytes"]
+                active_cad_name = cad_file.name if cad_file is not None else st.session_state["cad_file_name"]
+
+                if cad_file is None and "cad_file_name" in st.session_state:
+                    col_cf1, col_cf2 = st.sidebar.columns([3, 1])
+                    col_cf1.caption(f"📎 Чертёж в памяти: `{st.session_state['cad_file_name']}`")
+                    if col_cf2.button("✕", help="Сбросить загруженный чертёж", key="btn_reset_cad_cache"):
+                        del st.session_state["cad_file_bytes"]
+                        del st.session_state["cad_file_name"]
+                        st.rerun()
+
+                layers_info = inspect_cad_layers(file_bytes, active_cad_name)
+                if not layers_info:
+                    st.sidebar.error("В чертеже не найдено геометрических линий или полилиний.")
+                    st.stop()
+
+                layer_names = [l.name for l in layers_info]
+                cand_idx = next((i for i, l in enumerate(layers_info) if l.is_candidate), 0)
+
+                # Экспандер настроек слоев и ручной посадки
+                with st.sidebar.expander("⚙️ Настройки слоёв и ручная корректировка", expanded=False):
+                    sel_layer = st.selectbox(
+                        "Слой границы участка",
+                        layer_names,
+                        index=cand_idx,
+                        help="Слой CAD с внешним контуром границы",
+                    )
+                    rl_names = ["(нет)"] + layer_names
+                    rl_cand_idx = 0
+                    for idx, l in enumerate(layers_info):
+                        if l.is_red_line_candidate and l.name != sel_layer:
+                            rl_cand_idx = idx + 1
+                            break
+                    sel_rl = st.selectbox("Слой красных линий", rl_names, index=rl_cand_idx)
+                    rl_param = None if sel_rl == "(нет)" else sel_rl
+
+                    col_rw1, col_rw2 = st.columns(2)
+                    manual_lat = col_rw1.number_input(
+                        "Широта (Lat)", value=0.0, format="%.5f", step=0.0001,
+                        help="Оставьте 0.0 для автопосадки по чертежу/кадастру",
+                    )
+                    manual_lon = col_rw2.number_input(
+                        "Долгота (Lon)", value=0.0, format="%.5f", step=0.0001,
+                        help="Оставьте 0.0 для автопосадки по чертежу/кадастру",
+                    )
+
+                site, cad_meta = parse_cad_site(
+                    file_bytes,
+                    filename=active_cad_name,
+                    boundary_layer=sel_layer,
+                    red_lines_layer=rl_param,
+                    normalize_origin=True,
+                )
+
+                comps = parse_cadastral_components(clean_dwg_query)
+                site.cadastral_number = comps["formatted"] if comps else clean_dwg_query
+                site.address = f"{reg_name}, {dist_name} (чертёж: {active_cad_name})"
+
+                # Проверяем, содержит ли чертёж геодезические координаты (МСК)
+                is_msk = abs(site.base_offset[0]) > 500 or abs(site.base_offset[1]) > 500
+                cad_lat, cad_lon = None, None
+                detected_msk = None
+                dist_km = 0.0
+
+                if is_msk:
+                    reg_code = comps["region_code"] if comps else "63"
+                    detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
+                    if not detected_msk:
+                        detected_msk = detect_msk_by_coordinates(site.base_offset[0], site.base_offset[1])
+                    if not detected_msk:
+                        detected_msk = "МСК-72 Зона 1 (Тюмень)" if reg_code == "72" else "МСК-63 Зона 1 (Самара)"
+
+                    target_center = (c_lat, c_lon)
+                    cad_lat, cad_lon = msk_to_wgs84_coords(
+                        site.base_offset[0],
+                        site.base_offset[1],
+                        detected_msk,
+                        axis_order="auto",
+                        expected_center=target_center,
+                    )
+                    cos_lat = math.cos(math.radians(c_lat))
+                    dist_km = math.sqrt(((cad_lat - c_lat) * 111.0) ** 2 + ((cad_lon - c_lon) * 111.0 * cos_lat) ** 2)
+
+                # Выбор точки посадки на карту
+                if manual_lat != 0.0 and manual_lon != 0.0:
+                    site.geo_center = (manual_lat, manual_lon)
+                    site.georef_source = "Ручные координаты"
+                    pos_desc = f"✏️ Ручные координаты: `[{manual_lat:.5f}, {manual_lon:.5f}]`"
+                elif is_msk and cad_lat is not None and cad_lon is not None:
+                    opt_cadastre = f"📍 По кадастру/адресу: [{c_lat:.5f}, {c_lon:.5f}]"
+                    opt_cad = f"🛰️ По координатам чертежа ({detected_msk}): [{cad_lat:.5f}, {cad_lon:.5f}]"
+                    georef_options = [opt_cadastre, opt_cad]
+
+                    # Если координаты чертежа расходятся с кадастровым районом более чем на 15 км —
+                    # по умолчанию выбираем кадастр, чтобы участок не улетал в поле/другой район!
+                    default_idx = 0 if dist_km > 15.0 else 1
+
+                    if dist_km > 15.0:
+                        st.sidebar.warning(
+                            f"⚠️ Координаты в файле чертежа расходятся с выбранным адресом/кадастром ({dist_name}) на {dist_km:.0f} км. "
+                            "По умолчанию участок посажен по кадастровому номеру."
+                        )
+
+                    chosen_georef = st.sidebar.radio(
+                        "📍 Посадка участка на карту:",
+                        georef_options,
+                        index=default_idx,
+                        key="cad_georef_choice",
+                        help="Выберите, куда посадить контур: в район кадастрового номера или по абсолютным координатам МСК из чертежа",
+                    )
+
+                    if chosen_georef == opt_cadastre:
+                        site.geo_center = (c_lat, c_lon)
+                        site.georef_source = f"По кадастру/адресу ({dist_name})"
+                        pos_desc = f"📍 По кадастру/адресу: `[{c_lat:.5f}, {c_lon:.5f}]`"
+                    else:
+                        site.geo_center = (cad_lat, cad_lon)
+                        site.georef_source = f"По координатам чертежа ({detected_msk})"
+                        pos_desc = f"🛰️ По чертежу ({detected_msk}): `[{cad_lat:.5f}, {cad_lon:.5f}]`"
+                else:
+                    site.geo_center = (c_lat, c_lon)
+                    site.georef_source = f"По кадастру/адресу ({dist_name})"
+                    pos_desc = f"📍 По кадастру/адресу ({dist_name}): `[{c_lat:.5f}, {c_lon:.5f}]`"
+
+                st.sidebar.success(
+                    f"✓ **{site.area:,.0f} м²** ({site.area / 10000.0:.2f} га)\n\n"
+                    f"{pos_desc}"
+                )
+                st.sidebar.markdown(
+                    f"[🌐 Проверить на Яндекс.Картах ↗](https://yandex.ru/maps/?pt={site.geo_center[1]:.6f},{site.geo_center[0]:.6f}&z=16&l=map)"
+                )
+                if cad_meta["red_lines_count"] > 0:
+                    st.sidebar.caption(f"⛔ Красных линий: {cad_meta['red_lines_count']} шт.")
+                st.sidebar.caption(f"🏛️ Нормативы: **{reg_name}** ({dist_name})")
+
+            except DWGConversionError as e:
+                st.sidebar.warning(str(e))
+                st.sidebar.info("💡 Сохраните чертеж в AutoCAD/nanoCAD в формат DXF (`DXFOUT`) и загрузите .dxf файл.")
+                st.stop()
+            except Exception as e:
+                st.sidebar.error(f"Ошибка обработки CAD файла: {e}")
+                st.stop()
+        else:
+            st.sidebar.info("Загрузите чертёж границы участка (.dxf или .dwg).")
+            st.sidebar.caption("💡 Совет: команда `DXFOUT` в AutoCAD или «Сохранить как → DXF».")
+            try:
+                parcel_info = get_cadastral_parcel(clean_dwg_query)
+                site = create_site_from_cadastre(parcel_info)
+                site.cadastral_number = parcel_info.cadastral_number
+                site.address = parcel_info.address
+                site.georef_source = f"По кадастровому номеру ({parcel_info.district_name})"
+                if parcel_info.source == "preset":
+                    st.sidebar.success(
+                        f"✓ Контур участка загружен по кадастру: **{site.area:,.0f} м²** ({site.area / 10000.0:.2f} га)"
+                    )
+                else:
+                    st.sidebar.caption(f"📍 Контур по району: **{reg_name} ({dist_name})** `[{c_lat:.5f}, {c_lon:.5f}]`")
+            except Exception:
+                site = create_rectangular_site(200, 150, geo_center=(c_lat, c_lon))
+                site.cadastral_number = clean_dwg_query
+                site.address = f"{reg_name}, {dist_name} (демо-участок)"
+                site.georef_source = f"По кадастровому номеру / адресу ({dist_name})"
+
+            st.sidebar.markdown(
+                f"[🌐 Проверить на Яндекс.Картах ↗](https://yandex.ru/maps/?pt={c_lon:.6f},{c_lat:.6f}&z=16&l=map)"
+            )
+            st.sidebar.caption(f"📍 Центр участка: **{reg_name} ({dist_name})** `[{c_lat:.5f}, {c_lon:.5f}]`")
+
+    st.sidebar.markdown(f"**Площадь участка:** {site.area:,.0f} м²")
+
+    # ─── Интерактивная посадка и микро-выравнивание на карте ───────────────
+    st.sidebar.subheader("🎯 Посадка и выравнивание на карте")
+
+    if "interactive_map_lat" in st.session_state:
+        inter_lat = st.session_state["interactive_map_lat"]
+        inter_lon = st.session_state["interactive_map_lon"]
+        st.sidebar.success(f"📍 Положение с карты:\n`[{inter_lat:.6f}, {inter_lon:.6f}]`")
+        site.geo_center = (inter_lat, inter_lon)
+        site.georef_source = f"Интерактивно на карте `[{inter_lat:.6f}, {inter_lon:.6f}]`"
+        if st.sidebar.button("↺ Сбросить к исходным координатам", key="btn_reset_inter_pt", use_container_width=True):
+            del st.session_state["interactive_map_lat"]
+            del st.session_state["interactive_map_lon"]
+            st.session_state["use_interactive_pos"] = False
+            st.session_state["pending_map_update"] = {"rot": 0}
+            st.rerun()
+    else:
+        st.sidebar.info(
+            "💡 **Прямое выравнивание на карте:**\n"
+            "Зажмите контур участка мышью и перетащите его. "
+            "Крутите за верхний круглый маркер для поворота."
+        )
+    # ─── Ориентация участка и стороны света ──────────────────────────────
+    st.sidebar.subheader("🧭 Ориентация участка и стороны света")
+
+    cardinal_presets = {
+        "(произвольный угол)": None,
+        "Юг (0° - строго по меридиану)": 0,
+        "Юго-Восток (45°)": 45,
+        "Восток (90°)": 90,
+        "Северо-Восток (135°)": 135,
+        "Север (180°)": 180,
+        "Северо-Запад (-135°)": -135,
+        "Запад (-90°)": -90,
+        "Юго-Запад (-45°)": -45,
+    }
+
+    if "site_rotation" not in st.session_state:
         st.session_state["site_rotation"] = 0
-        st.session_state["slider_site_rotation"] = 0
-        st.rerun()
-else:
-    st.sidebar.info(
-        "💡 **Прямое выравнивание на карте:**\n"
-        "Зажмите контур участка мышью и перетащите его. "
-        "Крутите за верхний круглый маркер для поворота."
+    if "slider_site_rotation" not in st.session_state:
+        st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
+
+    def _on_cardinal_select():
+        sel = st.session_state.get("sel_cardinal_widget")
+        if sel and sel in cardinal_presets and cardinal_presets[sel] is not None:
+            new_rot = cardinal_presets[sel]
+            st.session_state["site_rotation"] = new_rot
+            st.session_state["slider_site_rotation"] = new_rot
+
+    st.sidebar.selectbox(
+        "Назначить ориентацию фасада / улицы",
+        list(cardinal_presets.keys()),
+        index=0,
+        key="sel_cardinal_widget",
+        on_change=_on_cardinal_select,
+        help="Быстро назначить ориентацию главного фасада участка по сторонам света (истинному северу)",
     )
-# ─── Ориентация участка и стороны света ──────────────────────────────
-st.sidebar.subheader("🧭 Ориентация участка и стороны света")
 
-cardinal_presets = {
-    "(произвольный угол)": None,
-    "Юг (0° - строго по меридиану)": 0,
-    "Юго-Восток (45°)": 45,
-    "Восток (90°)": 90,
-    "Северо-Восток (135°)": 135,
-    "Север (180°)": 180,
-    "Северо-Запад (-135°)": -135,
-    "Запад (-90°)": -90,
-    "Юго-Запад (-45°)": -45,
-}
+    rot_btn1, rot_btn2, rot_btn3, rot_btn4 = st.sidebar.columns(4)
+    current_rot = int(st.session_state.get("site_rotation", 0))
 
-if "site_rotation" not in st.session_state:
-    st.session_state["site_rotation"] = 0
-if "slider_site_rotation" not in st.session_state:
-    st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
+    if rot_btn1.button("↺ -15°", use_container_width=True, help="Повернуть против часовой стрелки на 15°"):
+        st.session_state["pending_map_update"] = {"rot": current_rot - 15}
+        st.rerun()
 
-def _on_cardinal_select():
-    sel = st.session_state.get("sel_cardinal_widget")
-    if sel and sel in cardinal_presets and cardinal_presets[sel] is not None:
-        new_rot = cardinal_presets[sel]
-        st.session_state["site_rotation"] = new_rot
-        st.session_state["slider_site_rotation"] = new_rot
+    if rot_btn2.button("↺ -5°", use_container_width=True, help="Повернуть против часовой стрелки на 5°"):
+        st.session_state["pending_map_update"] = {"rot": current_rot - 5}
+        st.rerun()
 
-st.sidebar.selectbox(
-    "Назначить ориентацию фасада / улицы",
-    list(cardinal_presets.keys()),
-    index=0,
-    key="sel_cardinal_widget",
-    on_change=_on_cardinal_select,
-    help="Быстро назначить ориентацию главного фасада участка по сторонам света (истинному северу)",
-)
+    if rot_btn3.button("↻ +5°", use_container_width=True, help="Повернуть по часовой стрелке на 5°"):
+        st.session_state["pending_map_update"] = {"rot": current_rot + 5}
+        st.rerun()
 
-rot_btn1, rot_btn2, rot_btn3, rot_btn4 = st.sidebar.columns(4)
-current_rot = int(st.session_state.get("site_rotation", 0))
+    if rot_btn4.button("↻ +15°", use_container_width=True, help="Повернуть по часовой стрелке на 15°"):
+        st.session_state["pending_map_update"] = {"rot": current_rot + 15}
+        st.rerun()
 
-if rot_btn1.button("↺ -15°", use_container_width=True, help="Повернуть против часовой стрелки на 15°"):
-    st.session_state["site_rotation"] = current_rot - 15
-    st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
-    st.rerun()
+    def _on_slider_rotate():
+        st.session_state["site_rotation"] = st.session_state["slider_site_rotation"]
 
-if rot_btn2.button("↺ -5°", use_container_width=True, help="Повернуть против часовой стрелки на 5°"):
-    st.session_state["site_rotation"] = current_rot - 5
-    st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
-    st.rerun()
+    col_rot_s, col_rot_n = st.sidebar.columns([3, 2])
+    site_rot_val = col_rot_s.slider(
+        "Точный угол к северу, °",
+        min_value=-180,
+        max_value=180,
+        step=1,
+        key="slider_site_rotation",
+        on_change=_on_slider_rotate,
+        help="Поверните участок, чтобы состыковать его границу с направлением улиц, дорог и кварталов на карте OSM",
+    )
+    st.session_state["site_rotation"] = site_rot_val
 
-if rot_btn3.button("↻ +5°", use_container_width=True, help="Повернуть по часовой стрелке на 5°"):
-    st.session_state["site_rotation"] = current_rot + 5
-    st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
-    st.rerun()
+    if site_rot_val != 0:
+        site.rotate(float(site_rot_val))
 
-if rot_btn4.button("↻ +15°", use_container_width=True, help="Повернуть по часовой стрелке на 15°"):
-    st.session_state["site_rotation"] = current_rot + 15
-    st.session_state["slider_site_rotation"] = st.session_state["site_rotation"]
-    st.rerun()
+    # Индикация азимута главной оси участка
+    from src.core.buildable_area import get_primary_axes
+    p_axis, _ = get_primary_axes(site.boundary)
+    col_rot_n.metric("Азимут оси", f"{p_axis:.0f}°")
 
-def _on_slider_rotate():
-    st.session_state["site_rotation"] = st.session_state["slider_site_rotation"]
+    if site_rot_val != 0 and st.sidebar.button("Сбросить поворот (0°)", use_container_width=True):
+        st.session_state["pending_map_update"] = {"rot": 0}
+        st.rerun()
 
-col_rot_s, col_rot_n = st.sidebar.columns([3, 2])
-site_rot_val = col_rot_s.slider(
-    "Точный угол к северу, °",
-    min_value=-180,
-    max_value=180,
-    value=int(st.session_state.get("site_rotation", 0)),
-    step=1,
-    key="slider_site_rotation",
-    on_change=_on_slider_rotate,
-    help="Поверните участок, чтобы состыковать его границу с направлением улиц, дорог и кварталов на карте OSM",
-)
-st.session_state["site_rotation"] = site_rot_val
+    st.sidebar.caption("💡 *При загрузке чертежа DXF или вставке координат ЕГРН истинный север и форма считываются автоматически.*")
 
-if site_rot_val != 0:
-    site.rotate(float(site_rot_val))
+    config["boundary_setback"] = st.sidebar.slider(
+        "Отступ от границы участка, м", 0, 20, int(config.get("boundary_setback", 6)), key="st1_boundary_setback"
+    )
+    config["red_line_setback"] = st.sidebar.slider(
+        "Отступ от красных линий, м", 0, 20, int(config.get("red_line_setback", 5)), key="st1_red_line_setback"
+    )
 
-# Индикация азимута главной оси участка
-from src.core.buildable_area import get_primary_axes
-p_axis, _ = get_primary_axes(site.boundary)
-col_rot_n.metric("Азимут оси", f"{p_axis:.0f}°")
+    try:
+        compute_buildable_area(site, config)
+    except Exception:
+        pass
 
-if site_rot_val != 0 and st.sidebar.button("Сбросить поворот (0°)", use_container_width=True):
-    st.session_state["site_rotation"] = 0
-    st.session_state["slider_site_rotation"] = 0
-    st.rerun()
+    if st.session_state.pop("pending_lock_site", False):
+        st.session_state["locked_site"] = copy.deepcopy(site)
+        st.session_state["site_locked"] = True
+        st.rerun()
 
-st.sidebar.caption("💡 *При загрузке чертежа DXF или вставке координат ЕГРН истинный север и форма считываются автоматически.*")
+    st.sidebar.divider()
+    if st.sidebar.button("🔒 Закрепить участок и перейти к застройке", type="primary", use_container_width=True, key="btn_lock_sb_stage1"):
+        st.session_state["locked_site"] = copy.deepcopy(site)
+        st.session_state["site_locked"] = True
+        st.rerun()
+
+if not site_locked:
+    st.markdown("## 🧭 Этап 1: Посадка и ориентация участка")
+    st.info(
+        "💡 **Инструкция:** Выровняйте участок на карте OSM или спутниковых снимках. "
+        "Зажмите контур участка мышью для перемещения, или крутите за оранжевый маркер сверху для поворота. "
+        "Когда положение и угол выбраны — нажмите кнопку **«🔒 Закрепить участок и перейти к застройке»**."
+    )
+    col_mb1, col_mb2 = st.columns([2, 1])
+    if col_mb1.button("🔒 Закрепить участок и перейти к застройке", type="primary", use_container_width=True, key="btn_lock_main_st1"):
+        st.session_state["locked_site"] = copy.deepcopy(site)
+        st.session_state["site_locked"] = True
+        st.rerun()
+    if col_mb2.button("↺ Сбросить угол (0°)", use_container_width=True, key="btn_reset_rot_st1"):
+        st.session_state["pending_map_update"] = {"rot": 0}
+        st.rerun()
+
+    site_fp = (
+        str(getattr(site, "cadastral_number", "")),
+        round(site.area, 1),
+        tuple(round(c, 5) for c in (site.geo_center or (0.0, 0.0))),
+        round(site.rotation_deg, 1),
+        round(site.boundary.bounds[0], 2),
+    )
+    stage1_state = render_interactive_map(
+        site,
+        buildings=None,
+        tep=None,
+        height=620,
+        interactive_transform=True,
+        key=f"stage1_osm_map_{abs(hash(site_fp))}",
+    )
+    if stage1_state and isinstance(stage1_state, dict) and "map_rot" in stage1_state:
+        app_ts = stage1_state.get("ts", 0)
+        if app_ts > st.session_state.get("last_applied_stage1_ts", 0):
+            st.session_state["last_applied_stage1_ts"] = app_ts
+            rot_val = int(round(float(stage1_state["map_rot"])))
+            lat_val = float(stage1_state["map_lat"]) if ("map_lat" in stage1_state and stage1_state.get("dist_m", 0) > 0.1) else None
+            lon_val = float(stage1_state["map_lon"]) if ("map_lon" in stage1_state and stage1_state.get("dist_m", 0) > 0.1) else None
+            is_lock = bool(stage1_state.get("lock", False))
+
+            st.session_state["pending_map_update"] = {
+                "rot": rot_val,
+                "lat": lat_val,
+                "lon": lon_val,
+                "lock": is_lock,
+            }
+            st.rerun()
+
+    col_p1, col_p2, col_p3, col_p4 = st.columns(4)
+    col_p1.metric("Кадастровый номер", site.cadastral_number or "По чертежу")
+    col_p2.metric("Площадь участка", f"{site.area / 10000:.2f} га", f"{site.area:,.0f} м²")
+    col_p3.metric("Угол к северу", f"{site.rotation_deg:+.1f}°")
+    col_p4.metric("Зона застройки", f"{site.buildable_area.area / 10000:.2f} га" if site.buildable_area else "—")
+
+    st.divider()
+    with st.expander(f"📦 Библиотека типовых секций ({library.count} типов секций в каталоге)", expanded=False):
+        st.markdown(
+            "Параметрический каталог секций жилых корпусов, используемых алгоритмом расстановки. "
+            "Секции сгруппированы по градостроительным категориям и типам лифтовых узлов."
+        )
+        category_meta = [
+            ("TOWER", "🏢 Точечные башни (TOWER) — отдельно стоящие доминанты"),
+            ("MIDDLE", "🏙️ Рядовые секции (MIDDLE) — центральные звенья корпусов"),
+            ("CORNER", "📐 Угловые поворотные секции (CORNER) — замкнутые и П/Г-образные дворы"),
+            ("END", "🚪 Торцевые секции (END) — завершающие секции корпусов"),
+        ]
+        for cat_key, cat_title in category_meta:
+            cat_sections = library.get_by_category(cat_key)
+            if cat_sections:
+                st.markdown(f"**{cat_title}** ({len(cat_sections)} шт.)")
+                cols = st.columns(min(len(cat_sections), 4))
+                for idx, sec in enumerate(cat_sections):
+                    with cols[idx % 4]:
+                        st.markdown(f"**{sec.name}** (`{sec.id}`)")
+                        st.caption(f"📐 {sec.width} × {sec.depth} м ({sec.floor_area:.0f} м²/эт)")
+                        st.caption(f"🏢 {sec.min_floors}–{sec.max_floors} эт. (по умолч. {sec.default_floors})")
+                        apts_desc = ", ".join(f"{cnt}x{k}" for k, cnt in sec.apartments_per_floor.items() if cnt > 0)
+                        st.caption(f"🚪 {sec.total_apts_per_floor} кв/эт: {apts_desc}")
+
+    st.stop()
+
 
 # ─── Градостроительные нормативы ─────────────────────────────────────
 
@@ -837,12 +1000,9 @@ config["max_building_height_m"] = max_height_val if max_height_val > 0.0 else No
 
 generate_btn = st.sidebar.button("🚀 Сгенерировать", type="primary", use_container_width=True)
 
-# Формируем уникальный отпечаток текущего состояния участка
-active_query = clean_query if site_mode.startswith("1") else clean_dwg_query
+# Формируем уникальный отпечаток текущего состояния застройки
 site_fingerprint = (
-    site_mode,
     str(site.cadastral_number),
-    active_query,
     round(site.area, 1),
     tuple(round(c, 5) for c in (site.geo_center or (0.0, 0.0))),
     site.address,
@@ -960,6 +1120,15 @@ if "buildings" in st.session_state:
     tep = st.session_state["tep"]
     st.session_state["site"] = site
 
+    col_hd1, col_hd2 = st.columns([3, 1])
+    with col_hd1:
+        st.markdown(f"## 🏗️ Проект застройки: `{site.cadastral_number or 'По чертежу'}`")
+        st.caption(f"🔒 **Участок зафиксирован:** площадь {site.area / 10000:.2f} га • поворот {site.rotation_deg:+.1f}° • центр `[{site.geo_center[0]:.5f}, {site.geo_center[1]:.5f}]`")
+    with col_hd2:
+        if st.button("🔓 Изменить посадку участка", use_container_width=True, key="btn_unlock_main_bar"):
+            st.session_state["site_locked"] = False
+            st.rerun()
+
     # Пояснительные баннеры режима расчёта
     current_mode = st.session_state.get("gen_mode", "")
     if current_mode == "Максимизация":
@@ -1004,14 +1173,20 @@ if "buildings" in st.session_state:
                 )
                 st.session_state["show_sections_osm"] = show_sections_osm
 
-            map_html = generate_leaflet_map_html(site, buildings, tep, height=580, show_sections=show_sections_osm)
-            components.html(map_html, height=600)
+            render_interactive_map(
+                site,
+                buildings,
+                tep,
+                height=580,
+                show_sections=show_sections_osm,
+                interactive_transform=False,
+                key=f"main_osm_map_{abs(hash(site_fingerprint))}",
+            )
             st.caption(
-                "💡 **Интерактивная посадка и выравнивание (Figma / AutoCAD стиль):** "
-                "Зажмите мышью **сам контур участка** и переместите его по спутнику или схеме улиц. "
-                "За **оранжевый круглый маркер сверху** поверните участок вдоль улицы или красной линии. "
-                "В появившейся плашке нажмите **«💾 Применить»**, чтобы зафиксировать координаты и пересчитать застройку. "
-                "Слой секций также можно переключать в меню слоёв в правом верхнем углу карты."
+                "💡 **Генплан застройки на карте OSM:** Участок зафиксирован. "
+                "Корпуса и секции отображены с учётом инсоляционных и противопожарных разрывов. "
+                "Кликните на корпус или секцию для детальной информации, или используйте переключатель слоёв в правом верхнем углу карты. "
+                "Чтобы изменить положение или поворот участка, нажмите кнопку «🔓 Изменить посадку участка» вверху страницы."
             )
 
         with map_tab2:
@@ -1275,19 +1450,6 @@ if "buildings" in st.session_state:
             st.success(f"Сохранено: {report_path.name}")
             with st.expander("Просмотр отчёта"):
                 st.code(report_text)
-
-else:
-    # Начальный экран
-    st.info(
-        "👈 Настройте параметры участка и нажмите **«Сгенерировать»** "
-        "в боковой панели для создания плана застройки."
-    )
-
-    st.subheader("🗺️ Предпросмотр участка")
-    map_html = generate_leaflet_map_html(site, buildings=None, tep=None, height=500)
-    components.html(map_html, height=520)
-    st.caption("Нажмите кнопку **«🚀 Сгенерировать»** в боковой панели, чтобы расставить жилые корпуса на этом участке.")
-
 
 # ─── Библиотека типовых секций (доступна всегда) ──────────────────────
 st.divider()

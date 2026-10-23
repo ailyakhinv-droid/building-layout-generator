@@ -24,8 +24,8 @@ external_libs/
 knowledge_base/
 docs/local_kb/
 
-# Standalone HTML dashboard prototype (local only)
-dashboard_prototype/
+# Standalone HTML dashboard prototype temporary exports
+dashboard_prototype/tmp_exports/
 
 # Temporary node & scratch dirs
 node_modules/

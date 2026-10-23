@@ -260,7 +260,12 @@ def generate_3d_viewer_html(
         green_pct = "—"
         avg_floors = "—"
 
-    height_style = "100vh" if standalone or height == "100%" else f"{height}px"
+    if isinstance(height, str) and (height.endswith("px") or height.endswith("vh") or height.endswith("%")):
+        height_style = height
+    elif standalone or height == "100%":
+        height_style = "100vh"
+    else:
+        height_style = f"{height}px"
 
     html = f"""<!doctype html>
 <html lang="ru">
@@ -929,6 +934,13 @@ def generate_3d_viewer_html(
 
   window.addEventListener('resize', () => {{
     map.resize();
+  }});
+
+  window.addEventListener('message', (e) => {{
+    if (e.data && e.data.type === 'resize') {{
+      map.resize();
+      setTimeout(() => fitToData(false), 50);
+    }}
   }});
 
   async function switchBasemap(key) {{

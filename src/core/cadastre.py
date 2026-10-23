@@ -857,9 +857,10 @@ def get_cadastral_parcel(
 
         if rotation_deg != 0.0:
             c = poly.centroid
-            poly = shapely.affinity.rotate(poly, rotation_deg, origin=c)
+            # Положительный угол вращает по часовой стрелке, в Shapely передаём -rotation_deg
+            poly = shapely.affinity.rotate(poly, -rotation_deg, origin=c)
             if rls:
-                rls = [shapely.affinity.rotate(rl, rotation_deg, origin=c) for rl in rls]
+                rls = [shapely.affinity.rotate(rl, -rotation_deg, origin=c) for rl in rls]
 
         c_lat = override_lat if override_lat is not None else data["center_lat"]
         c_lon = override_lon if override_lon is not None else data["center_lon"]
@@ -892,7 +893,7 @@ def get_cadastral_parcel(
         pts_metric = wgs84_to_metric_coords(custom_wgs84_coords, c_lat, c_lon, is_lon_lat=True)
         poly = Polygon(pts_metric)
         if rotation_deg != 0.0:
-            poly = shapely.affinity.rotate(poly, rotation_deg, origin=poly.centroid)
+            poly = shapely.affinity.rotate(poly, -rotation_deg, origin=poly.centroid)
 
         return CadastralParcelInfo(
             cadastral_number=comps["formatted"] if comps else clean_num,
@@ -932,9 +933,9 @@ def get_cadastral_parcel(
 
     if rotation_deg != 0.0:
         c = poly.centroid
-        poly = shapely.affinity.rotate(poly, rotation_deg, origin=c)
+        poly = shapely.affinity.rotate(poly, -rotation_deg, origin=c)
         if rls:
-            rls = [shapely.affinity.rotate(rl, rotation_deg, origin=c) for rl in rls]
+            rls = [shapely.affinity.rotate(rl, -rotation_deg, origin=c) for rl in rls]
 
     reg_code = comps["region_code"] if comps else "77"
     addr = f"{reg_name}, {dist_name}"
@@ -964,9 +965,9 @@ def create_site_from_cadastre(parcel: CadastralParcelInfo, rotation_deg: float =
     if rotation_deg != 0.0:
         import shapely.affinity
         c = poly.centroid
-        poly = shapely.affinity.rotate(poly, rotation_deg, origin=c)
+        poly = shapely.affinity.rotate(poly, -rotation_deg, origin=c)
         if rls:
-            rls = [shapely.affinity.rotate(rl, rotation_deg, origin=c) for rl in rls]
+            rls = [shapely.affinity.rotate(rl, -rotation_deg, origin=c) for rl in rls]
 
     return Site(
         boundary=poly,

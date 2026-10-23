@@ -40,18 +40,28 @@ class Site:
         return self.boundary.area
 
     def rotate(self, angle_deg: float) -> None:
-        """Повернуть границы участка и красные линии вокруг геометрического центра."""
+        """Повернуть границы участка и красные линии вокруг геометрического центра.
+        Положительный угол angle_deg соответствует вращению по часовой стрелке (↻) от севера на восток.
+        """
         if angle_deg == 0.0:
             return
         import shapely.affinity
-        c = self.boundary.centroid
-        self.boundary = shapely.affinity.rotate(self.boundary, angle_deg, origin=c)
+        minx, miny, maxx, maxy = self.boundary.bounds
+        c = ((minx + maxx) / 2.0, (miny + maxy) / 2.0)
+        # В Shapely положительный угол вращает против часовой стрелки,
+        # поэтому для вращения по часовой стрелке (азимут, стороны света, UI) передаём -angle_deg.
+        self.boundary = shapely.affinity.rotate(self.boundary, -angle_deg, origin=c)
         if self.red_lines:
             self.red_lines = [
-                shapely.affinity.rotate(rl, angle_deg, origin=c)
+                shapely.affinity.rotate(rl, -angle_deg, origin=c)
                 for rl in self.red_lines
             ]
-        self.rotation_deg = (self.rotation_deg + angle_deg) % 360
+        new_rot = (self.rotation_deg + angle_deg) % 360.0
+        while new_rot > 180.0:
+            new_rot -= 360.0
+        while new_rot < -180.0:
+            new_rot += 360.0
+        self.rotation_deg = new_rot
 
     def to_wgs84_boundary(self) -> Polygon | None:
         """Получить полигон границы в координатах WGS-84 (lon, lat), если задан geo_center."""

@@ -23,6 +23,7 @@ from src.core.geo_utils import (
 from src.models.building import Building
 from src.models.site import Site
 from src.models.tep import TEP
+import streamlit.components.v1 as components
 
 # Палитра цветов для корпусов на карте
 BUILDING_MAP_COLORS = [
@@ -43,6 +44,40 @@ if _LPT_PATH.exists():
 else:
     _LPT_JS_CODE = ""
 
+# Streamlit Custom Component для бесконфликтной передачи трансформации без перезагрузки страницы
+_MAP_COMP_DIR = Path(__file__).parent / "map_component"
+try:
+    _osm_map_comp = components.declare_component("osm_map_component", path=str(_MAP_COMP_DIR.resolve()))
+except Exception:
+    _osm_map_comp = None
+
+
+def render_interactive_map(
+    site: Site,
+    buildings: list[Building] | None = None,
+    tep: TEP | None = None,
+    height: int = 580,
+    fallback_center: tuple[float, float] | None = None,
+    show_sections: bool = True,
+    interactive_transform: bool = False,
+    key: str | None = None,
+) -> dict | None:
+    """Отрендерить интерактивную карту с двусторонней передачей координат и поворота в Streamlit без перезагрузки страницы."""
+    html_code = generate_leaflet_map_html(
+        site,
+        buildings,
+        tep,
+        height=height,
+        fallback_center=fallback_center,
+        show_sections=show_sections,
+        interactive_transform=interactive_transform,
+    )
+    if _osm_map_comp is not None:
+        return _osm_map_comp(html=html_code, height=height + 20, key=key)
+    else:
+        components.html(html_code, height=height + 20)
+        return None
+
 
 def generate_leaflet_map_html(
     site: Site,
@@ -51,6 +86,7 @@ def generate_leaflet_map_html(
     height: int = 580,
     fallback_center: tuple[float, float] | None = None,
     show_sections: bool = True,
+    interactive_transform: bool = False,
 ) -> str:
     """Сгенерировать HTML-код интерактивной карты Leaflet с возможностью прямого перетаскивания и поворота контура мышью.
 
@@ -61,6 +97,8 @@ def generate_leaflet_map_html(
         height: Высота блока карты в пикселях.
         fallback_center: Резервный центр (lat, lon), если geo_center не задан.
         show_sections: Показывать ли слой отдельных секций на карте по умолчанию.
+        interactive_transform: Включить ли интерактивное перетаскивание и маркер поворота (Этап 1: Посадка участка).
+                               Если False (Этап 2: Застройка), участок фиксируется, ручки скрыты.
 
     Returns:
         HTML строка для рендеринга через st.components.v1.html.
@@ -116,7 +154,8 @@ def generate_leaflet_map_html(
     # 5. Формируем GeoJSON индивидуальных секций (для детального отображения планировки)
     section_features = []
 
-    if buildings:
+    # На этапе 1 (интерактивная посадка) корпуса и секции не отображаются
+    if buildings and not interactive_transform:
         for idx, b in enumerate(buildings):
             b_footprint = b.footprint
             b_wgs = transform_geometry_to_wgs84(b_footprint, center_lat, center_lon)
@@ -195,6 +234,23 @@ def generate_leaflet_map_html(
     sections_json = json.dumps(section_features, ensure_ascii=False)
 
     add_sections_to_map = "sectionsLayer.addTo(map);" if show_sections else "// sectionsLayer доступен в переключателе слоев"
+
+    hud_block = """
+    <!-- Плавающий HUD прямого управления контуром (Этап 1: Посадка участка) -->
+    <div id="transformHud" class="transform-hud">
+        <div class="hud-inner">
+            <div class="hud-info" id="hudInfo">
+                <span>✋ Перемещайте контур мышью &bull; 🔄 Крутите за оранжевый маркер сверху</span>
+            </div>
+            <div class="hud-actions" id="hudActions" style="display:flex;">
+                <button type="button" class="hud-btn hud-btn-save" onclick="applySiteTransform()">🔒 Закрепить участок</button>
+                <button type="button" class="hud-btn hud-btn-reset" onclick="resetSiteTransform()">↺ Сброс</button>
+            </div>
+        </div>
+    </div>
+""" if interactive_transform else ""
+
+    is_interactive_str = "true" if interactive_transform else "false"
 
     html_code = f"""<!DOCTYPE html>
 <html>
@@ -356,18 +412,7 @@ def generate_leaflet_map_html(
 <body>
     <div id="map"></div>
 
-    <!-- Плавающий HUD прямого управления контуром -->
-    <div id="transformHud" class="transform-hud">
-        <div class="hud-inner">
-            <div class="hud-info" id="hudInfo">
-                <span>✋ Тяните контур или корпуса &bull; 🔄 Крутите за оранжевый маркер сверху</span>
-            </div>
-            <div class="hud-actions" id="hudActions" style="display:none;">
-                <button type="button" class="hud-btn hud-btn-save" onclick="applySiteTransform()">💾 Применить</button>
-                <button type="button" class="hud-btn hud-btn-reset" onclick="resetSiteTransform()">↺ Сброс</button>
-            </div>
-        </div>
-    </div>
+    {hud_block}
 
     <script>
         // Базовые картографические подложки
@@ -437,16 +482,17 @@ def generate_leaflet_map_html(
             boundaryLatLngs = rawCoords[0][0].map(function(pt) {{ return [pt[1], pt[0]]; }});
         }}
 
-        // 1. Интерактивный контур участка с прямым перетаскиванием и вращением
+        // 1. Контур участка (интерактивный на Этапе 1, статичный на Этапе 2)
+        var isInteractiveTransform = {is_interactive_str};
         var boundaryPolygon = L.polygon(boundaryLatLngs, {{
             color: '#1B4F72',
             weight: 3.5,
             opacity: 0.95,
             fillColor: '#3498DB',
             fillOpacity: 0.15,
-            className: 'interactive-boundary-polygon',
-            transform: true,
-            draggable: true
+            className: isInteractiveTransform ? 'interactive-boundary-polygon' : 'static-boundary-polygon',
+            transform: isInteractiveTransform,
+            draggable: isInteractiveTransform
         }}).addTo(map);
 
         // 2. Слой допустимой зоны застройки
@@ -543,31 +589,33 @@ def generate_leaflet_map_html(
 
         {add_sections_to_map}
 
-        // Включаем вращение и перетаскивание контура
-        boundaryPolygon.transform.enable({{
-            rotation: true,
-            scaling: false,
-            uniformScaling: false,
-            handleLength: 40,
-            handlerOptions: {{
-                radius: 12,
-                fillColor: '#FF5722',
-                color: '#FFFFFF',
-                weight: 3.5,
-                fillOpacity: 1
-            }},
-            rotateHandleOptions: {{
-                color: '#FF5722',
-                weight: 3,
-                dashArray: '5, 5'
-            }},
-            boundsOptions: {{
-                color: '#FF5722',
-                weight: 1.5,
-                dashArray: '5, 5',
-                fill: false
-            }}
-        }});
+        // Включаем вращение и перетаскивание контура (только на Этапе 1)
+        if (isInteractiveTransform && boundaryPolygon.transform) {{
+            boundaryPolygon.transform.enable({{
+                rotation: true,
+                scaling: false,
+                uniformScaling: false,
+                handleLength: 40,
+                handlerOptions: {{
+                    radius: 12,
+                    fillColor: '#FF5722',
+                    color: '#FFFFFF',
+                    weight: 3.5,
+                    fillOpacity: 1
+                }},
+                rotateHandleOptions: {{
+                    color: '#FF5722',
+                    weight: 3,
+                    dashArray: '5, 5'
+                }},
+                boundsOptions: {{
+                    color: '#FF5722',
+                    weight: 1.5,
+                    dashArray: '5, 5',
+                    fill: false
+                }}
+            }});
+        }}
 
         // Информационный попап по клику на контур (только если не было перетаскивания)
         boundaryPolygon.on('click', function(e) {{
@@ -604,13 +652,16 @@ def generate_leaflet_map_html(
         registerAttached(buildingsLayer);
         registerAttached(sectionsLayer);
 
+        var initGeoCenterLat = {center_lat};
+        var initGeoCenterLon = {center_lon};
         var origLatLngs = JSON.parse(JSON.stringify(boundaryLatLngs));
         var origCenter = boundaryPolygon.getBounds().getCenter();
         var origLat = origCenter.lat;
         var origLng = origCenter.lng;
         var initialSiteRotation = {current_rot_deg};
-        var currentSiteRotation = {current_rot_deg};
+        var totalRotationDeg = {current_rot_deg};
         var activeRotationDeltaDeg = 0.0;
+        var wasDragged = false;
 
         function extractFirstLatLng(val) {{
             if (!val) return null;
@@ -631,33 +682,39 @@ def generate_leaflet_map_html(
 
         function calculateTransformState() {{
             var newCenter = boundaryPolygon.getBounds().getCenter();
+            var dLat = 0.0;
+            var dLon = 0.0;
+            var distM = 0.0;
 
-            var dLat = newCenter.lat - origLat;
-            var dLon = newCenter.lng - origLng;
-            var shiftNorthM = dLat * 111320.0;
-            var shiftEastM = dLon * (111320.0 * Math.cos(origLat * Math.PI / 180.0));
-            var distM = Math.sqrt(shiftNorthM * shiftNorthM + shiftEastM * shiftEastM);
+            if (wasDragged) {{
+                dLat = newCenter.lat - origLat;
+                dLon = newCenter.lng - origLng;
+                var shiftNorthM = dLat * 111320.0;
+                var shiftEastM = dLon * (111320.0 * Math.cos(origLat * Math.PI / 180.0));
+                distM = Math.sqrt(shiftNorthM * shiftNorthM + shiftEastM * shiftEastM);
+            }}
 
-            var deltaAngleDeg = activeRotationDeltaDeg;
-            while (deltaAngleDeg > 180.0) deltaAngleDeg -= 360.0;
-            while (deltaAngleDeg < -180.0) deltaAngleDeg += 360.0;
-            if (isNaN(deltaAngleDeg) || !isFinite(deltaAngleDeg)) deltaAngleDeg = 0.0;
+            var rotDeg = (totalRotationDeg + activeRotationDeltaDeg) % 360.0;
+            while (rotDeg > 180.0) rotDeg -= 360.0;
+            while (rotDeg < -180.0) rotDeg += 360.0;
 
-            var finalRot = (currentSiteRotation + deltaAngleDeg) % 360.0;
-            while (finalRot > 180.0) finalRot -= 360.0;
-            while (finalRot < -180.0) finalRot += 360.0;
+            var newGeoLat = initGeoCenterLat + dLat;
+            var newGeoLon = initGeoCenterLon + dLon;
 
             return {{
+                newGeoLat: Number(newGeoLat.toFixed(6)),
+                newGeoLon: Number(newGeoLon.toFixed(6)),
                 newCenter: newCenter,
-                shiftNorthM: shiftNorthM,
-                shiftEastM: shiftEastM,
+                dLat: dLat,
+                dLon: dLon,
                 distM: distM,
-                deltaAngleDeg: deltaAngleDeg,
-                finalRotationDeg: finalRot
+                deltaAngleDeg: activeRotationDeltaDeg,
+                finalRotationDeg: Number(rotDeg.toFixed(1))
             }};
         }}
 
         function updateAttachedLayers(state) {{
+            // Вращение по часовой стрелке на угол state.deltaAngleDeg (в градусах)
             var rad = (state.deltaAngleDeg || 0.0) * Math.PI / 180.0;
             var cosA = Math.cos(rad);
             var sinA = Math.sin(rad);
@@ -671,8 +728,9 @@ def generate_leaflet_map_html(
                 if (isNaN(plat) || isNaN(plng)) return state.newCenter;
                 var x = (plng - origLng) * mLonOrig;
                 var y = (plat - origLat) * mLat;
-                var xr = x * cosA - y * sinA;
-                var yr = x * sinA + y * cosA;
+                // Поворот по часовой стрелке на угол rad:
+                var xr = x * cosA + y * sinA;
+                var yr = -x * sinA + y * cosA;
                 return L.latLng(state.newCenter.lat + yr / mLat, state.newCenter.lng + xr / mLonNew);
             }}
 
@@ -691,8 +749,33 @@ def generate_leaflet_map_html(
             }}
         }}
 
+        window.sendTransformUpdate = function(isLock) {{
+            var state = calculateTransformState();
+            var payload = {{
+                map_lat: state.newGeoLat,
+                map_lon: state.newGeoLon,
+                map_rot: state.finalRotationDeg,
+                dist_m: Number(state.distM.toFixed(1)),
+                lock: !!isLock,
+                ts: Date.now()
+            }};
+            try {{
+                window.parent.postMessage({{
+                    isMapTransform: true,
+                    transform: payload
+                }}, "*");
+            }} catch(e) {{
+                console.warn("postMessage to parent failed:", e);
+            }}
+        }};
+
         // Синхронное перемещение и вращение всех слоёв в реальном времени (60 FPS)
+        boundaryPolygon.on('dragstart', function(e) {{
+            wasDragged = true;
+        }});
+
         boundaryPolygon.on('drag', function(e) {{
+            wasDragged = true;
             if (boundaryPolygon.dragging && boundaryPolygon.dragging._matrix) {{
                 var mat = boundaryPolygon.dragging._matrix;
                 for (var i = 0; i < attachedLayers.length; i++) {{
@@ -701,14 +784,16 @@ def generate_leaflet_map_html(
             }}
             var hudActions = document.getElementById('hudActions');
             var hudInfo = document.getElementById('hudInfo');
-            hudActions.style.display = 'flex';
+            if (hudActions) hudActions.style.display = 'flex';
             var dM = 0;
             if (boundaryPolygon.dragging && boundaryPolygon.dragging._matrix) {{
                 var dx = boundaryPolygon.dragging._matrix[4] || 0;
                 var dy = boundaryPolygon.dragging._matrix[5] || 0;
                 dM = Math.sqrt(dx * dx + dy * dy) * (156543.03392 * Math.cos(origLat * Math.PI / 180.0) / Math.pow(2, map.getZoom()));
             }}
-            hudInfo.innerHTML = '📍 Сдвиг: <b>~' + Math.round(dM) + ' м</b> &bull; 🧭 Поворот: <b>' + (currentSiteRotation >= 0 ? '+' : '') + currentSiteRotation.toFixed(1) + '&deg;</b>';
+            if (hudInfo) {{
+                hudInfo.innerHTML = '📍 Сдвиг: <b>~' + Math.round(dM) + ' м</b> &bull; 🧭 Поворот: <b>' + (totalRotationDeg >= 0 ? '+' : '') + totalRotationDeg.toFixed(1) + '&deg;</b>';
+            }}
         }});
 
         boundaryPolygon.on('rotate', function(e) {{
@@ -719,61 +804,71 @@ def generate_leaflet_map_html(
             }}
             if (boundaryPolygon.transform && boundaryPolygon.transform._matrix) {{
                 var mat = boundaryPolygon.transform._matrix;
-                var mArr = mat._matrix ? mat.clone().flip()._matrix : mat;
+                var mArr = mat._matrix || mat;
                 for (var i = 0; i < attachedLayers.length; i++) {{
                     attachedLayers[i].layer._transform(mArr);
                 }}
             }}
-            var rotDeg = (currentSiteRotation + activeRotationDeltaDeg) % 360.0;
+            var rotDeg = (totalRotationDeg + activeRotationDeltaDeg) % 360.0;
             while (rotDeg > 180.0) rotDeg -= 360.0;
             while (rotDeg < -180.0) rotDeg += 360.0;
 
             var hudActions = document.getElementById('hudActions');
             var hudInfo = document.getElementById('hudInfo');
-            hudActions.style.display = 'flex';
-            hudInfo.innerHTML = '📍 Поворот: <b>' + (rotDeg >= 0 ? '+' : '') + rotDeg.toFixed(1) + '&deg;</b> &bull; Зафиксировать положение:';
+            if (hudActions) hudActions.style.display = 'flex';
+            if (hudInfo) {{
+                hudInfo.innerHTML = '📍 Поворот: <b>' + (rotDeg >= 0 ? '+' : '') + rotDeg.toFixed(1) + '&deg;</b> &bull; Зафиксировать положение:';
+            }}
         }});
 
-        boundaryPolygon.on('dragend rotateend transformed', function(e) {{
-            if (e && (e.type === 'rotateend' || e.rotation !== undefined)) {{
-                if (e.rotation !== undefined) {{
-                    activeRotationDeltaDeg = e.rotation * 180.0 / Math.PI;
-                }}
-            }}
-
-            // 1. Сбрасываем временные CSS-матрицы у всех прикреплённых слоёв
+        boundaryPolygon.on('dragend', function(e) {{
+            wasDragged = true;
             for (var i = 0; i < attachedLayers.length; i++) {{
                 attachedLayers[i].layer._transform(null);
             }}
-
-            // 2. Вычисляем точное новое положение геометрии контура
             var state = calculateTransformState();
-
-            // 3. Фиксируем новые точные координаты всех секций и корпусов
             updateAttachedLayers(state);
-
-            // 4. Обновляем плавающую панель HUD
             var hudActions = document.getElementById('hudActions');
             var hudInfo = document.getElementById('hudInfo');
-            hudActions.style.display = 'flex';
-
-            var distStr = state.distM < 1000 ? Math.round(state.distM) + ' м' : (state.distM / 1000).toFixed(2) + ' км';
-            var rotSign = state.finalRotationDeg >= 0 ? '+' : '';
-            hudInfo.innerHTML = '📍 Сдвиг: <b>' + distStr + '</b> &bull; 🧭 Поворот: <b>' + rotSign + state.finalRotationDeg.toFixed(1) + '&deg;</b>';
+            if (hudActions) hudActions.style.display = 'flex';
+            if (hudInfo) {{
+                var distStr = state.distM < 1000 ? Math.round(state.distM) + ' м' : (state.distM / 1000).toFixed(2) + ' км';
+                var rotSign = state.finalRotationDeg >= 0 ? '+' : '';
+                hudInfo.innerHTML = '📍 Сдвиг: <b>' + distStr + '</b> &bull; 🧭 Поворот: <b>' + rotSign + state.finalRotationDeg.toFixed(1) + '&deg;</b>';
+            }}
+            window.sendTransformUpdate(false);
         }});
 
-        // Применить новое положение контура
-        window.applySiteTransform = function() {{
-            var state = calculateTransformState();
-            try {{
-                var u = new URL(window.top.location.href);
-                u.searchParams.set("map_lat", state.newCenter.lat.toFixed(6));
-                u.searchParams.set("map_lon", state.newCenter.lng.toFixed(6));
-                u.searchParams.set("map_rot", state.finalRotationDeg.toFixed(1));
-                window.top.location.href = u.toString();
-            }} catch(err) {{
-                console.error("Top navigation error:", err);
+        boundaryPolygon.on('rotateend', function(e) {{
+            if (e && e.rotation !== undefined) {{
+                activeRotationDeltaDeg = e.rotation * 180.0 / Math.PI;
             }}
+            totalRotationDeg = (totalRotationDeg + activeRotationDeltaDeg) % 360.0;
+            while (totalRotationDeg > 180.0) totalRotationDeg -= 360.0;
+            while (totalRotationDeg < -180.0) totalRotationDeg += 360.0;
+            activeRotationDeltaDeg = 0.0;
+
+            for (var i = 0; i < attachedLayers.length; i++) {{
+                attachedLayers[i].layer._transform(null);
+            }}
+            var state = calculateTransformState();
+            updateAttachedLayers(state);
+            var hudActions = document.getElementById('hudActions');
+            var hudInfo = document.getElementById('hudInfo');
+            if (hudActions) hudActions.style.display = 'flex';
+            if (hudInfo) {{
+                var distStr = state.distM < 1000 ? Math.round(state.distM) + ' м' : (state.distM / 1000).toFixed(2) + ' км';
+                var rotSign = state.finalRotationDeg >= 0 ? '+' : '';
+                hudInfo.innerHTML = '📍 Сдвиг: <b>' + distStr + '</b> &bull; 🧭 Поворот: <b>' + rotSign + state.finalRotationDeg.toFixed(1) + '&deg;</b>';
+            }}
+            window.sendTransformUpdate(false);
+        }});
+
+        // Применить новое положение контура и перейти к застройке
+        window.applySiteTransform = function() {{
+            var hudInfo = document.getElementById('hudInfo');
+            if (hudInfo) hudInfo.innerHTML = '✅ <b>Участок зафиксирован!</b> Переход к застройке...';
+            window.sendTransformUpdate(true);
         }};
 
         // Сбросить контур к исходному положению
@@ -782,6 +877,7 @@ def generate_leaflet_map_html(
                 attachedLayers[i].layer._transform(null);
             }}
             activeRotationDeltaDeg = 0.0;
+            wasDragged = false;
             boundaryPolygon.setLatLngs(origLatLngs);
             if (boundaryPolygon.transform) {{
                 boundaryPolygon.transform.reset();
