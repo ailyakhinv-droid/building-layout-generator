@@ -50,9 +50,9 @@ class PerimeterPlacementEngine:
         len_y = maxy - miny
 
         # Адаптивное число делений в зависимости от заданного размера блока
-        threshold_ratio = 1.30
-        nx = max(1, round(len_x / target_block_size)) if len_x >= (target_block_size * threshold_ratio) else 1
-        ny = max(1, round(len_y / target_block_size)) if len_y >= (target_block_size * threshold_ratio) else 1
+        threshold_ratio = 1.20
+        nx = max(1, math.floor(len_x / target_block_size + 0.35)) if len_x >= (target_block_size * threshold_ratio) else 1
+        ny = max(1, math.floor(len_y / target_block_size + 0.35)) if len_y >= (target_block_size * threshold_ratio) else 1
 
         if nx == 1 and ny == 1:
             return [buildable_area]
@@ -247,17 +247,145 @@ class PerimeterPlacementEngine:
                 sections.append(PlacedSection(end_sec, curr_x2 + we/2, miny + end_sec.depth/2, 0.0, fl_low if cascade_floors else fl_high, floor_height=floor_height, ground_floor_height=ground_floor_height))
 
         # =====================================================================
-        # ВАРИАНТ 2: П-ОБРАЗНЫЙ КВАРТАЛ ИЛИ ЗАМКНУТЫЙ (U_SHAPE / CLOSED)
+        # ВАРИАНТ 2: ЗАМКНУТЫЙ ПЕРИМЕТРАЛЬНЫЙ КВАРТАЛ (CLOSED)
+        # =====================================================================
+        elif layout_mode == "CLOSED":
+            # Полноценный 4-сторонний замкнутый периметральный урбан-блок
+            # 4 угла: NW (0°), NE (0°, flipped), SE (180°), SW (180°, flipped)
+            space_x = len_x - 2 * wc
+            space_y = len_y - 2 * dc
+            mid_x_n = self._find_best_combo(middle_pool, space_x) if space_x >= 20.0 else []
+            mid_y = self._find_best_combo(middle_pool, space_y) if space_y >= 20.0 else []
+
+            north_total_w = 2 * wc + sum(s.width for s in mid_x_n)
+            x_start = minx + max(0.0, (len_x - north_total_w) / 2.0)
+            x_right_outer = x_start + north_total_w
+            y_top = maxy
+            y_bot = miny
+
+            # 1. NW угол
+            sections.append(
+                PlacedSection(
+                    corner_sec,
+                    x_start + wc / 2.0,
+                    y_top - dc / 2.0,
+                    0.0,
+                    fl_high,
+                    floor_height=floor_height,
+                    ground_floor_height=ground_floor_height,
+                )
+            )
+            # 2. Северный фронт
+            curr_x = x_start + wc
+            for sec in mid_x_n:
+                sections.append(
+                    PlacedSection(
+                        sec,
+                        curr_x + sec.width / 2.0,
+                        y_top - sec.depth / 2.0,
+                        0.0,
+                        fl_high,
+                        floor_height=floor_height,
+                        ground_floor_height=ground_floor_height,
+                    )
+                )
+                curr_x += sec.width
+            # 3. NE угол
+            sections.append(
+                PlacedSection(
+                    corner_sec,
+                    x_right_outer - wc / 2.0,
+                    y_top - dc / 2.0,
+                    0.0,
+                    fl_high,
+                    is_flipped=True,
+                    floor_height=floor_height,
+                    ground_floor_height=ground_floor_height,
+                )
+            )
+
+            # 4. Восточное крыло
+            curr_y = y_top - dc
+            for sec in mid_y:
+                sections.append(
+                    PlacedSection(
+                        sec,
+                        x_right_outer - sec.depth / 2.0,
+                        curr_y - sec.width / 2.0,
+                        90.0,
+                        fl_low if cascade_floors else fl_high,
+                        floor_height=floor_height,
+                        ground_floor_height=ground_floor_height,
+                    )
+                )
+                curr_y -= sec.width
+
+            # 5. SE угол
+            sections.append(
+                PlacedSection(
+                    corner_sec,
+                    x_right_outer - wc / 2.0,
+                    y_bot + dc / 2.0,
+                    180.0,
+                    fl_low,
+                    is_flipped=False,
+                    floor_height=floor_height,
+                    ground_floor_height=ground_floor_height,
+                )
+            )
+
+            # 6. Южный фронт
+            space_south = (x_right_outer - wc) - (x_start + wc)
+            mid_x_s = self._find_best_combo(middle_pool, space_south) if space_south >= 20.0 else []
+            curr_xs = x_start + wc
+            for sec in mid_x_s:
+                sections.append(
+                    PlacedSection(
+                        sec,
+                        curr_xs + sec.width / 2.0,
+                        y_bot + sec.depth / 2.0,
+                        0.0,
+                        fl_low,
+                        floor_height=floor_height,
+                        ground_floor_height=ground_floor_height,
+                    )
+                )
+                curr_xs += sec.width
+
+            # 7. SW угол
+            sections.append(
+                PlacedSection(
+                    corner_sec,
+                    x_start + wc / 2.0,
+                    y_bot + dc / 2.0,
+                    180.0,
+                    fl_low,
+                    is_flipped=True,
+                    floor_height=floor_height,
+                    ground_floor_height=ground_floor_height,
+                )
+            )
+
+            # 8. Западное крыло
+            curr_yw = y_top - dc
+            for sec in mid_y:
+                sections.append(
+                    PlacedSection(
+                        sec,
+                        x_start + sec.depth / 2.0,
+                        curr_yw - sec.width / 2.0,
+                        90.0,
+                        fl_high,
+                        floor_height=floor_height,
+                        ground_floor_height=ground_floor_height,
+                    )
+                )
+                curr_yw -= sec.width
+
+        # =====================================================================
+        # ВАРИАНТ 3: П-ОБРАЗНЫЙ ДВОР (U_SHAPE) С ЧЕЛОВЕКО-СОРАЗМЕРНЫМИ ПРОПОРЦИЯМИ
         # =====================================================================
         else:
-            is_closed = (layout_mode == "CLOSED")
-
-            # Базовая ориентация:
-            # Если orient == 'SOUTH' или 'AUTO': Северная стена закрыта, открыт Юг.
-            # Если orient == 'NORTH': Южная стена закрыта, открыт Север.
-            # Если orient == 'EAST': Западная стена закрыта, открыт Восток.
-            # Если orient == 'WEST': Восточная стена закрыта, открыт Запад.
-
             if orient in ("NORTH",):
                 # Раскрытие на Север (закрыт южный фронт)
                 space_x = len_x - 2 * wc
@@ -265,6 +393,9 @@ class PerimeterPlacementEngine:
                 north_total_w = 2 * wc + sum(s.width for s in mid_x_secs)
                 x_start = minx + max(0.0, (len_x - north_total_w) / 2.0)
                 y_bot = miny
+
+                w_court = north_total_w - 2 * end_sec.depth
+                max_wing_depth = min((maxy - we) - (y_bot + dc), max(35.0, min(75.0, w_court * 1.0)))
 
                 # SW угол
                 sections.append(PlacedSection(corner_sec, x_start + wc / 2.0, y_bot + dc / 2.0, 180.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
@@ -276,8 +407,7 @@ class PerimeterPlacementEngine:
                 sections.append(PlacedSection(corner_sec, curr_x + wc / 2.0, y_bot + dc / 2.0, 180.0, fl_low, is_flipped=True, floor_height=floor_height, ground_floor_height=ground_floor_height))
 
                 # Западное крыло (идет на север)
-                space_y_l = (maxy - we) - (y_bot + dc)
-                mid_y_l = self._find_best_combo(middle_pool, space_y_l) if space_y_l >= 20.0 else []
+                mid_y_l = self._find_best_combo(middle_pool, max_wing_depth) if max_wing_depth >= 20.0 else []
                 curr_y = y_bot + dc
                 for idx, sec in enumerate(mid_y_l):
                     fl_cur = min(fl_high, fl_low + (idx + 1) * 2) if cascade_floors else fl_high
@@ -287,10 +417,8 @@ class PerimeterPlacementEngine:
 
                 # Восточное крыло (идет на север)
                 x_right_outer = curr_x + wc
-                space_y_r = (maxy - we) - (y_bot + dc)
-                mid_y_r = self._find_best_combo(middle_pool, space_y_r) if space_y_r >= 20.0 else []
                 curr_y_r = y_bot + dc
-                for idx, sec in enumerate(mid_y_r):
+                for idx, sec in enumerate(mid_y_l):
                     fl_cur = min(fl_high, fl_low + (idx + 1) * 2) if cascade_floors else fl_high
                     sections.append(PlacedSection(sec, x_right_outer - sec.depth / 2.0, curr_y_r + sec.width / 2.0, 90.0, fl_cur, floor_height=floor_height, ground_floor_height=ground_floor_height))
                     curr_y_r += sec.width
@@ -298,274 +426,250 @@ class PerimeterPlacementEngine:
 
             elif orient in ("EAST", "WEST"):
                 # Боковое раскрытие двора (Восток или Запад)
-                # Построение П-образной скобы, открытой на Восток или Запад
-                # Длинная стена — противоположная
                 is_open_east = (orient == "EAST")
-                x_back = minx if is_open_east else maxx
                 fl_back = fl_high
 
-                # Вертикальная несущая стена
                 space_y = len_y - 2 * wc
                 mids_y = self._find_best_combo(middle_pool, space_y) if space_y >= 20.0 else []
                 y_total = 2 * wc + sum(s.width for s in mids_y)
                 y_start = miny + max(0.0, (len_y - y_total) / 2.0)
 
-                # Углы и спинка
+                w_court = y_total - 2 * end_sec.depth
+                max_wing_x = min(len_x - dc - we, max(35.0, min(75.0, w_court * 1.0)))
+                mids_top = self._find_best_combo(middle_pool, max_wing_x) if max_wing_x >= 20.0 else []
+
+                # Углы и несущая стена
                 xb = minx + dc / 2.0 if is_open_east else maxx - dc / 2.0
-                sections.append(PlacedSection(corner_sec, minx + wc/2.0 if is_open_east else maxx - wc/2.0, y_start + wc/2.0, 90.0, fl_back, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                sections.append(PlacedSection(corner_sec, minx + wc / 2.0 if is_open_east else maxx - wc / 2.0, y_start + wc / 2.0, 90.0, fl_back, floor_height=floor_height, ground_floor_height=ground_floor_height))
                 curr_y = y_start + wc
                 for s in mids_y:
                     sections.append(PlacedSection(s, xb, curr_y + s.width / 2.0, 90.0, fl_back, floor_height=floor_height, ground_floor_height=ground_floor_height))
                     curr_y += s.width
-                sections.append(PlacedSection(corner_sec, minx + wc/2.0 if is_open_east else maxx - wc/2.0, curr_y + wc/2.0, 90.0, fl_back, is_flipped=True, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                sections.append(PlacedSection(corner_sec, minx + wc / 2.0 if is_open_east else maxx - wc / 2.0, curr_y + wc / 2.0, 90.0, fl_back, is_flipped=True, floor_height=floor_height, ground_floor_height=ground_floor_height))
 
                 # Верхнее крыло
-                space_x_top = len_x - dc - we
-                mids_top = self._find_best_combo(middle_pool, space_x_top) if space_x_top >= 20.0 else []
                 curr_x = minx + dc if is_open_east else maxx - dc
                 for s in mids_top:
-                    cx = curr_x + s.width/2.0 if is_open_east else curr_x - s.width/2.0
-                    sections.append(PlacedSection(s, cx, maxy - s.depth/2.0, 0.0, fl_high, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                    cx = curr_x + s.width / 2.0 if is_open_east else curr_x - s.width / 2.0
+                    sections.append(PlacedSection(s, cx, maxy - s.depth / 2.0, 0.0, fl_high, floor_height=floor_height, ground_floor_height=ground_floor_height))
                     curr_x = curr_x + s.width if is_open_east else curr_x - s.width
-                cx_end = curr_x + we/2.0 if is_open_east else curr_x - we/2.0
-                sections.append(PlacedSection(end_sec, cx_end, maxy - end_sec.depth/2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                cx_end = curr_x + we / 2.0 if is_open_east else curr_x - we / 2.0
+                sections.append(PlacedSection(end_sec, cx_end, maxy - end_sec.depth / 2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
 
                 # Нижнее крыло
                 curr_x_bot = minx + dc if is_open_east else maxx - dc
                 for s in mids_top:
-                    cx = curr_x_bot + s.width/2.0 if is_open_east else curr_x_bot - s.width/2.0
-                    sections.append(PlacedSection(s, cx, miny + s.depth/2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                    cx = curr_x_bot + s.width / 2.0 if is_open_east else curr_x_bot - s.width / 2.0
+                    sections.append(PlacedSection(s, cx, miny + s.depth / 2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
                     curr_x_bot = curr_x_bot + s.width if is_open_east else curr_x_bot - s.width
-                cx_end2 = curr_x_bot + we/2.0 if is_open_east else curr_x_bot - we/2.0
-                sections.append(PlacedSection(end_sec, cx_end2, miny + end_sec.depth/2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                cx_end2 = curr_x_bot + we / 2.0 if is_open_east else curr_x_bot - we / 2.0
+                sections.append(PlacedSection(end_sec, cx_end2, miny + end_sec.depth / 2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
 
             else:
                 # По умолчанию: РАСКРЫТИЕ НА ЮГ (макс. инсоляция)
                 space_x = len_x - 2 * wc
-                mid_x_secs = self._find_best_combo(middle_pool, space_x) if space_x >= 20.0 else []
-                north_total_w = 2 * wc + sum(s.width for s in mid_x_secs)
-                x_offset = max(0.0, (len_x - north_total_w) / 2.0)
-                x_start = minx + x_offset
-                y_top = maxy
 
-                # NW угол
-                sections.append(
-                    PlacedSection(
-                        corner_sec,
-                        x_start + wc / 2.0,
-                        y_top - dc / 2.0,
-                        0.0,
-                        fl_high,
-                        floor_height=floor_height,
-                        ground_floor_height=ground_floor_height,
-                    )
-                )
+                # Если блок слишком узкий для двух параллельных крыльев (< 24 м чистого двора),
+                # строим просторный Г-образный корпус (L-Shape), чтобы секции не смотрели "окна в окна":
+                if space_x < 24.0:
+                    mid_x_secs = self._find_best_combo(middle_pool, len_x - wc - we)
+                    north_total_w = wc + we + sum(s.width for s in mid_x_secs)
+                    x_start = minx + max(0.0, (len_x - north_total_w) / 2.0)
+                    y_top = maxy
 
-                curr_x = x_start + wc
-                for sec in mid_x_secs:
+                    # NW угол
                     sections.append(
                         PlacedSection(
-                            sec,
-                            curr_x + sec.width / 2.0,
-                            y_top - sec.depth / 2.0,
+                            corner_sec,
+                            x_start + wc / 2.0,
+                            y_top - dc / 2.0,
                             0.0,
                             fl_high,
                             floor_height=floor_height,
                             ground_floor_height=ground_floor_height,
                         )
                     )
-                    curr_x += sec.width
-
-                # NE угол
-                sections.append(
-                    PlacedSection(
-                        corner_sec,
-                        curr_x + wc / 2.0,
-                        y_top - dc / 2.0,
-                        0.0,
-                        fl_high,
-                        is_flipped=True,
-                        floor_height=floor_height,
-                        ground_floor_height=ground_floor_height,
-                    )
-                )
-
-                # Западное крыло
-                space_y_l = (y_top - dc) - (miny + we)
-                mid_y_l = self._find_best_combo(middle_pool, space_y_l) if space_y_l >= 20.0 else []
-                curr_y = y_top - dc
-                n_mid_l = len(mid_y_l)
-
-                for idx, sec in enumerate(mid_y_l):
-                    if cascade_floors and fl_high > min_wing_floors:
-                        ratio = (idx + 1) / (n_mid_l + 1)
-                        fl_cur = round(fl_high - ratio * (fl_high - min_wing_floors))
-                    else:
-                        fl_cur = fl_high
-                    fl_cur = max(min_wing_floors, min(sec.max_floors, fl_cur))
-
+                    curr_x = x_start + wc
+                    for sec in mid_x_secs:
+                        sections.append(
+                            PlacedSection(
+                                sec,
+                                curr_x + sec.width / 2.0,
+                                y_top - sec.depth / 2.0,
+                                0.0,
+                                fl_high,
+                                floor_height=floor_height,
+                                ground_floor_height=ground_floor_height,
+                            )
+                        )
+                        curr_x += sec.width
                     sections.append(
                         PlacedSection(
-                            sec,
-                            x_start + sec.depth / 2.0,
-                            curr_y - sec.width / 2.0,
-                            90.0,
-                            fl_cur,
+                            end_sec,
+                            curr_x + we / 2.0,
+                            y_top - end_sec.depth / 2.0,
+                            0.0,
+                            fl_high,
                             floor_height=floor_height,
                             ground_floor_height=ground_floor_height,
                         )
                     )
-                    curr_y -= sec.width
 
-                fl_end_l = min_wing_floors if cascade_floors else fl_high
-                sections.append(
-                    PlacedSection(
-                        end_sec,
-                        x_start + end_sec.depth / 2.0,
-                        curr_y - we / 2.0,
-                        90.0,
-                        fl_end_l,
-                        floor_height=floor_height,
-                        ground_floor_height=ground_floor_height,
-                    )
-                )
-
-                # Восточное крыло
-                x_right_outer = curr_x + wc
-                space_y_r = (y_top - dc) - (miny + we)
-                mid_y_r = self._find_best_combo(middle_pool, space_y_r) if space_y_r >= 20.0 else []
-                curr_y_r = y_top - dc
-                n_mid_r = len(mid_y_r)
-
-                for idx, sec in enumerate(mid_y_r):
-                    if cascade_floors and fl_high > min_wing_floors:
-                        ratio = (idx + 1) / (n_mid_r + 1)
-                        fl_cur = round(fl_high - ratio * (fl_high - min_wing_floors))
-                    else:
-                        fl_cur = fl_high
-                    fl_cur = max(min_wing_floors, min(sec.max_floors, fl_cur))
-
+                    # Только Западное крыло (соразмерной глубины)
+                    max_wing = min((y_top - dc) - (miny + we), 65.0)
+                    mid_y_l = self._find_best_combo(middle_pool, max_wing) if max_wing >= 20.0 else []
+                    curr_y = y_top - dc
+                    for idx, sec in enumerate(mid_y_l):
+                        fl_cur = min_wing_floors if cascade_floors else fl_high
+                        sections.append(
+                            PlacedSection(
+                                sec,
+                                x_start + sec.depth / 2.0,
+                                curr_y - sec.width / 2.0,
+                                90.0,
+                                fl_cur,
+                                floor_height=floor_height,
+                                ground_floor_height=ground_floor_height,
+                            )
+                        )
+                        curr_y -= sec.width
                     sections.append(
                         PlacedSection(
-                            sec,
-                            x_right_outer - sec.depth / 2.0,
-                            curr_y_r - sec.width / 2.0,
+                            end_sec,
+                            x_start + end_sec.depth / 2.0,
+                            curr_y - we / 2.0,
                             90.0,
-                            fl_cur,
+                            min_wing_floors,
                             floor_height=floor_height,
                             ground_floor_height=ground_floor_height,
                         )
                     )
-                    curr_y_r -= sec.width
 
-                fl_end_r = min_wing_floors if cascade_floors else fl_high
-                sections.append(
-                    PlacedSection(
-                        end_sec,
-                        x_right_outer - end_sec.depth / 2.0,
-                        curr_y_r - we / 2.0,
-                        90.0,
-                        fl_end_r,
-                        floor_height=floor_height,
-                        ground_floor_height=ground_floor_height,
+                else:
+                    # Полноценная П-образная скоба с широким пропорциональным двором
+                    mid_x_secs = self._find_best_combo(middle_pool, space_x)
+                    north_total_w = 2 * wc + sum(s.width for s in mid_x_secs)
+                    x_offset = max(0.0, (len_x - north_total_w) / 2.0)
+                    x_start = minx + x_offset
+                    y_top = maxy
+                    x_right_outer = x_start + north_total_w
+
+                    w_court = north_total_w - 2 * end_sec.depth
+                    # Глубина крыльев соразмерна ширине двора (не более 1.05 * w_court, максимум 75 м)
+                    max_wing_depth = min((y_top - dc) - (miny + we), max(35.0, min(75.0, w_court * 1.0)))
+                    mid_y_l = self._find_best_combo(middle_pool, max_wing_depth) if max_wing_depth >= 20.0 else []
+
+                    # NW угол
+                    sections.append(
+                        PlacedSection(
+                            corner_sec,
+                            x_start + wc / 2.0,
+                            y_top - dc / 2.0,
+                            0.0,
+                            fl_high,
+                            floor_height=floor_height,
+                            ground_floor_height=ground_floor_height,
+                        )
                     )
-                )
+                    curr_x = x_start + wc
+                    for sec in mid_x_secs:
+                        sections.append(
+                            PlacedSection(
+                                sec,
+                                curr_x + sec.width / 2.0,
+                                y_top - sec.depth / 2.0,
+                                0.0,
+                                fl_high,
+                                floor_height=floor_height,
+                                ground_floor_height=ground_floor_height,
+                            )
+                        )
+                        curr_x += sec.width
+                    # NE угол
+                    sections.append(
+                        PlacedSection(
+                            corner_sec,
+                            curr_x + wc / 2.0,
+                            y_top - dc / 2.0,
+                            0.0,
+                            fl_high,
+                            is_flipped=True,
+                            floor_height=floor_height,
+                            ground_floor_height=ground_floor_height,
+                        )
+                    )
 
-            # Если выбран ЗАМКНУТЫЙ квартал (4 стороны)
-            if is_closed:
-                # Добавляем 4-й фронт с 6-метровыми пожарными/пешеходными разрывами по углам
-                if orient in ("SOUTH", "AUTO"):
-                    s_left = x_start + 6.0
-                    s_right = curr_x + wc - 6.0
-                    space_south = s_right - s_left
-                    if space_south >= 24.0:
-                        mid_south = self._find_best_combo(middle_pool, space_south)
-                        if mid_south:
-                            s_total = sum(s.width for s in mid_south)
-                            xs = s_left + (space_south - s_total) / 2.0
-                            ys = miny + dc / 2.0
-                            for sec in mid_south:
-                                sections.append(
-                                    PlacedSection(
-                                        sec,
-                                        xs + sec.width / 2.0,
-                                        ys,
-                                        0.0,
-                                        fl_low,
-                                        floor_height=floor_height,
-                                        ground_floor_height=ground_floor_height,
-                                    )
-                                )
-                                xs += sec.width
-                elif orient in ("NORTH",):
-                    s_left = x_start + 6.0
-                    s_right = curr_x + wc - 6.0
-                    space_north = s_right - s_left
-                    if space_north >= 24.0:
-                        mid_north = self._find_best_combo(middle_pool, space_north)
-                        if mid_north:
-                            s_total = sum(s.width for s in mid_north)
-                            xs = s_left + (space_north - s_total) / 2.0
-                            yn = maxy - dc / 2.0
-                            for sec in mid_north:
-                                sections.append(
-                                    PlacedSection(
-                                        sec,
-                                        xs + sec.width / 2.0,
-                                        yn,
-                                        0.0,
-                                        fl_low,
-                                        floor_height=floor_height,
-                                        ground_floor_height=ground_floor_height,
-                                    )
-                                )
-                                xs += sec.width
-                elif orient in ("EAST",):
-                    s_bot = y_start + 6.0
-                    s_top = curr_y + wc - 6.0
-                    space_east = s_top - s_bot
-                    if space_east >= 24.0:
-                        mid_east = self._find_best_combo(middle_pool, space_east)
-                        if mid_east:
-                            s_total = sum(s.width for s in mid_east)
-                            ys = s_bot + (space_east - s_total) / 2.0
-                            xe = maxx - dc / 2.0
-                            for sec in mid_east:
-                                sections.append(
-                                    PlacedSection(
-                                        sec,
-                                        xe,
-                                        ys + sec.width / 2.0,
-                                        90.0,
-                                        fl_low,
-                                        floor_height=floor_height,
-                                        ground_floor_height=ground_floor_height,
-                                    )
-                                )
-                                ys += sec.width
-                elif orient in ("WEST",):
-                    s_bot = y_start + 6.0
-                    s_top = curr_y + wc - 6.0
-                    space_west = s_top - s_bot
-                    if space_west >= 24.0:
-                        mid_west = self._find_best_combo(middle_pool, space_west)
-                        if mid_west:
-                            s_total = sum(s.width for s in mid_west)
-                            ys = s_bot + (space_west - s_total) / 2.0
-                            xw = minx + dc / 2.0
-                            for sec in mid_west:
-                                sections.append(
-                                    PlacedSection(
-                                        sec,
-                                        xw,
-                                        ys + sec.width / 2.0,
-                                        90.0,
-                                        fl_low,
-                                        floor_height=floor_height,
-                                        ground_floor_height=ground_floor_height,
-                                    )
-                                )
-                                ys += sec.width
+                    # Западное крыло
+                    curr_y = y_top - dc
+                    n_mid_l = len(mid_y_l)
+                    for idx, sec in enumerate(mid_y_l):
+                        if cascade_floors and fl_high > min_wing_floors:
+                            ratio = (idx + 1) / (n_mid_l + 1)
+                            fl_cur = round(fl_high - ratio * (fl_high - min_wing_floors))
+                        else:
+                            fl_cur = fl_high
+                        fl_cur = max(min_wing_floors, min(sec.max_floors, fl_cur))
+                        sections.append(
+                            PlacedSection(
+                                sec,
+                                x_start + sec.depth / 2.0,
+                                curr_y - sec.width / 2.0,
+                                90.0,
+                                fl_cur,
+                                floor_height=floor_height,
+                                ground_floor_height=ground_floor_height,
+                            )
+                        )
+                        curr_y -= sec.width
+
+                    fl_end_l = min_wing_floors if cascade_floors else fl_high
+                    sections.append(
+                        PlacedSection(
+                            end_sec,
+                            x_start + end_sec.depth / 2.0,
+                            curr_y - we / 2.0,
+                            90.0,
+                            fl_end_l,
+                            floor_height=floor_height,
+                            ground_floor_height=ground_floor_height,
+                        )
+                    )
+
+                    # Восточное крыло
+                    curr_y_r = y_top - dc
+                    n_mid_r = len(mid_y_l)
+                    for idx, sec in enumerate(mid_y_l):
+                        if cascade_floors and fl_high > min_wing_floors:
+                            ratio = (idx + 1) / (n_mid_r + 1)
+                            fl_cur = round(fl_high - ratio * (fl_high - min_wing_floors))
+                        else:
+                            fl_cur = fl_high
+                        fl_cur = max(min_wing_floors, min(sec.max_floors, fl_cur))
+                        sections.append(
+                            PlacedSection(
+                                sec,
+                                x_right_outer - sec.depth / 2.0,
+                                curr_y_r - sec.width / 2.0,
+                                90.0,
+                                fl_cur,
+                                floor_height=floor_height,
+                                ground_floor_height=ground_floor_height,
+                            )
+                        )
+                        curr_y_r -= sec.width
+
+                    fl_end_r = min_wing_floors if cascade_floors else fl_high
+                    sections.append(
+                        PlacedSection(
+                            end_sec,
+                            x_right_outer - end_sec.depth / 2.0,
+                            curr_y_r - we / 2.0,
+                            90.0,
+                            fl_end_r,
+                            floor_height=floor_height,
+                            ground_floor_height=ground_floor_height,
+                        )
+                    )
 
         # Возвращаем секции с обратным поворотом на угол участка
         rotated_sections: list[PlacedSection] = []

@@ -648,7 +648,31 @@ def generate_3d_viewer_html(
   const DATA = {data_json_str};
 
   const BASEMAP_STYLES = {{
-    light: 'https://tiles.openfreemap.org/styles/positron',
+    light: {{
+      version: 8,
+      sources: {{
+        'carto-positron': {{
+          type: 'raster',
+          tiles: [
+            'https://a.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png',
+            'https://b.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png',
+            'https://c.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png',
+            'https://d.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png'
+          ],
+          tileSize: 256,
+          attribution: '&copy; OpenStreetMap &copy; CARTO'
+        }}
+      }},
+      layers: [
+        {{
+          id: 'carto-positron-layer',
+          type: 'raster',
+          source: 'carto-positron',
+          minzoom: 0,
+          maxzoom: 20
+        }}
+      ]
+    }},
     osm: {{
       version: 8,
       sources: {{
@@ -673,7 +697,31 @@ def generate_3d_viewer_html(
         }}
       ]
     }},
-    dark: 'https://tiles.openfreemap.org/styles/dark',
+    dark: {{
+      version: 8,
+      sources: {{
+        'carto-dark': {{
+          type: 'raster',
+          tiles: [
+            'https://a.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}.png',
+            'https://b.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}.png',
+            'https://c.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}.png',
+            'https://d.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}.png'
+          ],
+          tileSize: 256,
+          attribution: '&copy; OpenStreetMap &copy; CARTO'
+        }}
+      }},
+      layers: [
+        {{
+          id: 'carto-dark-layer',
+          type: 'raster',
+          source: 'carto-dark',
+          minzoom: 0,
+          maxzoom: 20
+        }}
+      ]
+    }},
     none: {{
       version: 8,
       sources: {{}},
