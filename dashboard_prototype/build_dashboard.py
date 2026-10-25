@@ -994,11 +994,44 @@ def build():
           <label class="control-label" for="cfg-typology">Типология застройки</label>
           <select class="select-custom" id="cfg-typology" style="width:100%;">
             <option value="AUTO">Квартальная / Смешанная (AUTO)</option>
+            <option value="PERIMETER">Периметральные урбан-блоки (R2-Style)</option>
             <option value="TOWER">Точечная / Башенная (Towers)</option>
             <option value="U_SHAPE">П-образные дворы (U-Shape)</option>
             <option value="L_SHAPE">Г-образные корпуса (L-Shape)</option>
             <option value="LINEAR">Линейная застройка (Пластины)</option>
           </select>
+        </div>
+
+        <!-- БЛОК НАСТРОЕК УРБАН-БЛОКОВ R2 -->
+        <div id="container-peri-settings" style="display:none; flex-direction:column; gap:8px; margin-top:6px; padding:10px; background:rgba(37,99,235,0.04); border:1px dashed #bfdbfe; border-radius:8px;">
+          <div style="font-size:11.5px; font-weight:700; color:#1d4ed8; text-transform:uppercase; letter-spacing:0.5px;">🧱 Концепция урбан-блоков (R2)</div>
+
+          <div class="control-row">
+            <label class="control-label" for="cfg-peri-style">Конфигурация двора</label>
+            <select class="select-custom" id="cfg-peri-style" style="width:100%;">
+              <option value="U_SHAPE">П-образный (раскрытый двор)</option>
+              <option value="CLOSED">Замкнутый квартал (с арками/проездами)</option>
+              <option value="LINEAR_WINGS">Двухсторонний фронт (пластины)</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <div style="display:flex; justify-content:space-between;">
+              <label class="control-label" for="cfg-peri-block-size">Размер квартала</label>
+              <span id="badge-peri-block-size" style="font-size:11px; font-weight:600; color:#2563eb;">100 м</span>
+            </div>
+            <input type="range" class="slider-input" id="cfg-peri-block-size" min="70" max="160" step="5" value="100" />
+            <div class="control-hint">70–90 м: 4–6 блоков | 100–120 м: 2–4 блока | >140 м: 1 блок</div>
+          </div>
+
+          <div class="control-row">
+            <div style="display:flex; justify-content:space-between;">
+              <label class="control-label" for="cfg-peri-road-width">Ширина проезда</label>
+              <span id="badge-peri-road-width" style="font-size:11px; font-weight:600; color:#2563eb;">16 м</span>
+            </div>
+            <input type="range" class="slider-input" id="cfg-peri-road-width" min="12" max="24" step="2" value="16" />
+            <div class="control-hint">Коридор УДС между кварталами (проезжая часть + тротуары)</div>
+          </div>
         </div>
 
         <div class="control-row">
@@ -1726,6 +1759,12 @@ def build():
 
       // Общие поля
       const cfgTypology = document.getElementById("cfg-typology");
+      const containerPeriSettings = document.getElementById("container-peri-settings");
+      const cfgPeriStyle = document.getElementById("cfg-peri-style");
+      const cfgPeriBlockSize = document.getElementById("cfg-peri-block-size");
+      const badgePeriBlockSize = document.getElementById("badge-peri-block-size");
+      const cfgPeriRoadWidth = document.getElementById("cfg-peri-road-width");
+      const badgePeriRoadWidth = document.getElementById("badge-peri-road-width");
       const cfgCourtOrient = document.getElementById("cfg-court-orient");
       const cfgTowersMixed = document.getElementById("cfg-towers-mixed");
       const cfgVarInsolation = document.getElementById("cfg-var-insolation");
@@ -2072,6 +2111,23 @@ def build():
         }});
       }}
 
+      // Урбан-блоки R2
+      if (cfgTypology && containerPeriSettings) {{
+        cfgTypology.addEventListener("change", () => {{
+          containerPeriSettings.style.display = cfgTypology.value === "PERIMETER" ? "flex" : "none";
+        }});
+      }}
+      if (cfgPeriBlockSize && badgePeriBlockSize) {{
+        cfgPeriBlockSize.addEventListener("input", (e) => {{
+          badgePeriBlockSize.textContent = e.target.value + " м";
+        }});
+      }}
+      if (cfgPeriRoadWidth && badgePeriRoadWidth) {{
+        cfgPeriRoadWidth.addEventListener("input", (e) => {{
+          badgePeriRoadWidth.textContent = e.target.value + " м";
+        }});
+      }}
+
       // Тоггл панели параметров
       btnToggleSidebar.addEventListener("click", () => {{
         const isCollapsed = settingsDrawer.classList.toggle("collapsed");
@@ -2245,17 +2301,16 @@ def build():
         }}
         if (tab === "3d") {{
           const iframe3d = view3d.querySelector("iframe");
-          if (iframe3d && currentScenario.viewer_3d_html) {{
-            if (!iframe3d.srcdoc || iframe3d.srcdoc !== currentScenario.viewer_3d_html) {{
+          if (iframe3d) {{
+            if (currentScenario.viewer_3d_html && iframe3d.srcdoc !== currentScenario.viewer_3d_html) {{
               iframe3d.srcdoc = currentScenario.viewer_3d_html;
-            }} else {{
-              setTimeout(() => {{
-                try {{
-                  iframe3d.contentWindow.dispatchEvent(new Event("resize"));
-                  iframe3d.contentWindow.postMessage({{ type: "resize" }}, "*");
-                }} catch (_) {{}}
-              }}, 80);
             }}
+            setTimeout(() => {{
+              try {{
+                iframe3d.contentWindow.dispatchEvent(new Event("resize"));
+                iframe3d.contentWindow.postMessage({{ type: "resize" }}, "*");
+              }} catch (_) {{}}
+            }}, 80);
           }}
         }}
       }}
@@ -2289,7 +2344,10 @@ def build():
           regional_norm_id: cfgRegionalNorm.value,
           max_far: parseFloat(cfgFarSlider.value) || 2.5,
           max_bcr: parseFloat(cfgBcrSlider.value) || 0.4,
-          preferred_section_ids: preferredSectionIds.length ? preferredSectionIds : null
+          preferred_section_ids: preferredSectionIds.length ? preferredSectionIds : null,
+          urban_block_size: cfgPeriBlockSize ? (parseFloat(cfgPeriBlockSize.value) || 100.0) : 100.0,
+          internal_road_width: cfgPeriRoadWidth ? (parseFloat(cfgPeriRoadWidth.value) || 16.0) : 16.0,
+          perimeter_layout_style: cfgPeriStyle ? cfgPeriStyle.value : "U_SHAPE"
         }};
 
         if (siteMode === "cadastre") {{
@@ -2875,16 +2933,8 @@ def build():
         }}
         if (s.viewer_3d_html) {{
           const iframe3d = view3d.querySelector("iframe");
-          if (iframe3d) {{
-            if (activeView === "3d") {{
-              if (iframe3d.srcdoc !== s.viewer_3d_html) {{
-                iframe3d.srcdoc = s.viewer_3d_html;
-              }}
-            }} else {{
-              if (iframe3d.srcdoc !== s.viewer_3d_html) {{
-                iframe3d.srcdoc = "";
-              }}
-            }}
+          if (iframe3d && iframe3d.srcdoc !== s.viewer_3d_html) {{
+            iframe3d.srcdoc = s.viewer_3d_html;
           }}
         }}
       }}

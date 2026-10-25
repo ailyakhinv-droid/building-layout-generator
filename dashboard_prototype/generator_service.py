@@ -480,6 +480,10 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     floor_height = float(params.get("floor_height", config.get("floor_height", 3.0)))
     max_building_height_m = float(params.get("max_building_height_m", config.get("max_building_height_m", 0.0) or 0.0))
 
+    urban_block_size = float(params.get("urban_block_size", 100.0))
+    internal_road_width = float(params.get("internal_road_width", 16.0))
+    perimeter_layout_style = params.get("perimeter_layout_style", "U_SHAPE")
+
     placement_cfg = PlacementConfig(
         target_floors=target_floors,
         max_sections_per_building=max_sections,
@@ -493,6 +497,9 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         max_building_height_m=max_building_height_m if max_building_height_m > 0 else None,
         allow_towers_in_mixed=allow_towers_in_mixed,
         preferred_section_ids=preferred_sections,
+        urban_block_size=urban_block_size,
+        internal_road_width=internal_road_width,
+        perimeter_layout_style=perimeter_layout_style,
     )
 
     # 5. Режимы генерации
@@ -748,6 +755,9 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
         cascade_floors=bool(params.get("cascade_floors", True)),
         asymmetric_wings=bool(params.get("asymmetric_wings", True)),
         max_sections_per_building=int(params.get("max_sections", 8)),
+        urban_block_size=float(params.get("urban_block_size", 100.0)),
+        internal_road_width=float(params.get("internal_road_width", 16.0)),
+        perimeter_layout_style=params.get("perimeter_layout_style", "U_SHAPE"),
     )
 
     optimizer = Optimizer(site, library, config, base_placement_config=placement_cfg)

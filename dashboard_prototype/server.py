@@ -230,7 +230,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             return
 
         # Экспорт 3D HTML
-        elif parsed.path == "/api/export/3d-html":
+        elif parsed.path in ("/api/export/3d-html", "/api/export/3d"):
             try:
                 html_file = TEMP_DIR / "plan_3d.html"
                 export_file_3d_html(html_file)
