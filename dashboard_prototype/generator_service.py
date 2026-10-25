@@ -53,6 +53,7 @@ from src.core.geo_utils import (
     get_msk_key_for_region,
     detect_msk_by_coordinates,
     msk_to_wgs84_coords,
+    MSK_PRESETS,
 )
 
 
@@ -257,6 +258,29 @@ def _create_site_from_params(
                 site.base_offset = sub_site.base_offset
                 if sub_site.red_lines:
                     site.red_lines = sub_site.red_lines
+
+                # Если чертеж содержит геодезические координаты МСК и не задан ручной override
+                is_sub_msk = abs(sub_site.base_offset[0]) > 500 or abs(sub_site.base_offset[1]) > 500
+                if is_sub_msk and (override_lat == 0.0 or override_lon == 0.0):
+                    det_sub_msk = detect_msk_by_coordinates(sub_site.base_offset[0], sub_site.base_offset[1])
+                    if not det_sub_msk:
+                        c_comps = parse_cadastral_components(cad_query)
+                        if c_comps and c_comps.get("region_code"):
+                            det_sub_msk = get_msk_key_for_region(c_comps["region_code"], sub_site.base_offset[0], sub_site.base_offset[1])
+                    if det_sub_msk:
+                        exp_lat, exp_lon = auto_lat, auto_lon
+                        if det_sub_msk in MSK_PRESETS:
+                            preset = MSK_PRESETS[det_sub_msk]
+                            exp_lat, exp_lon = preset["default_lat"], preset["default_lon"]
+                        sub_lat, sub_lon = msk_to_wgs84_coords(
+                            sub_site.base_offset[0],
+                            sub_site.base_offset[1],
+                            det_sub_msk,
+                            axis_order="auto",
+                            expected_center=(exp_lat, exp_lon),
+                        )
+                        site.geo_center = (sub_lat, sub_lon)
+
                 site.georef_source = f"Контур из чертежа {cad_filename} ({site.area:,.0f} м²)"
             except Exception as e:
                 print(f"Ошибка применения CAD-контура: {e}")
@@ -291,19 +315,37 @@ def _create_site_from_params(
                 site.geo_center = (override_lat, override_lon)
                 site.georef_source = "Ручные координаты WGS-84"
             elif is_msk:
-                reg_code = comps["region_code"] if comps else "63"
-                detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
+                reg_code = comps.get("region_code") if comps else "63"
+                detected_msk = None
+                # Если пользователь явно указал регион, отличный от дефолтного 63 (Самара):
+                if reg_code and reg_code != "63":
+                    detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
+                # Если регион дефолтный 63 или МСК по региону не определилась — автоопределение по координатам
                 if not detected_msk:
                     detected_msk = detect_msk_by_coordinates(site.base_offset[0], site.base_offset[1])
+                # Если и по координатам не определилась — повторная попытка по региону
+                if not detected_msk and reg_code:
+                    detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
                 if not detected_msk:
                     detected_msk = "МСК-63 Зона 1 (Самара)"
+
+                exp_c = (c_lat, c_lon)
+                if detected_msk in MSK_PRESETS:
+                    preset = MSK_PRESETS[detected_msk]
+                    exp_c = (preset["default_lat"], preset["default_lon"])
+                    # Если кад. номер был дефолтный самарский, а чертеж из другого региона — подтягиваем реальный регион
+                    if comps and comps.get("region_code") == "63" and preset.get("region") and preset["region"] != "Самарская область":
+                        parcel_region_name = preset["region"]
+                        if preset.get("city"):
+                            parcel_district_name = f"г. {preset['city']}"
+                        site.address = f"{parcel_region_name}, {parcel_district_name} (чертёж: {cad_filename})"
 
                 cad_lat, cad_lon = msk_to_wgs84_coords(
                     site.base_offset[0],
                     site.base_offset[1],
                     detected_msk,
                     axis_order="auto",
-                    expected_center=(c_lat, c_lon),
+                    expected_center=exp_c,
                 )
                 site.geo_center = (cad_lat, cad_lon)
                 site.georef_source = f"По координатам чертежа ({detected_msk})"
@@ -312,10 +354,6 @@ def _create_site_from_params(
                 site.georef_source = "По кадастровому номеру / адресу"
         else:
             site = create_rectangular_site(200, 150, geo_center=(c_lat, c_lon))
-
-    # Если переданы ручные/смещенные координаты
-    if override_lat != 0.0 and override_lon != 0.0:
-        site.geo_center = (override_lat, override_lon)
 
     # Поворот участка вокруг геометрического центра
     if site_rotation != 0.0:

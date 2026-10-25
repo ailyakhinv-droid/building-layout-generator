@@ -1687,6 +1687,7 @@ def build():
       let currentRotation = 0;
       let currentSiteLat = (currentScenario.geo_center && currentScenario.geo_center.lat) || 53.2502;
       let currentSiteLon = (currentScenario.geo_center && currentScenario.geo_center.lon) || 50.3184;
+      let userHasMovedSite = false;
 
       // Элементы степпера и баннеров этапов
       const stepperStep1 = document.getElementById("stepper-step-1");
@@ -1976,6 +1977,11 @@ def build():
         reader.onload = async () => {{
           uploadedCadBase64 = reader.result.split(",")[1];
           uploadedCadFilename = file.name;
+          userHasMovedSite = false;
+          currentSiteLat = null;
+          currentSiteLon = null;
+          if (cfgManualLat) cfgManualLat.value = "";
+          if (cfgManualLon) cfgManualLon.value = "";
           cadSubBadge.style.display = "inline-flex";
           cadSubBadge.className = "file-badge";
           cadSubBadge.textContent = `✓ Прикреплен контур: ${{file.name}}`;
@@ -2053,6 +2059,11 @@ def build():
           b64Reader.onload = () => {{
             uploadedCadBase64 = b64Reader.result.split(",")[1];
             uploadedCadFilename = file.name;
+            userHasMovedSite = false;
+            currentSiteLat = null;
+            currentSiteLon = null;
+            if (cfgDwgLat) cfgDwgLat.value = "";
+            if (cfgDwgLon) cfgDwgLon.value = "";
             isSiteLocked = false;
             loadSitePreview(true);
           }};
@@ -2202,11 +2213,46 @@ def build():
       cfgParcelPresets.addEventListener("change", e => {{
         const cadNum = e.target.value;
         cfgCadInput.value = cadNum;
+        userHasMovedSite = false;
+        currentSiteLat = null;
+        currentSiteLon = null;
+        if (cfgManualLat) cfgManualLat.value = "";
+        if (cfgManualLon) cfgManualLon.value = "";
         isSiteLocked = false;
         setRotation(0, true, false);
         loadSitePreview(true);
         showToast(`✓ Пресет выбран: ${{cadNum}} (Этап 1: настройте положение)`);
       }});
+
+      // Изменение кадастрового номера в режиме 1
+      cfgCadInput.addEventListener("change", () => {{
+        userHasMovedSite = false;
+        currentSiteLat = null;
+        currentSiteLon = null;
+        if (cfgManualLat) cfgManualLat.value = "";
+        if (cfgManualLon) cfgManualLon.value = "";
+        isSiteLocked = false;
+        loadSitePreview(true);
+      }});
+
+      // Изменение кадастрового номера / региона в режиме 2
+      if (cfgDwgAssignedCad) {{
+        cfgDwgAssignedCad.addEventListener("change", () => {{
+          userHasMovedSite = false;
+          currentSiteLat = null;
+          currentSiteLon = null;
+          if (cfgDwgLat) cfgDwgLat.value = "";
+          if (cfgDwgLon) cfgDwgLon.value = "";
+          isSiteLocked = false;
+          loadSitePreview(true);
+        }});
+      }}
+
+      // Изменение ручных координат
+      if (cfgManualLat) cfgManualLat.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
+      if (cfgManualLon) cfgManualLon.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
+      if (cfgDwgLat) cfgDwgLat.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
+      if (cfgDwgLon) cfgDwgLon.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
 
       cfgGenMode.addEventListener("change", e => {{
         cfgTargetContainer.style.display = e.target.value === "target" ? "flex" : "none";
@@ -2321,11 +2367,35 @@ def build():
 
       // Сбор данных формы
       function getFormData() {{
+        let sendOverrideLat = 0.0;
+        let sendOverrideLon = 0.0;
+        if (siteMode === "cadastre") {{
+          const mLat = parseFloat(cfgManualLat ? cfgManualLat.value : "") || 0;
+          const mLon = parseFloat(cfgManualLon ? cfgManualLon.value : "") || 0;
+          if (mLat !== 0 && mLon !== 0) {{
+            sendOverrideLat = mLat;
+            sendOverrideLon = mLon;
+          }} else if (userHasMovedSite && currentSiteLat && currentSiteLon) {{
+            sendOverrideLat = currentSiteLat;
+            sendOverrideLon = currentSiteLon;
+          }}
+        }} else {{
+          const dLat = parseFloat(cfgDwgLat ? cfgDwgLat.value : "") || 0;
+          const dLon = parseFloat(cfgDwgLon ? cfgDwgLon.value : "") || 0;
+          if (dLat !== 0 && dLon !== 0) {{
+            sendOverrideLat = dLat;
+            sendOverrideLon = dLon;
+          }} else if (userHasMovedSite && currentSiteLat && currentSiteLon) {{
+            sendOverrideLat = currentSiteLat;
+            sendOverrideLon = currentSiteLon;
+          }}
+        }}
+
         const base = {{
           site_mode: siteMode,
           site_rotation: currentRotation,
-          override_lat: currentSiteLat,
-          override_lon: currentSiteLon,
+          override_lat: sendOverrideLat,
+          override_lon: sendOverrideLon,
           boundary_setback: parseFloat(cfgBoundarySetback ? cfgBoundarySetback.value : 6) || 6,
           red_line_setback: parseFloat(cfgRedlineSetback ? cfgRedlineSetback.value : 5) || 5,
           typology: cfgTypology.value,
@@ -2353,8 +2423,6 @@ def build():
         if (siteMode === "cadastre") {{
           base.cad_query = cfgCadInput.value.trim() || "63:01:0709002:2320";
           base.custom_area = parseFloat(cfgAreaInput.value) || 32000;
-          base.override_lat = currentSiteLat || parseFloat(cfgManualLat.value) || 0;
-          base.override_lon = currentSiteLon || parseFloat(cfgManualLon.value) || 0;
           base.enable_red_line = cfgRedlineToggle.checked;
           if (uploadedCadBase64) {{
             base.cad_file_base64 = uploadedCadBase64;
@@ -2362,8 +2430,6 @@ def build():
           }}
         }} else {{
           base.assigned_cad_query = cfgDwgAssignedCad.value.trim() || "63:01:0709002:2320";
-          base.override_lat = currentSiteLat || parseFloat(cfgDwgLat.value) || 0;
-          base.override_lon = currentSiteLon || parseFloat(cfgDwgLon.value) || 0;
           base.boundary_layer = cfgBoundaryLayer.value || null;
           base.red_lines_layer = cfgRedlineLayer.value || null;
           if (uploadedCadBase64) {{
@@ -2525,10 +2591,13 @@ def build():
           setRotation(t.map_rot, true, false);
         }}
         if (t.map_lat && t.map_lon && t.dist_m > 0.1) {{
+          userHasMovedSite = true;
           currentSiteLat = t.map_lat;
           currentSiteLon = t.map_lon;
           if (cfgManualLat) cfgManualLat.value = t.map_lat.toFixed(5);
           if (cfgManualLon) cfgManualLon.value = t.map_lon.toFixed(5);
+          if (cfgDwgLat) cfgDwgLat.value = t.map_lat.toFixed(5);
+          if (cfgDwgLon) cfgDwgLon.value = t.map_lon.toFixed(5);
           if (siteCoordsLabel) {{
             siteCoordsLabel.textContent = `WGS-84: [${{t.map_lat.toFixed(5)}}, ${{t.map_lon.toFixed(5)}}]`;
           }}
@@ -2927,13 +2996,13 @@ def build():
 
         if (s.leaflet_html) {{
           const iframeOsm = viewOsm.querySelector("iframe");
-          if (iframeOsm && iframeOsm.srcdoc !== s.leaflet_html) {{
+          if (iframeOsm) {{
             iframeOsm.srcdoc = s.leaflet_html;
           }}
         }}
         if (s.viewer_3d_html) {{
           const iframe3d = view3d.querySelector("iframe");
-          if (iframe3d && iframe3d.srcdoc !== s.viewer_3d_html) {{
+          if (iframe3d) {{
             iframe3d.srcdoc = s.viewer_3d_html;
           }}
         }}

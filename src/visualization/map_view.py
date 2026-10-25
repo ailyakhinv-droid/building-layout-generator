@@ -421,9 +421,9 @@ def generate_leaflet_map_html(
             attribution: '&copy; OpenStreetMap contributors'
         }});
 
-        var cartoPositron = L.tileLayer('https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
-            maxZoom: 19,
-            attribution: '&copy; OpenStreetMap &copy; CARTO'
+        var esriLight = L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
+            maxZoom: 16,
+            attribution: 'Tiles &copy; Esri &mdash; Light Gray Canvas'
         }});
 
         var osmHot = L.tileLayer('https://{{s}}.tile.openstreetmap.fr/hot/{{z}}/{{x}}/{{y}}.png', {{
@@ -896,7 +896,7 @@ def generate_leaflet_map_html(
         var baseMaps = {{
             "🗺️ OpenStreetMap (Схема)": osmStandard,
             "🛰️ Спутник Esri World Imagery": esriSat,
-            "🏢 CartoDB Positron (Светлая)": cartoPositron,
+            "🏢 Светлая карта (Esri Light Gray)": esriLight,
             "🚑 OSM Humanitarian": osmHot
         }};
 

@@ -574,10 +574,13 @@ def generate_3d_viewer_html(
 
     <div class="group">
       <div class="group-title">Картографическая подложка</div>
-      <div style="font-size: 13px; color: #334155; display: flex; align-items: center; gap: 8px; padding: 4px 0;">
-        <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#10b981;"></span>
-        <span><b>Светлая карта Positron</b></span>
-      </div>
+      <select id="select-basemap">
+        <option value="light">Светлая архитектурная (OSM Light)</option>
+        <option value="osm">OpenStreetMap (Схема)</option>
+        <option value="satellite">Спутник (Esri World Imagery)</option>
+        <option value="dark">Тёмная подложка (Esri Dark)</option>
+        <option value="none">Без подложки (Холст)</option>
+      </select>
     </div>
 
     <div class="group">
@@ -651,25 +654,29 @@ def generate_3d_viewer_html(
     light: {{
       version: 8,
       sources: {{
-        'carto-positron': {{
+        'osm-light-tiles': {{
           type: 'raster',
           tiles: [
-            'https://a.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png',
-            'https://b.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png',
-            'https://c.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png',
-            'https://d.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}.png'
+            'https://a.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
+            'https://b.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
+            'https://c.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png'
           ],
           tileSize: 256,
-          attribution: '&copy; OpenStreetMap &copy; CARTO'
+          attribution: '&copy; OpenStreetMap contributors'
         }}
       }},
       layers: [
         {{
-          id: 'carto-positron-layer',
+          id: 'osm-light-layer',
           type: 'raster',
-          source: 'carto-positron',
+          source: 'osm-light-tiles',
           minzoom: 0,
-          maxzoom: 20
+          maxzoom: 19,
+          paint: {{
+            'raster-saturation': -0.65,
+            'raster-contrast': -0.05,
+            'raster-brightness-min': 0.15
+          }}
         }}
       ]
     }},
@@ -697,28 +704,47 @@ def generate_3d_viewer_html(
         }}
       ]
     }},
-    dark: {{
+    satellite: {{
       version: 8,
       sources: {{
-        'carto-dark': {{
+        'esri-sat': {{
           type: 'raster',
           tiles: [
-            'https://a.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}.png',
-            'https://b.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}.png',
-            'https://c.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}.png',
-            'https://d.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}.png'
+            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}'
           ],
           tileSize: 256,
-          attribution: '&copy; OpenStreetMap &copy; CARTO'
+          attribution: '&copy; Esri &mdash; World Imagery'
         }}
       }},
       layers: [
         {{
-          id: 'carto-dark-layer',
+          id: 'esri-sat-layer',
           type: 'raster',
-          source: 'carto-dark',
+          source: 'esri-sat',
           minzoom: 0,
-          maxzoom: 20
+          maxzoom: 19
+        }}
+      ]
+    }},
+    dark: {{
+      version: 8,
+      sources: {{
+        'esri-dark': {{
+          type: 'raster',
+          tiles: [
+            'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{{z}}/{{y}}/{{x}}'
+          ],
+          tileSize: 256,
+          attribution: '&copy; Esri &mdash; Dark Gray Canvas'
+        }}
+      }},
+      layers: [
+        {{
+          id: 'esri-dark-layer',
+          type: 'raster',
+          source: 'esri-dark',
+          minzoom: 0,
+          maxzoom: 16
         }}
       ]
     }},
