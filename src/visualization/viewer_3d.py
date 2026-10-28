@@ -835,9 +835,9 @@ def generate_3d_viewer_html(
       16, '#f97316',
       24, '#ef4444'
     ],
-    buildings: ['get', 'color_building'],
-    categories: ['get', 'color_category'],
-    neutral: '#e2e8f0'
+    buildings: ['coalesce', ['get', 'color_building'], '#3b82f6'],
+    categories: ['coalesce', ['get', 'color_category'], '#2E86AB'],
+    neutral: '#cbd5e1'
   }};
 
   function updateLegend(mode) {{
@@ -870,6 +870,8 @@ def generate_3d_viewer_html(
     // 1. Граница участка
     if (!map.getSource('boundary')) {{
       map.addSource('boundary', {{ type: 'geojson', data: DATA.boundary }});
+    }} else {{
+      map.getSource('boundary').setData(DATA.boundary);
     }}
     if (!map.getLayer('boundary-fill')) {{
       map.addLayer({{
@@ -899,6 +901,8 @@ def generate_3d_viewer_html(
     if (DATA.buildable.features && DATA.buildable.features.length) {{
       if (!map.getSource('buildable')) {{
         map.addSource('buildable', {{ type: 'geojson', data: DATA.buildable }});
+      }} else {{
+        map.getSource('buildable').setData(DATA.buildable);
       }}
       if (!map.getLayer('buildable-fill')) {{
         map.addLayer({{
@@ -929,6 +933,8 @@ def generate_3d_viewer_html(
     if (DATA.red_lines.features && DATA.red_lines.features.length) {{
       if (!map.getSource('red_lines')) {{
         map.addSource('red_lines', {{ type: 'geojson', data: DATA.red_lines }});
+      }} else {{
+        map.getSource('red_lines').setData(DATA.red_lines);
       }}
       if (!map.getLayer('redlines-line')) {{
         map.addLayer({{
@@ -946,6 +952,8 @@ def generate_3d_viewer_html(
     // 4. 3D-здания (экструзия)
     if (!map.getSource('buildings')) {{
       map.addSource('buildings', {{ type: 'geojson', data: DATA.buildings }});
+    }} else {{
+      map.getSource('buildings').setData(DATA.buildings);
     }}
     if (!map.getLayer('buildings-3d')) {{
       const colorSelect = document.getElementById('select-color-mode');
@@ -957,7 +965,7 @@ def generate_3d_viewer_html(
         paint: {{
           'fill-extrusion-height': ['to-number', ['get', 'height'], 9],
           'fill-extrusion-base': ['to-number', ['get', 'min_height'], 0],
-          'fill-extrusion-color': COLOR_EXPRESSIONS[colorMode],
+          'fill-extrusion-color': COLOR_EXPRESSIONS[colorMode] || COLOR_EXPRESSIONS.floors,
           'fill-extrusion-opacity': 0.95
         }}
       }});
@@ -981,25 +989,62 @@ def generate_3d_viewer_html(
 
   function fitToData(animated = true) {{
     map.resize();
+    const container = map.getContainer();
+    const cWidth = container ? container.clientWidth : window.innerWidth;
+    const cHeight = container ? container.clientHeight : window.innerHeight;
+
     const panel = document.getElementById('ui-panel');
     const isPanelVisible = panel && !panel.classList.contains('collapsed');
-    const leftPad = isPanelVisible && window.innerWidth > 680 ? 340 : 40;
+    const leftPad = isPanelVisible && cWidth > 680 ? Math.min(340, Math.floor(cWidth * 0.35)) : 30;
+    const rightPad = Math.min(40, Math.floor(cWidth * 0.08));
+    const vPad = Math.min(50, Math.floor(cHeight * 0.12));
 
-    map.fitBounds(siteBounds, {{
-      padding: {{ top: 50, bottom: 50, left: leftPad, right: 40 }},
-      pitch: 50,
-      bearing: -18,
-      duration: animated ? 800 : 0,
-      maxZoom: 18.0
-    }});
+    try {{
+      map.fitBounds(siteBounds, {{
+        padding: {{ top: vPad, bottom: vPad, left: leftPad, right: rightPad }},
+        pitch: 50,
+        bearing: -18,
+        duration: animated ? 800 : 0,
+        maxZoom: 18.0
+      }});
+    }} catch (err) {{
+      console.warn("fitBounds warning:", err);
+    }}
   }}
 
-  map.once('load', () => {{
-    installLayers();
-    map.resize();
-    setTimeout(() => {{
-      fitToData(false);
-    }}, 80);
+  // ResizeObserver для автоматического пробуждения при показе вкладки 3D
+  if (window.ResizeObserver) {{
+    let roTimer = null;
+    const ro = new ResizeObserver((entries) => {{
+      for (const entry of entries) {{
+        if (entry.contentRect.width > 50 && entry.contentRect.height > 50) {{
+          map.resize();
+          clearTimeout(roTimer);
+          roTimer = setTimeout(() => {{
+            fitToData(false);
+          }}, 80);
+        }}
+      }}
+    }});
+    const mapEl = document.getElementById('map');
+    if (mapEl) ro.observe(mapEl);
+  }}
+
+  const addLayers = installLayers;
+
+  map.once('load', function() {{
+    addLayers();
+    // Ждём реального размера контейнера
+    function waitForSize() {{
+      var el = document.getElementById('map');
+      if (el.clientWidth > 50 && el.clientHeight > 50) {{
+        map.resize();
+        fitToData();
+      }} else {{
+        requestAnimationFrame(waitForSize);
+      }}
+    }}
+    requestAnimationFrame(waitForSize);
   }});
 
   if (map.isStyleLoaded()) {{
@@ -1010,10 +1055,10 @@ def generate_3d_viewer_html(
     map.resize();
   }});
 
-  window.addEventListener('message', (e) => {{
-    if (e.data && e.data.type === 'resize') {{
-      map.resize();
-      setTimeout(() => fitToData(false), 50);
+  window.addEventListener('message', function(e) {{
+    if (e.data && (e.data.type === 'activate' || e.data.type === 'resize')) {{
+      setTimeout(function() {{ map.resize(); fitToData(); }}, 50);
+      setTimeout(function() {{ map.resize(); fitToData(); }}, 300);
     }}
   }});
 

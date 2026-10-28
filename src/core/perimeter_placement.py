@@ -191,7 +191,8 @@ class PerimeterPlacementEngine:
 
         sections: list[PlacedSection] = []
         fl_high = target_floors
-        fl_low = max(min_wing_floors, min(fl_high, 8))
+        drop = min(4, max(2, fl_high - min_wing_floors)) if fl_high > min_wing_floors else min(2, max(0, fl_high - 1))
+        fl_low = max(1, fl_high - drop)
 
         orient = courtyard_orientation.upper()
         layout_mode = courtyard_layout_type.upper()
@@ -711,17 +712,27 @@ class PerimeterPlacementEngine:
         config: Any,
     ) -> list[Building]:
         """Главный метод генерации застройки в режиме урбан-блоков."""
-        target_size = getattr(config, "urban_block_size", 100.0)
-        road_width = getattr(config, "internal_road_width", 16.0)
-        cascade = getattr(config, "cascade_floors", True)
-        min_wing_fl = getattr(config, "min_wing_floors", 8)
-        
-        # Получаем параметры ориентации и стиля двора
-        court_orient = getattr(config, "courtyard_orientation", "SOUTH") or "SOUTH"
-        layout_style = getattr(config, "perimeter_layout_style", "U_SHAPE") or "U_SHAPE"
+        def _get_val(key: str, default: Any = None) -> Any:
+            if isinstance(config, dict):
+                return config.get(key, default)
+            return getattr(config, key, default)
 
-        fl_h = float(getattr(config, "floor_height", 3.0) or 3.0)
-        gr_h = getattr(config, "ground_floor_height", None)
+        target_size = _get_val("urban_block_size", 100.0) or 100.0
+        road_width = _get_val("internal_road_width", 16.0) or 16.0
+        cascade = _get_val("cascade_floors", True)
+        min_wing_fl = _get_val("min_wing_floors", 8) or 8
+        court_orient = _get_val("courtyard_orientation", "SOUTH") or "SOUTH"
+        layout_style = _get_val("perimeter_layout_style", "U_SHAPE") or "U_SHAPE"
+
+        fl_h = float(_get_val("floor_height", 3.0) or 3.0)
+        gr_h = _get_val("ground_floor_height", None)
+
+        raw_bcr = _get_val("max_bcr", None)
+        if raw_bcr is None and isinstance(self.config, dict):
+            raw_bcr = self.config.get("max_bcr")
+        max_bcr = float(raw_bcr) if raw_bcr is not None and float(raw_bcr) > 0 else None
+        site_area = getattr(self.site, "area", 0.0) or 0.0
+        allowed_fp = site_area * max_bcr if max_bcr and site_area > 0 else None
 
         corner_sec = corner_pool[0] if corner_pool else self.library.get_corner_sections()[0]
         end_sec = end_pool[0] if end_pool else self.library.get_end_sections()[0]
@@ -738,6 +749,11 @@ class PerimeterPlacementEngine:
 
         # 2. Посадка зданий в каждый блок
         for block in blocks:
+            if allowed_fp is not None:
+                cur_fp = sum(b.footprint.area for b in all_buildings)
+                if cur_fp >= allowed_fp * 0.999:
+                    break
+
             block_rot = rotate(block, -angle, origin=(0, 0))
             block_buildings = self._build_block_buildings(
                 block_rot=block_rot,
@@ -755,6 +771,11 @@ class PerimeterPlacementEngine:
             )
 
             for bldg in block_buildings:
+                if allowed_fp is not None:
+                    cur_fp = sum(b.footprint.area for b in all_buildings)
+                    if cur_fp + bldg.footprint.area > allowed_fp * 1.005:
+                        continue
+
                 if buildable_area.buffer(0.5).contains(bldg.footprint):
                     all_buildings.append(bldg)
                 else:

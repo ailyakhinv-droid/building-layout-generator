@@ -293,6 +293,12 @@ def build():
       border-color: var(--accent);
       background: rgba(83, 141, 178, 0.05);
     }}
+    .file-dropzone.dragover {{
+      border-color: var(--accent);
+      border-style: solid;
+      background: rgba(83, 141, 178, 0.15);
+      transform: scale(1.01);
+    }}
     .file-dropzone-text {{ font-size: 12px; font-weight: 600; color: var(--text); }}
     .file-dropzone-hint {{ font-size: 11px; color: var(--secondary); }}
     .file-badge {{
@@ -920,6 +926,26 @@ def build():
             <input type="text" class="input-text" id="cfg-dwg-assigned-cad" value="63:01:0709002:2320" placeholder="Кадастровый номер для РНГП" />
           </div>
 
+          <!-- Выбор системы координат МСК -->
+          <div class="control-row" id="cad-msk-container">
+            <label class="control-label" for="cfg-cad-msk-zone">Система координат (МСК)</label>
+            <select class="select-custom" id="cfg-cad-msk-zone" style="width:100%;">
+              <option value="">(Автоопределение по чертежу и региону)</option>
+              <option value="МСК-63 Зона 1 (Самара)">МСК-63 Зона 1 (Самара)</option>
+              <option value="МСК-63 Зона 2 (Тольятти / Сызрань)">МСК-63 Зона 2 (Тольятти / Сызрань)</option>
+              <option value="МСК-77 (Москва)">МСК-77 (Москва)</option>
+              <option value="МСК-50 Зона 1 (Московская обл. Запад)">МСК-50 Зона 1 (Московская обл. Запад)</option>
+              <option value="МСК-50 Зона 2 (Московская обл. Восток)">МСК-50 Зона 2 (Московская обл. Восток)</option>
+              <option value="МСК-78 (Санкт-Петербург)">МСК-78 (Санкт-Петербург)</option>
+              <option value="МСК-16 Зона 1 (Татарстан / Казань)">МСК-16 Зона 1 (Татарстан / Казань)</option>
+              <option value="МСК-66 Зона 1 (Свердловская обл. / Екатеринбург)">МСК-66 Зона 1 (Свердловская обл. / Екатеринбург)</option>
+              <option value="МСК-23 Зона 1 (Краснодарский край)">МСК-23 Зона 1 (Краснодарский край)</option>
+              <option value="МСК-72 Зона 1 (Тюмень)">МСК-72 Зона 1 (Тюмень)</option>
+              <option value="МСК-72 Зона 2 (Тобольск / Ишим)">МСК-72 Зона 2 (Тобольск / Ишим)</option>
+              <option value="МСК-22 Зона 2 (Барнаул)">МСК-22 Зона 2 (Барнаул)</option>
+            </select>
+          </div>
+
           <!-- Инспектор слоев чертежа -->
           <div class="control-row" id="cad-layers-container" style="display:none;">
             <label class="control-label" for="cfg-boundary-layer">Слой границы участка</label>
@@ -927,6 +953,15 @@ def build():
 
             <label class="control-label" for="cfg-redline-layer">Слой красных линий</label>
             <select class="select-custom" id="cfg-redline-layer" style="width:100%;"></select>
+          </div>
+
+          <!-- Инспекция параметров чертежа -->
+          <div id="cad-inspect-card" style="display:none; background:var(--muted); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; font-size:11px; line-height:1.5;">
+            <div style="font-weight:700; color:var(--text); margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+              <span id="cad-card-title">Параметры чертежа</span>
+              <span id="cad-card-status" style="font-size:10px; padding:1px 6px; border-radius:3px; background:rgba(5,150,105,0.15); color:var(--positive);">OK</span>
+            </div>
+            <div id="cad-card-body" style="color:var(--secondary);"></div>
           </div>
 
           <div class="sub-col-2">
@@ -1757,6 +1792,11 @@ def build():
       const cfgRedlineLayer = document.getElementById("cfg-redline-layer");
       const cfgDwgLat = document.getElementById("cfg-dwg-lat");
       const cfgDwgLon = document.getElementById("cfg-dwg-lon");
+      const cfgCadMskZone = document.getElementById("cfg-cad-msk-zone");
+      const cadInspectCard = document.getElementById("cad-inspect-card");
+      const cadCardTitle = document.getElementById("cad-card-title");
+      const cadCardStatus = document.getElementById("cad-card-status");
+      const cadCardBody = document.getElementById("cad-card-body");
 
       // Общие поля
       const cfgTypology = document.getElementById("cfg-typology");
@@ -1958,6 +1998,7 @@ def build():
         btnModeCad.classList.remove("active");
         containerModeCadastre.style.display = "flex";
         containerModeCad.style.display = "none";
+        if (!isSiteLocked) loadSitePreview(false);
       }});
 
       btnModeCad.addEventListener("click", () => {{
@@ -1966,33 +2007,51 @@ def build():
         btnModeCadastre.classList.remove("active");
         containerModeCadastre.style.display = "none";
         containerModeCad.style.display = "flex";
+        if (!isSiteLocked) loadSitePreview(false);
       }});
 
-      // Загрузка CAD файла в режиме 1 (Прикрепление контура)
-      dropzoneCadSub.addEventListener("click", () => fileCadSub.click());
-      fileCadSub.addEventListener("change", e => {{
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = async () => {{
-          uploadedCadBase64 = reader.result.split(",")[1];
-          uploadedCadFilename = file.name;
-          userHasMovedSite = false;
-          currentSiteLat = null;
-          currentSiteLon = null;
-          if (cfgManualLat) cfgManualLat.value = "";
-          if (cfgManualLon) cfgManualLon.value = "";
-          cadSubBadge.style.display = "inline-flex";
-          cadSubBadge.className = "file-badge";
-          cadSubBadge.textContent = `✓ Прикреплен контур: ${{file.name}}`;
-          showToast(`Контур ${{file.name}} прикреплен к участку`);
-          isSiteLocked = false;
-          loadSitePreview(true);
-        }};
-        reader.readAsDataURL(file);
-      }});
+      // Настройка Drag & Drop и клика для зон загрузки CAD
+      function setupDropzone(dropzone, fileInput, onFileSelected) {{
+        if (!dropzone || !fileInput) return;
 
-      // Клиентский парсер слоев DXF (работает 100% автономно в браузере)
+        dropzone.addEventListener("click", () => {{
+          fileInput.value = "";
+          fileInput.click();
+        }});
+
+        fileInput.addEventListener("change", e => {{
+          const file = e.target.files && e.target.files[0];
+          if (file) onFileSelected(file);
+        }});
+
+        ["dragenter", "dragover"].forEach(eventName => {{
+          dropzone.addEventListener(eventName, e => {{
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.add("dragover");
+          }});
+        }});
+
+        ["dragleave", "drop"].forEach(eventName => {{
+          dropzone.addEventListener(eventName, e => {{
+            e.preventDefault();
+            e.stopPropagation();
+            dropzone.classList.remove("dragover");
+          }});
+        }});
+
+        dropzone.addEventListener("drop", e => {{
+          const dt = e.dataTransfer;
+          const file = dt && dt.files && dt.files[0];
+          if (file) onFileSelected(file);
+        }});
+      }}
+
+      // Защита от перетаскивания файлов мимо зон
+      window.addEventListener("dragover", e => e.preventDefault());
+      window.addEventListener("drop", e => e.preventDefault());
+
+      // Клиентский парсер слоев DXF (быстрый предпросмотр до ответа бэкенда)
       function parseDxfLayersClientSide(dxfText) {{
         const layersMap = new Map();
         const cleanText = dxfText.replace(new RegExp(String.fromCharCode(13), "g"), "");
@@ -2023,10 +2082,46 @@ def build():
         return layers;
       }}
 
-      // Загрузка CAD файла в режиме 2 (Чертёж генплана)
-      dropzoneCadMain.addEventListener("click", () => fileCadMain.click());
-      fileCadMain.addEventListener("change", e => {{
-        const file = e.target.files[0];
+      // Обработка файла для режима 1 (Прикрепление контура к кадастру)
+      function handleSubCadFile(file) {{
+        if (!file) return;
+        const filename = file.name;
+        const isDwg = filename.toLowerCase().endsWith(".dwg");
+
+        if (isDwg) {{
+          cadSubBadge.style.display = "flex";
+          cadSubBadge.className = "file-badge badge-warn";
+          cadSubBadge.innerHTML = `⚠️ Файл .DWG (${{file.name}}) — закрытый бинарный формат. Сохраните как .DXF (в AutoCAD: команда <code>DXFOUT</code>).`;
+          showToast(`⚠️ Для контура выберите файл .DXF (в AutoCAD: DXFOUT)`, true);
+          return;
+        }}
+
+        cadSubBadge.style.display = "inline-flex";
+        cadSubBadge.className = "file-badge";
+        cadSubBadge.textContent = `⏳ Загрузка ${{file.name}}...`;
+
+        const reader = new FileReader();
+        reader.onload = async () => {{
+          uploadedCadBase64 = reader.result.split(",")[1];
+          uploadedCadFilename = file.name;
+          userHasMovedSite = false;
+          currentSiteLat = null;
+          currentSiteLon = null;
+          if (cfgManualLat) cfgManualLat.value = "";
+          if (cfgManualLon) cfgManualLon.value = "";
+          cadSubBadge.textContent = `✓ Контур: ${{file.name}}`;
+          showToast(`✓ Контур ${{file.name}} прикреплен к участку`);
+          isSiteLocked = false;
+          loadSitePreview(true);
+        }};
+        reader.onerror = () => {{
+          showToast(`Ошибка чтения файла ${{file.name}}`, true);
+        }};
+        reader.readAsDataURL(file);
+      }}
+
+      // Обработка файла для режима 2 (Чертёж генплана)
+      function handleMainCadFile(file) {{
         if (!file) return;
         const filename = file.name;
         const isDwg = filename.toLowerCase().endsWith(".dwg");
@@ -2034,62 +2129,133 @@ def build():
         if (isDwg) {{
           cadMainBadge.style.display = "flex";
           cadMainBadge.className = "file-badge badge-warn";
-          cadMainBadge.innerHTML = `⚠️ Файл .DWG (${{file.name}}) — закрытый бинарный формат. Для мгновенного чтения слоёв сохраните чертёж как .DXF (в AutoCAD команда <code>DXFOUT</code>).`;
-          showToast(`⚠️ Для чтения слоёв выберите файл .DXF (в AutoCAD: команда DXFOUT)`, true);
+          cadMainBadge.innerHTML = `⚠️ Файл .DWG (${{file.name}}) — закрытый бинарный формат. Для чтения слоёв сохраните чертёж как .DXF (в AutoCAD команда <code>DXFOUT</code>).`;
+          showToast(`⚠️ Для чтения чертежа выберите файл .DXF (в AutoCAD команда DXFOUT)`, true);
           return;
         }}
 
-        // Мгновенное автономное чтение слоев DXF на стороне клиента
-        const reader = new FileReader();
-        reader.onload = () => {{
-          const text = reader.result;
-          const layers = parseDxfLayersClientSide(text);
-          if (layers.length > 0) {{
-            populateCadLayers(layers);
-            cadMainBadge.style.display = "inline-flex";
-            cadMainBadge.className = "file-badge";
-            cadMainBadge.textContent = `✓ DXF загружен: ${{file.name}} (слоев: ${{layers.length}})`;
-            showToast(`✓ Чертёж ${{file.name}} загружен: найдено ${{layers.length}} слоёв`);
-          }} else {{
-            showToast(`В файле ${{file.name}} не обнаружено слоев`, true);
+        cadMainBadge.style.display = "inline-flex";
+        cadMainBadge.className = "file-badge";
+        cadMainBadge.textContent = `⏳ Загрузка ${{file.name}}...`;
+
+        // Быстрый клиентский предпарсинг слоев
+        const textReader = new FileReader();
+        textReader.onload = () => {{
+          try {{
+            const text = textReader.result;
+            const layers = parseDxfLayersClientSide(text);
+            if (layers.length > 0) {{
+              populateCadLayers(layers);
+            }}
+          }} catch (err) {{
+            console.warn("Client DXF parse error:", err);
           }}
-
-          // Подготавливаем base64 для бэкенда и сразу обновляем предпросмотр
-          const b64Reader = new FileReader();
-          b64Reader.onload = () => {{
-            uploadedCadBase64 = b64Reader.result.split(",")[1];
-            uploadedCadFilename = file.name;
-            userHasMovedSite = false;
-            currentSiteLat = null;
-            currentSiteLon = null;
-            if (cfgDwgLat) cfgDwgLat.value = "";
-            if (cfgDwgLon) cfgDwgLon.value = "";
-            isSiteLocked = false;
-            loadSitePreview(true);
-          }};
-          b64Reader.readAsDataURL(file);
         }};
-        reader.readAsText(file);
-      }});
+        textReader.readAsText(file);
 
-      function populateCadLayers(layers) {{
+        // Передача base64 на бэкенд для точного парсинга ezdxf и геопривязки
+        const b64Reader = new FileReader();
+        b64Reader.onload = () => {{
+          uploadedCadBase64 = b64Reader.result.split(",")[1];
+          uploadedCadFilename = file.name;
+          userHasMovedSite = false;
+          currentSiteLat = null;
+          currentSiteLon = null;
+          if (cfgDwgLat) cfgDwgLat.value = "";
+          if (cfgDwgLon) cfgDwgLon.value = "";
+          isSiteLocked = false;
+          showToast(`✓ Чертёж ${{file.name}} загружен, анализ геометрии...`);
+          loadSitePreview(true);
+        }};
+        b64Reader.onerror = () => {{
+          showToast(`Ошибка чтения файла ${{file.name}}`, true);
+        }};
+        b64Reader.readAsDataURL(file);
+      }}
+
+      setupDropzone(dropzoneCadSub, fileCadSub, handleSubCadFile);
+      setupDropzone(dropzoneCadMain, fileCadMain, handleMainCadFile);
+
+      // Заполнение выпадающих списков слоев
+      function populateCadLayers(layers, selectedBoundary, selectedRedline) {{
+        if (!cadLayersContainer || !cfgBoundaryLayer || !cfgRedlineLayer) return;
         cadLayersContainer.style.display = "flex";
-        cfgBoundaryLayer.innerHTML = "";
+
+        const prevBoundary = selectedBoundary !== undefined ? selectedBoundary : cfgBoundaryLayer.value;
+        const prevRedline = selectedRedline !== undefined ? selectedRedline : cfgRedlineLayer.value;
+
+        cfgBoundaryLayer.innerHTML = '<option value="">(Авто-поиск замкнутого контура)</option>';
         cfgRedlineLayer.innerHTML = '<option value="">(нет красных линий)</option>';
 
         layers.forEach(l => {{
+          const lName = typeof l === "string" ? l : l.name;
+          const lCount = typeof l === "object" ? (l.count || l.total_entities || 0) : "";
+          const isCand = typeof l === "object" ? !!l.is_candidate : false;
+          const isRed = typeof l === "object" ? !!(l.is_redline || l.is_red_line_candidate) : false;
+
           const opt1 = document.createElement("option");
-          opt1.value = l.name;
-          opt1.textContent = `${{l.name}} (${{l.total_entities}} примитивов)`;
-          if (l.is_candidate) opt1.selected = true;
+          opt1.value = lName;
+          opt1.textContent = lCount !== "" ? `${{lName}} (${{lCount}} прим.)` : lName;
+          if (prevBoundary && lName === prevBoundary) {{
+            opt1.selected = true;
+          }} else if (!prevBoundary && isCand) {{
+            opt1.selected = true;
+          }}
           cfgBoundaryLayer.appendChild(opt1);
 
           const opt2 = document.createElement("option");
-          opt2.value = l.name;
-          opt2.textContent = `${{l.name}} (${{l.total_entities}} примитивов)`;
-          if (l.is_red_line_candidate) opt2.selected = true;
+          opt2.value = lName;
+          opt2.textContent = lCount !== "" ? `${{lName}} (${{lCount}} прим.)` : lName;
+          if (prevRedline && lName === prevRedline) {{
+            opt2.selected = true;
+          }} else if (!prevRedline && isRed) {{
+            opt2.selected = true;
+          }}
           cfgRedlineLayer.appendChild(opt2);
         }});
+      }}
+
+      // Обновление карточки инспекции параметров DXF
+      function updateCadInspectCard(cadInfo, filename) {{
+        if (!cadInspectCard || !cadCardBody) return;
+        if (!cadInfo || !cadInfo.is_cad) {{
+          cadInspectCard.style.display = "none";
+          return;
+        }}
+        cadInspectCard.style.display = "block";
+        if (cadCardTitle) cadCardTitle.textContent = `Чертёж: ${{cadInfo.filename || filename || 'CAD'}}`;
+
+        if (cadInfo.error) {{
+          if (cadCardStatus) {{
+            cadCardStatus.textContent = "Предупреждение";
+            cadCardStatus.style.background = "rgba(220, 38, 38, 0.15)";
+            cadCardStatus.style.color = "var(--negative)";
+          }}
+          cadCardBody.innerHTML = `<span style="color:var(--negative)">⚠️ ${{cadInfo.error}}</span>`;
+          return;
+        }}
+
+        if (cadCardStatus) {{
+          cadCardStatus.textContent = "OK";
+          cadCardStatus.style.background = "rgba(5, 150, 105, 0.15)";
+          cadCardStatus.style.color = "var(--positive)";
+        }}
+
+        const dims = cadInfo.dimensions ? `${{cadInfo.dimensions.width_m}} × ${{cadInfo.dimensions.depth_m}} м` : "—";
+        const area = cadInfo.area_ha ? `${{cadInfo.area_ha}} га (${{(cadInfo.area_sqm || 0).toLocaleString()}} м²)` : "—";
+        const verts = cadInfo.vertices_count || "—";
+        const msk = cadInfo.detected_msk || "—";
+        const bLayer = cadInfo.boundary_layer || "авто";
+        const coords = cadInfo.wgs84 ? `[${{cadInfo.wgs84.lat.toFixed(5)}}, ${{cadInfo.wgs84.lon.toFixed(5)}}]` : "—";
+        const offset = cadInfo.base_offset ? `X=${{cadInfo.base_offset.x}}, Y=${{cadInfo.base_offset.y}}` : "—";
+
+        cadCardBody.innerHTML = `
+          <div><b>Слой границы:</b> <span style="color:var(--accent); font-weight:600;">${{bLayer}}</span> (вершин: ${{verts}})</div>
+          <div><b>Размеры:</b> ${{dims}} • <b>Площадь:</b> ${{area}}</div>
+          <div><b>Система координат:</b> <span style="color:var(--accent); font-weight:600;">${{msk}}</span></div>
+          <div><b>Смещение МСК:</b> ${{offset}}</div>
+          <div><b>WGS-84:</b> ${{coords}}</div>
+        `;
       }}
 
       // Слушатели смены слоев CAD
@@ -2253,6 +2419,14 @@ def build():
       if (cfgManualLon) cfgManualLon.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
       if (cfgDwgLat) cfgDwgLat.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
       if (cfgDwgLon) cfgDwgLon.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
+      if (cfgCadMskZone) {{
+        cfgCadMskZone.addEventListener("change", () => {{
+          userHasMovedSite = false;
+          if (cfgDwgLat) cfgDwgLat.value = "";
+          if (cfgDwgLon) cfgDwgLon.value = "";
+          if (!isSiteLocked) loadSitePreview(false);
+        }});
+      }}
 
       cfgGenMode.addEventListener("change", e => {{
         cfgTargetContainer.style.display = e.target.value === "target" ? "flex" : "none";
@@ -2420,6 +2594,10 @@ def build():
           perimeter_layout_style: cfgPeriStyle ? cfgPeriStyle.value : "U_SHAPE"
         }};
 
+        if (cfgCadMskZone && cfgCadMskZone.value) {{
+          base.msk_zone = cfgCadMskZone.value;
+        }}
+
         if (siteMode === "cadastre") {{
           base.cad_query = cfgCadInput.value.trim() || "63:01:0709002:2320";
           base.custom_area = parseFloat(cfgAreaInput.value) || 32000;
@@ -2507,15 +2685,47 @@ def build():
             if (result.geo_center) {{
               currentSiteLat = result.geo_center.lat;
               currentSiteLon = result.geo_center.lon;
+              if (cfgDwgLat) cfgDwgLat.value = currentSiteLat.toFixed(5);
+              if (cfgDwgLon) cfgDwgLon.value = currentSiteLon.toFixed(5);
+              if (cfgManualLat) cfgManualLat.value = currentSiteLat.toFixed(5);
+              if (cfgManualLon) cfgManualLon.value = currentSiteLon.toFixed(5);
+            }}
+            if (result.cad_info) {{
+              updateCadInspectCard(result.cad_info, payload.cad_filename);
+              if (result.cad_info.layers && result.cad_info.layers.length > 0) {{
+                populateCadLayers(result.cad_info.layers, result.cad_info.boundary_layer, result.cad_info.red_lines_layer);
+              }}
+              if (result.cad_info.detected_msk && cfgCadMskZone && !cfgCadMskZone.value) {{
+                cfgCadMskZone.value = result.cad_info.detected_msk;
+              }}
+              if (cadMainBadge) {{
+                cadMainBadge.style.display = "inline-flex";
+                cadMainBadge.className = result.cad_info.error ? "file-badge badge-warn" : "file-badge";
+                cadMainBadge.textContent = result.cad_info.error 
+                  ? `⚠️ ${{result.cad_info.error}}`
+                  : `✓ DXF: ${{result.cad_info.filename || 'чертёж'}} (${{result.cad_info.area_ha || 0}} га)`;
+              }}
+              if (cadSubBadge && payload.cad_filename) {{
+                cadSubBadge.style.display = "inline-flex";
+                cadSubBadge.className = "file-badge";
+                cadSubBadge.textContent = `✓ Контур: ${{result.cad_info.filename || 'CAD'}} (${{result.cad_info.area_ha || 0}} га)`;
+              }}
+              if (result.cad_info.error) {{
+                showToast(`⚠️ Внимание: ${{result.cad_info.error}}`, true);
+              }}
             }}
             renderScenario();
             updateStageUI();
             updateBackendBadge(true);
             return;
+          }} else {{
+            const errData = await resp.json().catch(() => ({{}}));
+            showToast(`⚠️ Ошибка участка: ${{errData.error || resp.statusText}}`, true);
           }}
         }} catch (err) {{
           console.warn("Ошибка предпросмотра участка:", err);
           updateBackendBadge(false);
+          showToast("⚠️ Не удалось связаться с сервером предпросмотра", true);
         }}
 
         renderScenario();

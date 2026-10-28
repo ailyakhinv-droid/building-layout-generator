@@ -28,6 +28,7 @@ from dashboard_prototype.generator_service import (
     preview_site,
     run_pipeline,
     compute_variants_matrix,
+    set_active_variant,
     get_library_catalog,
     inspect_cad_bytes,
     export_file_dxf,
@@ -121,6 +122,32 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 params = json.loads(post_data) if post_data else {}
                 variants = compute_variants_matrix(params)
                 response_bytes = json.dumps({"variants": variants}, ensure_ascii=False).encode("utf-8")
+
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(response_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(response_bytes)
+            except Exception as e:
+                err_bytes = json.dumps({"error": str(e)}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(err_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(err_bytes)
+            return
+
+        # 2b. Активация выбранного концептуального варианта
+        elif parsed.path == "/api/activate-variant":
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length).decode("utf-8")
+            try:
+                data = json.loads(post_data) if post_data else {}
+                idx = int(data.get("index", 0))
+                res = set_active_variant(idx)
+                response_bytes = json.dumps(res, ensure_ascii=False).encode("utf-8")
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")

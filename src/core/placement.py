@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from shapely.affinity import rotate, translate
@@ -22,6 +22,34 @@ from src.library.section_library import SectionLibrary
 from src.models.building import Building, PlacedSection
 from src.models.section import SectionType
 from src.models.site import Site
+
+
+@dataclass
+class PlacementResult:
+    """Результат расстановки зданий на участке."""
+
+    buildings: list[Building] = field(default_factory=list)
+    site_area: float = 0.0
+    footprint_area: float = 0.0
+    bcr: float = 0.0
+    gfa: float = 0.0
+    far: float = 0.0
+
+    def __iter__(self):
+        return iter(self.buildings)
+
+    def __len__(self):
+        return len(self.buildings)
+
+    def __getitem__(self, idx):
+        return self.buildings[idx]
+
+
+# Свойства-алиасы для Building для совместимости с API анализа и тестов
+if not hasattr(Building, "footprint_area"):
+    Building.footprint_area = property(lambda self: self.total_building_area if self.sections else 0.0)
+if not hasattr(Building, "gfa"):
+    Building.gfa = property(lambda self: self.total_gfa if self.sections else 0.0)
 
 
 @dataclass
@@ -61,6 +89,8 @@ class PlacementConfig:
     urban_block_size: float = 100.0
     internal_road_width: float = 16.0
     perimeter_layout_style: str = "U_SHAPE"
+    max_bcr: float | None = None
+    max_far: float | None = None
 
 
 class PlacementEngine:
@@ -68,23 +98,136 @@ class PlacementEngine:
 
     def __init__(
         self,
-        site: Site,
-        library: SectionLibrary,
-        config: dict[str, Any],
+        site_or_config: Site | PlacementConfig | dict[str, Any] | None = None,
+        library: SectionLibrary | None = None,
+        config: dict[str, Any] | PlacementConfig | None = None,
     ) -> None:
-        """Инициализировать движок."""
-        self.site = site
-        self.library = library
-        self.config = config
-        self._current_floor_height: float = float(config.get("floor_height", 3.0))
-        self._current_ground_floor_height: float | None = config.get("ground_floor_height")
-        self._max_building_height_m: float | None = config.get("max_building_height_m")
+        """Инициализировать движок. Поддерживает как (site, library, config), так и (PlacementConfig)."""
+        if isinstance(site_or_config, PlacementConfig):
+            self.placement_config: PlacementConfig | None = site_or_config
+            self.site: Site | None = None
+            self.library: SectionLibrary = library if library is not None else SectionLibrary()
+            self.config: dict[str, Any] = config if isinstance(config, dict) else {}
+        elif isinstance(site_or_config, dict):
+            self.placement_config = None
+            self.site = None
+            self.library = library if library is not None else SectionLibrary()
+            self.config = site_or_config
+        else:
+            self.site = site_or_config
+            self.library = library if library is not None else SectionLibrary()
+            if isinstance(config, PlacementConfig):
+                self.placement_config = config
+                self.config = {}
+            else:
+                self.placement_config = None
+                self.config = config if config is not None else {}
 
-        if site.buildable_area is None:
-            raise ValueError(
-                "Зона допустимой застройки не вычислена. "
-                "Вызовите site.compute_buildable_area() перед расстановкой."
+        # Инициализация параметров высоты
+        cfg_dict = self.config
+        p_cfg = getattr(self, "placement_config", None)
+
+        floor_h = 3.0
+        if p_cfg and p_cfg.floor_height is not None:
+            floor_h = float(p_cfg.floor_height)
+        elif "floor_height" in cfg_dict:
+            floor_h = float(cfg_dict["floor_height"])
+        self._current_floor_height: float = floor_h
+
+        ground_h = None
+        if p_cfg and p_cfg.ground_floor_height is not None:
+            ground_h = float(p_cfg.ground_floor_height)
+        elif "ground_floor_height" in cfg_dict:
+            ground_h = float(cfg_dict["ground_floor_height"]) if cfg_dict["ground_floor_height"] is not None else None
+        self._current_ground_floor_height: float | None = ground_h
+
+        max_h = None
+        if p_cfg and p_cfg.max_building_height_m is not None:
+            max_h = float(p_cfg.max_building_height_m)
+        elif "max_building_height_m" in cfg_dict:
+            max_h = float(cfg_dict["max_building_height_m"]) if cfg_dict["max_building_height_m"] is not None else None
+        self._max_building_height_m: float | None = max_h
+
+        max_floors_from_h = None
+        if self._max_building_height_m and self._max_building_height_m > 0:
+            gh = (
+                self._current_ground_floor_height
+                if self._current_ground_floor_height is not None
+                else self._current_floor_height
             )
+            extra_first = max(0.0, gh - self._current_floor_height)
+            max_floors_from_h = max(
+                1,
+                int((self._max_building_height_m - extra_first) // self._current_floor_height),
+            )
+        self._max_floors_from_h = max_floors_from_h
+
+        if self.site is not None and getattr(self.site, "buildable_area", None) is None:
+            try:
+                b_setback = float(self.config.get("boundary_setback", 6.0))
+                r_setback = float(self.config.get("red_line_setback", 5.0))
+                self.site.compute_buildable_area(b_setback, r_setback)
+            except Exception:
+                pass
+
+    def place(
+        self,
+        site_or_poly: Site | Polygon,
+        placement_config: PlacementConfig | None = None,
+    ) -> PlacementResult:
+        """Разместить секции на участке (Site или Polygon) и вернуть PlacementResult."""
+        if placement_config is None:
+            placement_config = getattr(self, "placement_config", None) or PlacementConfig()
+
+        if isinstance(site_or_poly, Polygon):
+            site = Site(boundary=site_or_poly)
+            b_setback = float(self.config.get("boundary_setback", 6.0))
+            r_setback = float(self.config.get("red_line_setback", 5.0))
+            site.compute_buildable_area(boundary_setback=b_setback, red_line_setback=r_setback)
+            self.site = site
+        elif isinstance(site_or_poly, Site):
+            self.site = site_or_poly
+            if self.site.buildable_area is None:
+                b_setback = float(self.config.get("boundary_setback", 6.0))
+                r_setback = float(self.config.get("red_line_setback", 5.0))
+                self.site.compute_buildable_area(boundary_setback=b_setback, red_line_setback=r_setback)
+        else:
+            raise TypeError(f"Expected Site or Polygon, got {type(site_or_poly)}")
+
+        buildings = self.generate(placement_config)
+        site_area = self.site.area if self.site else 0.0
+        footprint = sum(b.footprint_area for b in buildings)
+        bcr = footprint / site_area if site_area > 0 else 0.0
+        gfa = sum(b.gfa for b in buildings)
+        far = gfa / site_area if site_area > 0 else 0.0
+
+        return PlacementResult(
+            buildings=buildings,
+            site_area=site_area,
+            footprint_area=footprint,
+            bcr=bcr,
+            gfa=gfa,
+            far=far,
+        )
+
+    def _is_bcr_reached(
+        self,
+        buildings: list[Building],
+        placement_config: PlacementConfig | None = None,
+    ) -> bool:
+        """Проверить, достигнут ли предельный BCR по текущей застройке."""
+        if not buildings or not getattr(self.site, "area", None) or self.site.area <= 0:
+            return False
+        raw_bcr = (
+            placement_config.max_bcr
+            if (placement_config and placement_config.max_bcr is not None)
+            else self.config.get("max_bcr")
+        )
+        if raw_bcr is None or float(raw_bcr) <= 0:
+            return False
+        max_bcr = float(raw_bcr)
+        cur_footprint = sum(b.total_building_area for b in buildings)
+        return cur_footprint >= self.site.area * max_bcr * 0.999
 
     def generate(
         self,
@@ -92,7 +235,13 @@ class PlacementEngine:
     ) -> list[Building]:
         """Сгенерировать расстановку зданий на участке."""
         if placement_config is None:
-            placement_config = PlacementConfig()
+            placement_config = getattr(self, "placement_config", None) or PlacementConfig()
+
+        if self.site is None or getattr(self.site, "buildable_area", None) is None:
+            raise ValueError(
+                "Зона допустимой застройки не вычислена. "
+                "Вызовите site.compute_buildable_area() перед расстановкой."
+            )
 
         self._placed_building_count: int = 0
 
@@ -167,25 +316,25 @@ class PlacementEngine:
             tower_sec = sections.get("tower", middle)
             t_floors = placement_config.target_floors or tower_sec.default_floors
             t_floors = self._clamp_floors(tower_sec, t_floors)
-            return self._generate_tower_layout(
+            buildings = self._generate_tower_layout(
                 buildable, primary_angle, tower_sec, t_floors, placement_config
             )
         elif typology == "LINEAR":
-            return self._generate_linear(
+            buildings = self._generate_linear(
                 buildable, primary_angle, middle, end, floors, placement_config
             )
         elif typology == "U_SHAPE":
-            return self._generate_u_shape_layout(
+            buildings = self._generate_u_shape_layout(
                 buildable, primary_angle, middle, corner, end, floors, placement_config
             )
         elif typology == "L_SHAPE":
-            return self._generate_l_shape_layout(
+            buildings = self._generate_l_shape_layout(
                 buildable, primary_angle, middle, corner, end, floors, placement_config
             )
         elif typology in ("PERIMETER", "URBAN_BLOCK", "COURTYARD"):
             from src.core.perimeter_placement import PerimeterPlacementEngine
             engine = PerimeterPlacementEngine(self.site, self.library, self.config)
-            return engine.generate(
+            buildings = engine.generate(
                 buildable,
                 primary_angle,
                 self._middle_pool,
@@ -195,9 +344,108 @@ class PlacementEngine:
                 placement_config,
             )
         else:  # AUTO / MIXED — естественная квартальная компоновка
-            return self._generate_mixed_layout(
+            buildings = self._generate_mixed_layout(
                 buildable, primary_angle, middle, corner, end, floors, placement_config
             )
+
+        # 5. Строгое соблюдение нормативных ограничений (BCR, FAR, Height)
+        return self._enforce_normative_limits(buildings, placement_config)
+
+    def _enforce_normative_limits(
+        self,
+        buildings: list[Building],
+        placement_config: PlacementConfig,
+    ) -> list[Building]:
+        """Строго скорректировать застройку под предельные нормативы BCR, FAR и Height."""
+        if not buildings or not getattr(self.site, "area", None) or self.site.area <= 0:
+            return buildings
+
+        site_area = self.site.area
+        raw_bcr = placement_config.max_bcr if placement_config.max_bcr is not None else self.config.get("max_bcr")
+        raw_far = placement_config.max_far if placement_config.max_far is not None else self.config.get("max_far")
+
+        max_bcr = float(raw_bcr) if raw_bcr is not None and float(raw_bcr) > 0 else None
+        max_far = float(raw_far) if raw_far is not None and float(raw_far) > 0 else None
+
+        # 0. Ограничение по предельной высоте/этажности
+        if getattr(self, "_max_floors_from_h", None) is not None:
+            max_fl = self._max_floors_from_h
+            for b in buildings:
+                for s in b.sections:
+                    if s.floors > max_fl:
+                        s.floors = max_fl
+
+        # 1. Ограничение по BCR (процент застройки / пятно подошвы)
+        if max_bcr is not None:
+            allowed_footprint = site_area * max_bcr
+            cur_footprint = sum(b.total_building_area for b in buildings)
+            if cur_footprint > allowed_footprint * 1.005:
+                kept: list[Building] = []
+                acc_footprint = 0.0
+                for b in buildings:
+                    b_area = b.total_building_area
+                    if acc_footprint + b_area <= allowed_footprint * 1.005:
+                        kept.append(b)
+                        acc_footprint += b_area
+
+                if not kept and buildings:
+                    first_b = buildings[0]
+                    if first_b.total_building_area > allowed_footprint * 1.005:
+                        fitted_secs = []
+                        acc_sec = 0.0
+                        for s in first_b.sections:
+                            s_area = s.footprint.area
+                            if acc_sec + s_area <= allowed_footprint * 1.005 or not fitted_secs:
+                                fitted_secs.append(s)
+                                acc_sec += s_area
+                        buildings = [Building(sections=fitted_secs, typology=first_b.typology)]
+                    else:
+                        buildings = [first_b]
+                else:
+                    buildings = kept
+
+        # 2. Ограничение по FAR (суммарная общая площадь / GFA)
+        if max_far is not None and buildings:
+            allowed_gfa = site_area * max_far
+            cur_gfa = sum(b.total_gfa for b in buildings)
+            if cur_gfa > allowed_gfa * 1.005:
+                ratio = allowed_gfa / cur_gfa
+                adjusted_buildings: list[Building] = []
+                for b in buildings:
+                    new_sections: list[PlacedSection] = []
+                    for s in b.sections:
+                        target_f = max(1, int(math.floor(s.floors * ratio)))
+                        if getattr(self, "_max_floors_from_h", None) is not None:
+                            target_f = min(target_f, self._max_floors_from_h)
+                        new_s = PlacedSection(
+                            section_type=s.section_type,
+                            x=s.x,
+                            y=s.y,
+                            angle=s.angle,
+                            floors=max(1, target_f),
+                            floor_height=s.floor_height,
+                            ground_floor_height=s.ground_floor_height,
+                        )
+                        new_sections.append(new_s)
+                    new_b = Building(
+                        sections=new_sections,
+                        typology=getattr(b, "typology", "LINEAR"),
+                    )
+                    adjusted_buildings.append(new_b)
+                buildings = adjusted_buildings
+
+                # Если даже при уменьшенной этажности секций FAR превышен
+                cur_gfa = sum(b.total_gfa for b in buildings)
+                if cur_gfa > allowed_gfa * 1.005:
+                    kept = []
+                    acc_gfa = 0.0
+                    for b in buildings:
+                        if acc_gfa + b.total_gfa <= allowed_gfa * 1.005:
+                            kept.append(b)
+                            acc_gfa += b.total_gfa
+                    buildings = kept if kept else buildings[:1]
+
+        return buildings
 
     # ─────────────────────────────────────────────────────────────────
     # Локальная сборка центрированных секций
@@ -235,11 +483,12 @@ class PlacementEngine:
         # Расчет этажности по позициям
         floor_list = []
         for idx in range(num_total):
-            if cascade_floors and floors > min_wing_floors:
-                # Силуэт: центр на целевой высоте, концы каскадно понижаются
+            if cascade_floors:
+                # Силуэт: центр на целевой высоте, концы каскадно понижаются на 2-4 этажа
+                drop = min(4, max(2, floors - min_wing_floors)) if (floors - min_wing_floors) >= 2 else min(2, max(0, floors - 1))
                 dist = abs(idx - (num_total - 1) / 2.0) / max(1.0, (num_total - 1) / 2.0)
-                fl = round(floors - dist * (floors - min_wing_floors))
-                floor_list.append(max(min_wing_floors, min(floors, fl)))
+                fl = round(floors - dist * drop)
+                floor_list.append(max(1, min(floors, fl)))
             else:
                 floor_list.append(floors)
 
@@ -356,15 +605,16 @@ class PlacementEngine:
         x_right_outer = x_back_end + wc_r
 
         # 2. Левое крыло (в сторону юга -Y)
-        # Каскад понижается плавно, начиная от высоты левого угла
+        # Каскад понижается плавно, начиная от высоты левого угла на 2-4 этажа
         K_l = num_wing_left + 1
         y_curr_l = -dc_l
         wing_start_l = fl_cor_l
+        drop_l = min(4, max(2, wing_start_l - min_wing_floors)) if wing_start_l > min_wing_floors else min(2, max(0, wing_start_l - 1))
         for j in range(num_wing_left):
-            if cascade_floors and wing_start_l > min_wing_floors:
+            if cascade_floors:
                 step_ratio = (j + 1) / K_l
-                fl_j = round(wing_start_l - step_ratio * (wing_start_l - min_wing_floors))
-                fl_j = max(min_wing_floors, min(wing_start_l, fl_j))
+                fl_j = round(wing_start_l - step_ratio * drop_l)
+                fl_j = max(1, min(wing_start_l, fl_j))
                 sec_j = self._find_best_section(mid_candidates, fl_j) or middle
             else:
                 sec_j = middle
@@ -377,9 +627,9 @@ class PlacementEngine:
             y_curr_l -= sec_j.width
 
         # Торец левого крыла
-        if cascade_floors and wing_start_l > min_wing_floors:
-            sec_end_l = self._find_best_section(end_candidates, min_wing_floors) or end
-            fl_end_l = min_wing_floors
+        if cascade_floors:
+            fl_end_l = max(1, wing_start_l - drop_l)
+            sec_end_l = self._find_best_section(end_candidates, fl_end_l) or end
         else:
             sec_end_l = end
             fl_end_l = floors
@@ -389,15 +639,16 @@ class PlacementEngine:
         sections.append(PlacedSection(sec_end_l, xe_l, ye_l, 90.0, fl_end_l))
 
         # 3. Правое крыло (в сторону юга -Y)
-        # Каскад понижается плавно, начиная от высоты правого угла
+        # Каскад понижается плавно, начиная от высоты правого угла на 2-4 этажа
         K_r = num_wing_right + 1
         y_curr_r = -dc_r
         wing_start_r = fl_cor_r
+        drop_r = min(4, max(2, wing_start_r - min_wing_floors)) if wing_start_r > min_wing_floors else min(2, max(0, wing_start_r - 1))
         for k in range(num_wing_right):
-            if cascade_floors and wing_start_r > min_wing_floors:
+            if cascade_floors:
                 step_ratio = (k + 1) / K_r
-                fl_k = round(wing_start_r - step_ratio * (wing_start_r - min_wing_floors))
-                fl_k = max(min_wing_floors, min(wing_start_r, fl_k))
+                fl_k = round(wing_start_r - step_ratio * drop_r)
+                fl_k = max(1, min(wing_start_r, fl_k))
                 sec_k = self._find_best_section(mid_candidates, fl_k) or middle
             else:
                 sec_k = middle
@@ -410,9 +661,9 @@ class PlacementEngine:
             y_curr_r -= sec_k.width
 
         # Торец правого крыла
-        if cascade_floors and wing_start_r > min_wing_floors:
-            sec_end_r = self._find_best_section(end_candidates, min_wing_floors) or end
-            fl_end_r = min_wing_floors
+        if cascade_floors:
+            fl_end_r = max(1, wing_start_r - drop_r)
+            sec_end_r = self._find_best_section(end_candidates, fl_end_r) or end
         else:
             sec_end_r = end
             fl_end_r = floors
@@ -481,15 +732,16 @@ class PlacementEngine:
         ye = -sec_end_x.depth / 2.0
         sections.append(PlacedSection(sec_end_x, xe, ye, 0.0, fl_end_x))
 
-        # 2. Вертикальное крыло вниз (-Y) с каскадным понижением к югу
+        # 2. Вертикальное крыло вниз (-Y) с каскадным понижением к югу на 2-4 этажа
         K_y = num_mid_y + 1
         y_curr = -dc
         wing_start_y = fl_cor
+        drop_ly = min(4, max(2, wing_start_y - min_wing_floors)) if wing_start_y > min_wing_floors else min(2, max(0, wing_start_y - 1))
         for j in range(num_mid_y):
-            if cascade_floors and wing_start_y > min_wing_floors:
+            if cascade_floors:
                 step_ratio = (j + 1) / K_y
-                fl_j = round(wing_start_y - step_ratio * (wing_start_y - min_wing_floors))
-                fl_j = max(min_wing_floors, min(wing_start_y, fl_j))
+                fl_j = round(wing_start_y - step_ratio * drop_ly)
+                fl_j = max(1, min(wing_start_y, fl_j))
                 sec_j = self._find_best_section(mid_candidates, fl_j) or middle
             else:
                 sec_j = middle
@@ -501,9 +753,9 @@ class PlacementEngine:
             sections.append(PlacedSection(sec_j, xv, yv, 90.0, fl_j))
             y_curr -= sec_j.width
 
-        if cascade_floors and wing_start_y > min_wing_floors:
-            sec_end_y = self._find_best_section(end_candidates, min_wing_floors) or end
-            fl_end_y = min_wing_floors
+        if cascade_floors:
+            fl_end_y = max(1, wing_start_y - drop_ly)
+            sec_end_y = self._find_best_section(end_candidates, fl_end_y) or end
         else:
             sec_end_y = end
             fl_end_y = floors
@@ -623,6 +875,8 @@ class PlacementEngine:
             target_oy = 0.0
 
         for col in range(cols):
+            if self._is_bcr_reached(buildings, placement_config):
+                break
             ox = start_ox + col * u_step_x
             px = centroid.x + ox * ux[0] + target_oy * uy[0]
             py = centroid.y + ox * ux[1] + target_oy * uy[1]
@@ -682,11 +936,12 @@ class PlacementEngine:
                     break
 
         # 3. Дозаполняем оставшиеся свободные зоны участка соразмерными корпусами (северная улица, фланги)
-        self._fill_remaining_space(
-            buildable, buildings, angle, middle, end, floors, placement_config
-        )
+        if not self._is_bcr_reached(buildings, placement_config):
+            self._fill_remaining_space(
+                buildable, buildings, angle, middle, end, floors, placement_config
+            )
 
-        return buildings
+        return self._enforce_normative_limits(buildings, placement_config)
 
     # ─────────────────────────────────────────────────────────────────
     # Стратегии: TOWER, U_SHAPE, L_SHAPE, LINEAR
@@ -756,6 +1011,8 @@ class PlacementEngine:
         for pattern in patterns:
             cand_buildings: list[Building] = []
             for r in range(rows):
+                if self._is_bcr_reached(cand_buildings, placement_config):
+                    break
                 if placement_config.cascade_floors and rows > 1:
                     row_fl = max(
                         placement_config.min_wing_floors,
@@ -767,6 +1024,8 @@ class PlacementEngine:
                 x_offset = (step_x * 0.5) if (pattern == "staggered" and r % 2 == 1 and cols > 1) else 0.0
 
                 for c in range(cols):
+                    if self._is_bcr_reached(cand_buildings, placement_config):
+                        break
                     ox = start_ox + c * step_x + x_offset
                     oy = start_oy + r * step_y
                     px = centroid.x + ox * ux[0] + oy * uy[0]
@@ -786,7 +1045,7 @@ class PlacementEngine:
             if self._fits_in_buildable(cand_single):
                 best_buildings.append(cand_single)
 
-        return best_buildings
+        return self._enforce_normative_limits(best_buildings, placement_config)
 
     def _generate_u_shape_layout(
         self,
@@ -847,6 +1106,8 @@ class PlacementEngine:
         target_oy = -width / 2.0 + u_h / 2.0 + 8.0 if width >= 110.0 else 0.0
 
         for col in range(cols):
+            if self._is_bcr_reached(buildings, placement_config):
+                break
             ox = start_ox + col * u_step_x
             px = centroid.x + ox * ux[0] + target_oy * uy[0]
             py = centroid.y + ox * ux[1] + target_oy * uy[1]
@@ -877,10 +1138,11 @@ class PlacementEngine:
                     buildings.append(cand)
                     break
 
-        self._fill_remaining_space(
-            buildable, buildings, angle, middle, end, floors, placement_config
-        )
-        return buildings
+        if not self._is_bcr_reached(buildings, placement_config):
+            self._fill_remaining_space(
+                buildable, buildings, angle, middle, end, floors, placement_config
+            )
+        return self._enforce_normative_limits(buildings, placement_config)
 
     def _generate_l_shape_layout(
         self,
@@ -923,6 +1185,8 @@ class PlacementEngine:
         ux = (math.cos(rad_p), math.sin(rad_p))
 
         for col in range(cols):
+            if self._is_bcr_reached(buildings, placement_config):
+                break
             ox = start_ox + col * l_step_x
             px = centroid.x + ox * ux[0]
             py = centroid.y + ox * ux[1]
@@ -949,10 +1213,11 @@ class PlacementEngine:
                     buildings.append(cand)
                     break
 
-        self._fill_remaining_space(
-            buildable, buildings, angle, middle, end, floors, placement_config
-        )
-        return buildings
+        if not self._is_bcr_reached(buildings, placement_config):
+            self._fill_remaining_space(
+                buildable, buildings, angle, middle, end, floors, placement_config
+            )
+        return self._enforce_normative_limits(buildings, placement_config)
 
     def _generate_linear(
         self,
@@ -972,14 +1237,18 @@ class PlacementEngine:
         buildings: list[Building] = []
 
         for r_idx, line in enumerate(row_lines):
+            if self._is_bcr_reached(buildings, placement_config):
+                break
             cands = self._create_linears_on_line(
                 line, middle, end, floors, angle, placement_config, line_index=r_idx
             )
             for b in cands:
+                if self._is_bcr_reached(buildings, placement_config):
+                    break
                 if self._check_constraints(b, buildings, placement_config):
                     buildings.append(b)
 
-        return buildings
+        return self._enforce_normative_limits(buildings, placement_config)
 
     # ─────────────────────────────────────────────────────────────────
     # Вспомогательные конструкторы зданий
@@ -1221,6 +1490,8 @@ class PlacementEngine:
         bldg_in_line = 0
 
         while d_curr < (line_len - min_len):
+            if self._is_bcr_reached(buildings, placement_config):
+                break
             rem_len = line_len - d_curr
             cur_max = min(max_bldg_len, rem_len)
             if cur_max < min_len:
@@ -1264,6 +1535,8 @@ class PlacementEngine:
         placement_config: PlacementConfig,
     ) -> None:
         """Дозаполнить свободные части участка (фланги, уличный фронт) соразмерными корпусами."""
+        if self._is_bcr_reached(buildings, placement_config):
+            return
         fire_gap = self._get_fire_gap(floors)
         half_d = middle.depth / 2.0
         inner_buildable = buildable.buffer(-half_d)
@@ -1356,7 +1629,7 @@ class PlacementEngine:
                                 remaining = inner_buildable.difference(occupied)
 
         # Дополнительно: размещаем башни-акценты на оставшихся свободных пятнах
-        if getattr(placement_config, "allow_towers_in_mixed", True):
+        if getattr(placement_config, "allow_towers_in_mixed", True) and not self._is_bcr_reached(buildings, placement_config):
             tower_secs = self.library.get_tower_sections()
             if tower_secs:
                 tower_sec = self._find_best_section(tower_secs, floors) or tower_secs[0]
@@ -1596,12 +1869,19 @@ class PlacementEngine:
         existing_buildings: list[Building],
         placement_config: PlacementConfig | None = None,
     ) -> bool:
-        """Проверить нормативные противопожарные и инсоляционные расстояния."""
+        """Проверить нормативные противопожарные и инсоляционные расстояния, а также лимит BCR."""
         if placement_config is not None:
             if len(new_building.sections) > placement_config.max_sections_per_building:
                 return False
             if new_building.typology != "TOWER" and len(new_building.sections) < placement_config.min_sections_per_building:
                 return False
+
+            raw_bcr = placement_config.max_bcr if placement_config.max_bcr is not None else self.config.get("max_bcr")
+            if raw_bcr is not None and getattr(self.site, "area", None) and self.site.area > 0:
+                max_bcr = float(raw_bcr)
+                cur_fp = sum(b.total_building_area for b in existing_buildings) + new_building.total_building_area
+                if cur_fp > self.site.area * max_bcr * 1.005:
+                    return False
 
         new_fp = new_building.footprint
 

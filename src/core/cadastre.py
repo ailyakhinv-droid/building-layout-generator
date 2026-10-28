@@ -757,10 +757,14 @@ def smart_resolve_location(query: str) -> tuple[str, str, str, float, float]:
     # 0. Если введены точные координаты WGS-84 напрямую (например, "57.1754, 65.5810" или "57.1754 65.5810")
     coord_match = re.search(r"^(\d{2}[\.,]\d+)[,\s;]+(\d{2,3}[\.,]\d+)$", q)
     if coord_match:
-        lat = float(coord_match.group(1).replace(",", "."))
-        lon = float(coord_match.group(2).replace(",", "."))
-        if lat > 65.0 and 40.0 <= lon <= 70.0:
-            lat, lon = lon, lat
+        c1 = float(coord_match.group(1).replace(",", "."))
+        c2 = float(coord_match.group(2).replace(",", "."))
+        # Проверяем порядок: в РФ широта обычно 41..75°N, долгота 19..180°E
+        # Если c1 похожа на долготу Самары (48..53), а c2 - на широту (52..55), меняем местами
+        if (48.0 <= c1 <= 52.0 and 52.0 <= c2 <= 55.0) or (c1 > 65.0 and 40.0 <= c2 <= 70.0):
+            lat, lon = c2, c1
+        else:
+            lat, lon = c1, c2
         reg_name, norm_id = "Тюменская область", "russia_sp42"
         if 52.0 <= lat <= 55.0 and 48.0 <= lon <= 53.0:
             reg_name, norm_id = "Самарская область", "russia_sp42"
@@ -880,17 +884,35 @@ def get_cadastral_parcel(
             source="preset",
         )
 
-    # 2. Если переданы точные координаты из выписки ЕГРН
+    # 2. Если переданы точные координаты из выписки ЕГРН / Росреестра
     comps = parse_cadastral_components(clean_num)
     reg_name, dist_name, norm_id, def_lat, def_lon = resolve_cadastral_location(clean_num)
 
     if custom_wgs84_coords and len(custom_wgs84_coords) >= 3:
-        lons = [p[0] for p in custom_wgs84_coords]
-        lats = [p[1] for p in custom_wgs84_coords]
+        # Автоматическое определение порядка координат [lat, lon] vs [lon, lat]
+        # В выписках Росреестра и кадастровых паспортах часто координаты указаны как [lat, lon]
+        p0 = custom_wgs84_coords[0]
+        c1, c2 = float(p0[0]), float(p0[1])
+
+        # Сверяем с ожидаемым центром района def_lat, def_lon
+        dist_as_lat_lon = (c1 - def_lat) ** 2 + (c2 - def_lon) ** 2
+        dist_as_lon_lat = (c2 - def_lat) ** 2 + (c1 - def_lon) ** 2
+
+        if dist_as_lat_lon < dist_as_lon_lat or (c2 > 75.0 and c1 < 75.0):
+            # Порядок [lat, lon] (Росреестр)
+            lats = [float(p[0]) for p in custom_wgs84_coords]
+            lons = [float(p[1]) for p in custom_wgs84_coords]
+            coords_lon_lat = [(float(p[1]), float(p[0])) for p in custom_wgs84_coords]
+        else:
+            # Порядок [lon, lat] (GeoJSON)
+            lons = [float(p[0]) for p in custom_wgs84_coords]
+            lats = [float(p[1]) for p in custom_wgs84_coords]
+            coords_lon_lat = [(float(p[0]), float(p[1])) for p in custom_wgs84_coords]
+
         c_lon = sum(lons) / len(lons)
         c_lat = sum(lats) / len(lats)
 
-        pts_metric = wgs84_to_metric_coords(custom_wgs84_coords, c_lat, c_lon, is_lon_lat=True)
+        pts_metric = wgs84_to_metric_coords(coords_lon_lat, c_lat, c_lon, is_lon_lat=True)
         poly = Polygon(pts_metric)
         if rotation_deg != 0.0:
             poly = shapely.affinity.rotate(poly, -rotation_deg, origin=poly.centroid)

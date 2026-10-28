@@ -19,6 +19,8 @@ output/*.dwg
 # External / local libraries
 libs/
 external_libs/
+libs/data_urbanomy/
+data_urbanomy/
 
 # Local knowledge base (never commit to git)
 knowledge_base/

@@ -144,7 +144,18 @@ def _load_dxf_document(file_source: str | Path | BinaryIO | bytes, filename: str
         tmp_path = tmp.name
 
     try:
-        return ezdxf.readfile(tmp_path)
+        try:
+            return ezdxf.readfile(tmp_path)
+        except UnicodeDecodeError:
+            try:
+                return ezdxf.readfile(tmp_path, encoding="cp1251", errors="replace")
+            except Exception:
+                return ezdxf.readfile(tmp_path, encoding="utf-8", errors="replace")
+        except Exception:
+            try:
+                return ezdxf.readfile(tmp_path, encoding="cp1251", errors="replace")
+            except Exception:
+                return ezdxf.readfile(tmp_path)
     finally:
         try:
             os.remove(tmp_path)
@@ -332,21 +343,63 @@ def parse_cad_site(
     if not layers_info:
         raise ValueError("В чертеже не найдено геометрических объектов.")
 
-    if not boundary_layer:
-        # Ищем первый подходящий слой-кандидат с полилиниями или линиями
-        cand = next((l for l in layers_info if l.is_candidate), None)
-        boundary_layer = cand.name if cand else layers_info[0].name
+    polygons: list[Polygon] = []
+    actual_boundary_layer = boundary_layer
 
-    # 2. Извлечение полигона границы
-    polygons = _extract_polygons_from_layer(msp, boundary_layer)
+    # 1. Сначала пробуем запрошенный слой (если передан)
+    if actual_boundary_layer:
+        polygons = _extract_polygons_from_layer(msp, actual_boundary_layer)
+
+    # 2. Если на указанном слое полигонов нет, ищем среди слоёв-кандидатов
+    if not polygons:
+        for cand in [l for l in layers_info if l.is_candidate]:
+            cand_polys = _extract_polygons_from_layer(msp, cand.name)
+            if cand_polys:
+                polygons = cand_polys
+                actual_boundary_layer = cand.name
+                break
+
+    # 3. Если кандидатов нет, перебираем все остальные слои
+    if not polygons:
+        for l in layers_info:
+            if l.name != actual_boundary_layer:
+                l_polys = _extract_polygons_from_layer(msp, l.name)
+                if l_polys:
+                    polygons = l_polys
+                    actual_boundary_layer = l.name
+                    break
+
+    # 4. Если на отдельных слоях полигонов нет, пробуем собрать линии по всей модели
+    if not polygons:
+        all_lines: list[LineString] = []
+        for e in msp:
+            dxftype = e.dxftype()
+            if dxftype == "LINE":
+                all_lines.append(LineString([(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)]))
+            elif dxftype in ("LWPOLYLINE", "POLYLINE"):
+                pts = list(e.get_points("xy")) if dxftype == "LWPOLYLINE" else [(v.dxf.location.x, v.dxf.location.y) for v in e.vertices]
+                for i in range(len(pts) - 1):
+                    all_lines.append(LineString([pts[i], pts[i + 1]]))
+        if all_lines:
+            try:
+                from shapely.ops import polygonize
+                built = [p for p in polygonize(all_lines) if p.is_valid and p.area > 50.0]
+                if built:
+                    built.sort(key=lambda p: p.area, reverse=True)
+                    polygons = built
+                    actual_boundary_layer = "Сборный контур (все слои)"
+            except Exception:
+                pass
+
     if not polygons:
         raise ValueError(
-            f"На слое «{boundary_layer}» не удалось обнаружить замкнутый контур границы. "
-            f"Пожалуйста, выберите другой слой из списка или проверьте замкнутость полилинии в чертеже."
+            "В чертеже не удалось обнаружить замкнутый контур границы участка (площадью > 50 м²).\n"
+            "Убедитесь, что контур начерчен замкнутой полилинией (LWPOLYLINE) либо сшитыми отрезками."
         )
 
     # Берём наибольший полигон на выбранном слое
     site_polygon = polygons[0]
+    boundary_layer = actual_boundary_layer
 
     # 3. Извлечение красных линий
     red_lines: list[LineString] = []
@@ -361,6 +414,8 @@ def parse_cad_site(
 
     # 4. Нормализация координат (сдвиг МСК в 0, 0)
     orig_bounds = site_polygon.bounds
+    orig_coords = list(site_polygon.exterior.coords)
+    first_pt = (orig_coords[0][0], orig_coords[0][1]) if orig_coords else (0.0, 0.0)
     base_offset = (0.0, 0.0)
 
     if normalize_origin:
@@ -383,6 +438,7 @@ def parse_cad_site(
         "boundary_layer": boundary_layer,
         "red_lines_layer": red_lines_layer or "нет",
         "original_bounds": orig_bounds,
+        "first_point": first_pt,
         "base_offset": base_offset,
         "area": site.area,
         "vertices_count": len(site.boundary.exterior.coords) - 1,
