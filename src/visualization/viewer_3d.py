@@ -192,10 +192,39 @@ def build_3d_geojson_data(
                     },
                 })
 
+    # 5. Внутриквартальные дороги (Улично-дорожная сеть)
+    road_features = []
+    roads_result = getattr(site, "roads_result", None)
+    if roads_result and getattr(roads_result, "roads_polygon", None):
+        r_poly = roads_result.roads_polygon
+        if not r_poly.is_empty:
+            r_wgs = _to_wgs84(r_poly, center_lat, center_lon)
+            road_features.append({
+                "type": "Feature",
+                "geometry": mapping(r_wgs),
+                "properties": {
+                    "type": "road_corridor",
+                    "name": "Проезжая часть / Внутриквартальная улица",
+                    "area": round(r_poly.area, 1),
+                },
+            })
+        for idx, cl in enumerate(getattr(roads_result, "centerlines", [])):
+            if not cl.is_empty:
+                cl_wgs = _to_wgs84(cl, center_lat, center_lon)
+                road_features.append({
+                    "type": "Feature",
+                    "geometry": mapping(cl_wgs),
+                    "properties": {
+                        "type": "road_centerline",
+                        "name": f"Ось улицы {idx + 1}",
+                    },
+                })
+
     return {
         "boundary": {"type": "FeatureCollection", "features": [boundary_feature]},
         "buildable": {"type": "FeatureCollection", "features": [buildable_feature] if buildable_feature else []},
         "red_lines": {"type": "FeatureCollection", "features": red_line_features},
+        "roads": {"type": "FeatureCollection", "features": road_features},
         "buildings": {"type": "FeatureCollection", "features": building_features},
     }
 
@@ -909,6 +938,40 @@ def generate_3d_viewer_html(
           paint: {{
             'line-color': '#ef4444',
             'line-width': 2.5
+          }}
+        }});
+      }}
+    }}
+
+    // 3.1. Улично-дорожная сеть (Проезжая часть и разметка)
+    if (DATA.roads && DATA.roads.features && DATA.roads.features.length) {{
+      if (!map.getSource('roads')) {{
+        map.addSource('roads', {{ type: 'geojson', data: DATA.roads }});
+      }} else {{
+        map.getSource('roads').setData(DATA.roads);
+      }}
+      if (!map.getLayer('roads-fill')) {{
+        map.addLayer({{
+          id: 'roads-fill',
+          type: 'fill',
+          source: 'roads',
+          filter: ['==', ['get', 'type'], 'road_corridor'],
+          paint: {{
+            'fill-color': '#334155',
+            'fill-opacity': 0.95
+          }}
+        }});
+      }}
+      if (!map.getLayer('roads-line')) {{
+        map.addLayer({{
+          id: 'roads-line',
+          type: 'line',
+          source: 'roads',
+          filter: ['==', ['get', 'type'], 'road_centerline'],
+          paint: {{
+            'line-color': '#ffffff',
+            'line-width': 2.0,
+            'line-dasharray': [3, 3]
           }}
         }});
       }}

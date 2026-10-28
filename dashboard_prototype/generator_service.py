@@ -27,6 +27,8 @@ import shapely
 import yaml
 from shapely.geometry import Polygon, MultiPolygon, LineString, LinearRing
 
+from src.models.site import Site
+from src.models.building import Building
 from src.core.cadastre import (
     PRESET_PARCELS,
     get_cadastral_parcel,
@@ -299,11 +301,16 @@ def _create_site_from_params(
             exp_c = (c_lat, c_lon)
             if detected_msk in MSK_PRESETS:
                 preset = MSK_PRESETS[detected_msk]
-                exp_c = (preset["default_lat"], preset["default_lon"])
-                parcel_region_name = preset.get("region", reg_name)
-                if preset.get("city"):
+                if c_lat == 0.0 or c_lon == 0.0 or (assigned_cad == "63:01:0709002:2320" and "63" not in detected_msk):
+                    exp_c = (preset["default_lat"], preset["default_lon"])
+                else:
+                    exp_c = (c_lat, c_lon)
+                parcel_region_name = reg_name if (reg_name and reg_name != "Самарская область") else preset.get("region", reg_name)
+                if dist_name and dist_name != "г. Самара":
+                    parcel_district_name = dist_name
+                elif preset.get("city"):
                     parcel_district_name = f"г. {preset['city']}"
-                norm_id = "moscow_mngs" if "77" in detected_msk else ("spb_rnp" if "78" in detected_msk else "russia_sp42")
+                norm_id = resolved_norm_id or ("moscow_mngs" if "77" in detected_msk else ("spb_rnp" if "78" in detected_msk else "russia_sp42"))
 
             if override_lat != 0.0 and override_lon != 0.0:
                 site.geo_center = (override_lat, override_lon)
@@ -322,14 +329,16 @@ def _create_site_from_params(
                 site.geo_center = (c_lat, c_lon)
                 site.georef_source = "По кадастровому номеру / адресу"
 
-            site.cadastral_number = params.get("assigned_cad_query") or f"Чертёж: {cad_filename}"
-            site.address = f"{parcel_region_name}, {parcel_district_name} (чертёж: {cad_filename})"
+            final_cad_num = assigned_cad if assigned_cad and assigned_cad != "63:01:0709002:2320" else (params.get("assigned_cad_query") or cad_meta.get("detected_cadastre") or f"Чертёж: {cad_filename}")
+            site.cadastral_number = final_cad_num
+            site.address = f"{parcel_region_name}, {parcel_district_name} ({final_cad_num})"
             parcel_address = site.address
 
             site.cad_info = {
                 "is_cad": True,
                 "filename": cad_filename,
-                "detected_cadastre": getattr(site, "cadastral_number", None) or cad_meta.get("detected_cadastre"),
+                "detected_cadastre": final_cad_num,
+                "cadastral_number": final_cad_num,
                 "boundary_layer": boundary_layer or cad_meta.get("boundary_layer") or "0",
                 "red_lines_layer": red_lines_layer or cad_meta.get("red_lines_layer") or "",
                 "vertices_count": len(site.boundary.exterior.coords) - 1,
@@ -456,7 +465,7 @@ def _create_site_from_params(
                             det_sub_msk = "МСК-63 Зона 1 (Самара)"
 
                     exp_lat, exp_lon = auto_lat, auto_lon
-                    if det_sub_msk in MSK_PRESETS:
+                    if (exp_lat == 0.0 or exp_lon == 0.0) and det_sub_msk in MSK_PRESETS:
                         preset = MSK_PRESETS[det_sub_msk]
                         exp_lat, exp_lon = preset["default_lat"], preset["default_lon"]
                     sub_lat, sub_lon = msk_to_wgs84_coords(
@@ -529,6 +538,25 @@ def _create_site_from_params(
     except Exception:
         pass
 
+    # Улично-дорожная сеть и нарезка кварталов (RoadSlicer)
+    road_preset = params.get("road_preset", "none")
+    road_width = float(params.get("road_width", 16.0))
+    custom_roads = params.get("custom_roads") or []
+
+    try:
+        from src.core.road_slicer import RoadSlicer
+        road_res = RoadSlicer.slice_buildable_area(
+            site.buildable_area,
+            site.boundary,
+            road_lines=custom_roads,
+            preset=road_preset,
+            road_width=road_width,
+        )
+        site.roads_result = road_res
+    except Exception as e:
+        print(f"Ошибка нарезки дорожной сетью: {e}")
+        site.roads_result = None
+
     return site, selected_norm, parcel_region_name, parcel_district_name, parcel_address, config
 
 
@@ -559,6 +587,25 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
         geom_to_svg_path(rl, minx, miny, maxx, maxy, svg_w, svg_h)
         for rl in getattr(site, "red_lines", [])
     ]
+
+    # Дороги и урбан-блоки
+    roads_result = getattr(site, "roads_result", None)
+    roads_corridor_path = ""
+    roads_centerlines = []
+    sub_blocks_paths = []
+    if roads_result:
+        if roads_result.roads_polygon and not roads_result.roads_polygon.is_empty:
+            roads_corridor_path = geom_to_svg_path(roads_result.roads_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+        roads_centerlines = [
+            geom_to_svg_path(cl, minx, miny, maxx, maxy, svg_w, svg_h)
+            for cl in getattr(roads_result, "centerlines", [])
+            if not cl.is_empty
+        ]
+        sub_blocks_paths = [
+            geom_to_svg_path(sb, minx, miny, maxx, maxy, svg_w, svg_h)
+            for sb in getattr(roads_result, "sub_blocks", [])
+            if not sb.is_empty
+        ]
 
     # Leaflet HTML с interactive_transform=True и БЕЗ зданий
     try:
@@ -618,6 +665,14 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
         "site_path": site_path,
         "buildable_path": buildable_path,
         "red_lines_paths": red_lines,
+        "roads": {
+            "corridor_path": roads_corridor_path,
+            "centerlines_paths": roads_centerlines,
+            "sub_blocks_paths": sub_blocks_paths,
+            "sub_blocks_count": len(sub_blocks_paths),
+            "area_sqm": roads_result.roads_area_sqm if roads_result else 0.0,
+            "length_m": roads_result.roads_length_m if roads_result else 0.0,
+        },
         "optimization_note": "",
         "leaflet_html": leaflet_html,
         "viewer_3d_html": viewer_3d_html,
@@ -696,9 +751,27 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     gen_mode = params.get("gen_mode", "fixed")
     opt_note = ""
 
+    def _generate_buildings_for_site(target_site: Site, p_cfg: PlacementConfig) -> list[Building]:
+        roads_res = getattr(target_site, "roads_result", None)
+        if roads_res and getattr(roads_res, "sub_blocks", None) and len(roads_res.sub_blocks) > 1:
+            all_b = []
+            for s_idx, s_poly in enumerate(roads_res.sub_blocks):
+                sub_site = Site(boundary=s_poly)
+                sub_site.buildable_area = s_poly
+                sub_site.address = target_site.address
+                sub_site.cadastral_number = target_site.cadastral_number
+                sub_engine = PlacementEngine(sub_site, library, config)
+                try:
+                    all_b.extend(sub_engine.generate(p_cfg))
+                except Exception as ex:
+                    print(f"Ошибка размещения в под-блоке {s_idx + 1}: {ex}")
+            return all_b
+        else:
+            eng = PlacementEngine(target_site, library, config)
+            return eng.generate(p_cfg)
+
     if gen_mode == "fixed":
-        engine = PlacementEngine(site, library, config)
-        buildings = engine.generate(placement_cfg)
+        buildings = _generate_buildings_for_site(site, placement_cfg)
         tep = calculate_tep(site, buildings, config)
 
     elif gen_mode == "target":
@@ -777,8 +850,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         max_far=max_far,
     )
     try:
-        v2_engine = PlacementEngine(site, library, config)
-        v2_buildings = v2_engine.generate(v2_cfg)
+        v2_buildings = _generate_buildings_for_site(site, v2_cfg)
         v2_tep = calculate_tep(site, v2_buildings, config)
         v2_balance = calculate_territory_balance(site.area, v2_tep.building_area, v2_tep.population, v2_tep.residential_area, v2_tep.apartments_total, selected_norm)
         v2_checks = check_normatives(v2_tep, config)
@@ -818,8 +890,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         max_far=max_far,
     )
     try:
-        v3_engine = PlacementEngine(site, library, config)
-        v3_buildings = v3_engine.generate(v3_cfg)
+        v3_buildings = _generate_buildings_for_site(site, v3_cfg)
         v3_tep = calculate_tep(site, v3_buildings, config)
         v3_balance = calculate_territory_balance(site.area, v3_tep.building_area, v3_tep.population, v3_tep.residential_area, v3_tep.apartments_total, selected_norm)
         v3_checks = check_normatives(v3_tep, config)
@@ -883,6 +954,30 @@ def _package_single_variant(
     site_path = geom_to_svg_path(site.boundary, minx, miny, maxx, maxy, svg_w, svg_h)
     buildable_path = geom_to_svg_path(site.buildable_area, minx, miny, maxx, maxy, svg_w, svg_h) if site.buildable_area else ""
     red_lines = [geom_to_svg_path(rl, minx, miny, maxx, maxy, svg_w, svg_h) for rl in getattr(site, "red_lines", [])]
+
+    # Дорожная сеть и под-блоки
+    roads_result = getattr(site, "roads_result", None)
+    roads_corridor_path = ""
+    roads_centerlines = []
+    sub_blocks_paths = []
+    roads_area_sqm = 0.0
+    roads_length_m = 0.0
+
+    if roads_result:
+        if roads_result.roads_polygon and not roads_result.roads_polygon.is_empty:
+            roads_corridor_path = geom_to_svg_path(roads_result.roads_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+        roads_centerlines = [
+            geom_to_svg_path(cl, minx, miny, maxx, maxy, svg_w, svg_h)
+            for cl in getattr(roads_result, "centerlines", [])
+            if not cl.is_empty
+        ]
+        sub_blocks_paths = [
+            geom_to_svg_path(sb, minx, miny, maxx, maxy, svg_w, svg_h)
+            for sb in getattr(roads_result, "sub_blocks", [])
+            if not sb.is_empty
+        ]
+        roads_area_sqm = roads_result.roads_area_sqm
+        roads_length_m = roads_result.roads_length_m
 
     category_labels = {
         "MIDDLE": "Рядовая",
@@ -1005,6 +1100,14 @@ def _package_single_variant(
         "site_path": site_path,
         "buildable_path": buildable_path,
         "red_lines_paths": red_lines,
+        "roads": {
+            "corridor_path": roads_corridor_path,
+            "centerlines_paths": roads_centerlines,
+            "sub_blocks_paths": sub_blocks_paths,
+            "sub_blocks_count": len(sub_blocks_paths),
+            "area_sqm": roads_area_sqm,
+            "length_m": roads_length_m,
+        },
         "optimization_note": opt_note,
         "tep": {
             "gfa": round(tep.total_gfa),
@@ -1079,6 +1182,25 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
         compute_buildable_area(site, config)
     except Exception:
         pass
+
+    # Улично-дорожная сеть и нарезка кварталов (RoadSlicer)
+    road_preset = params.get("road_preset", "none")
+    road_width = float(params.get("road_width", 16.0))
+    custom_roads = params.get("custom_roads") or []
+
+    try:
+        from src.core.road_slicer import RoadSlicer
+        road_res = RoadSlicer.slice_buildable_area(
+            site.buildable_area,
+            site.boundary,
+            road_lines=custom_roads,
+            preset=road_preset,
+            road_width=road_width,
+        )
+        site.roads_result = road_res
+    except Exception as e:
+        print(f"Ошибка нарезки дорожной сетью: {e}")
+        site.roads_result = None
 
     placement_cfg = PlacementConfig(
         typology=params.get("typology", "AUTO"),

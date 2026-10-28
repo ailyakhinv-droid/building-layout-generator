@@ -160,16 +160,30 @@ MSK_PRESETS: dict[str, dict[str, Any]] = {
     "МСК-72 Зона 1 (Тюмень)": {
         "region": "Тюменская область",
         "city": "Тюмень",
-        "central_meridian": 65.51666667,  # 65° 31' E
+        "central_meridian": 65.96666667,  # 65° 58' E (Тюмень / Заречный / Алебашево)
         "latitude_of_origin": 0.0,
         "false_northing": -6000000.0,
         "false_easting": 1500000.0,
         "scale_factor": 1.0,
-        "L0_deg": 65.51666667,
+        "L0_deg": 65.96666667,
         "x0": -6000000.0,
         "y0": 1500000.0,
-        "default_lat": 57.1530,
-        "default_lon": 65.5343,
+        "default_lat": 57.1600,
+        "default_lon": 65.5560,
+    },
+    "МСК г. Тюмени": {
+        "region": "Тюменская область",
+        "city": "Тюмень",
+        "central_meridian": 65.96666667,  # 65° 58' E
+        "latitude_of_origin": 0.0,
+        "false_northing": -6000000.0,
+        "false_easting": 1500000.0,
+        "scale_factor": 1.0,
+        "L0_deg": 65.96666667,
+        "x0": -6000000.0,
+        "y0": 1500000.0,
+        "default_lat": 57.1600,
+        "default_lon": 65.5560,
     },
     "МСК-72 Зона 2 (Тобольск / Ишим)": {
         "region": "Тюменская область",
@@ -279,6 +293,10 @@ ZONE_ALIASES: dict[str, str] = {
     "msk-72-2": "МСК-72 Зона 2 (Тобольск / Ишим)",
     "72_2": "МСК-72 Зона 2 (Тобольск / Ишим)",
     "тобольск": "МСК-72 Зона 2 (Тобольск / Ишим)",
+    "мск г. тюмени": "МСК-72 Зона 1 (Тюмень)",
+    "мск тюмень": "МСК-72 Зона 1 (Тюмень)",
+    "мск_тюмень": "МСК-72 Зона 1 (Тюмень)",
+    "г. тюмень": "МСК-72 Зона 1 (Тюмень)",
     # Алтайский край МСК-22
     "msk_22_2": "МСК-22 Зона 2 (Барнаул)",
     "msk-22-2": "МСК-22 Зона 2 (Барнаул)",
@@ -572,6 +590,17 @@ def msk_to_wgs84_coords(
         if alt_y0 not in y0_options:
             y0_options.append(alt_y0)
 
+    # Варианты Центрального меридиана (L0)
+    l0_options = [p["L0_deg"]]
+    if "72" in canonical_key or "Тюмен" in canonical_key:
+        for alt_l0 in [65.96666667, 66.0, 66.03333333, 66.05, 65.51666667]:
+            if alt_l0 not in l0_options:
+                l0_options.append(alt_l0)
+    elif "63" in canonical_key or "Самар" in canonical_key:
+        for alt_l0 in [49.03333333333333, 52.03333333333333]:
+            if alt_l0 not in l0_options:
+                l0_options.append(alt_l0)
+
     best_point: tuple[float, float] | None = None
     min_dist_km = float("inf")
     cos_lat = math.cos(math.radians(exp_lat))
@@ -586,22 +615,24 @@ def msk_to_wgs84_coords(
                 e_candidates.append(e_raw + p["y0"])
 
         for e in e_candidates:
-            for x0 in x0_options:
-                for y0 in y0_options:
-                    p_trial = dict(p)
-                    p_trial["x0"] = x0
-                    p_trial["y0"] = y0
-                    try:
-                        lat, lon = _single_gk_inverse(n_raw, e, p_trial)
-                        if 40.0 <= lat <= 78.0 and 19.0 <= lon <= 180.0:
-                            dlat = (lat - exp_lat) * 111.0
-                            dlon = (lon - exp_lon) * 111.0 * cos_lat
-                            dist_km = math.sqrt(dlat * dlat + dlon * dlon)
-                            if dist_km < min_dist_km:
-                                min_dist_km = dist_km
-                                best_point = (round(lat, 6), round(lon, 6))
-                    except Exception:
-                        pass
+            for l0 in l0_options:
+                for x0 in x0_options:
+                    for y0 in y0_options:
+                        p_trial = dict(p)
+                        p_trial["L0_deg"] = l0
+                        p_trial["x0"] = x0
+                        p_trial["y0"] = y0
+                        try:
+                            lat, lon = _single_gk_inverse(n_raw, e, p_trial)
+                            if 40.0 <= lat <= 78.0 and 19.0 <= lon <= 180.0:
+                                dlat = (lat - exp_lat) * 111.0
+                                dlon = (lon - exp_lon) * 111.0 * cos_lat
+                                dist_km = math.sqrt(dlat * dlat + dlon * dlon)
+                                if dist_km < min_dist_km:
+                                    min_dist_km = dist_km
+                                    best_point = (round(lat, 6), round(lon, 6))
+                        except Exception:
+                            pass
 
     # Если найден кандидат в пределах разумного радиуса региона (до 800 км)
     if best_point and min_dist_km <= 800.0:

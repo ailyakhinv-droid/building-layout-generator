@@ -949,6 +949,7 @@ def build():
               <option value="МСК-66 Зона 1 (Свердловская обл. / Екатеринбург)">МСК-66 Зона 1 (Свердловская обл. / Екатеринбург)</option>
               <option value="МСК-23 Зона 1 (Краснодарский край)">МСК-23 Зона 1 (Краснодарский край)</option>
               <option value="МСК-72 Зона 1 (Тюмень)">МСК-72 Зона 1 (Тюмень)</option>
+              <option value="МСК г. Тюмени">МСК г. Тюмени</option>
               <option value="МСК-72 Зона 2 (Тобольск / Ишим)">МСК-72 Зона 2 (Тобольск / Ишим)</option>
               <option value="МСК-22 Зона 2 (Барнаул)">МСК-22 Зона 2 (Барнаул)</option>
             </select>
@@ -2713,8 +2714,11 @@ def build():
               if (result.cad_info.layers && result.cad_info.layers.length > 0) {{
                 populateCadLayers(result.cad_info.layers, result.cad_info.boundary_layer, result.cad_info.red_lines_layer);
               }}
-              if (result.cad_info.detected_msk && cfgCadMskZone && !cfgCadMskZone.value) {{
+              if (result.cad_info.detected_msk && cfgCadMskZone) {{
                 cfgCadMskZone.value = result.cad_info.detected_msk;
+              }}
+              if (result.cadastral_number && cfgDwgAssignedCad && (!cfgDwgAssignedCad.value || cfgDwgAssignedCad.value === "63:01:0709002:2320")) {{
+                cfgDwgAssignedCad.value = result.cadastral_number;
               }}
               if (cadMainBadge) {{
                 cadMainBadge.style.display = "inline-flex";
