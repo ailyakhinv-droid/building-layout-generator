@@ -661,6 +661,10 @@ def build():
     .svg-site-boundary {{ fill: none; stroke: #64748b; stroke-width: 1.8; stroke-dasharray: 6 4; }}
     .svg-buildable-area {{ fill: rgba(83, 141, 178, 0.05); stroke: rgba(83, 141, 178, 0.4); stroke-width: 1; }}
     .svg-red-line {{ fill: none; stroke: #ef4444; stroke-width: 2.2; }}
+    .svg-road-corridor {{ fill: #334155; stroke: #64748b; stroke-width: 1.2; opacity: 0.95; }}
+    .svg-road-centerline {{ fill: none; stroke: #ffffff; stroke-width: 2.2; stroke-dasharray: 6 5; opacity: 0.9; }}
+    .svg-subblock-bound {{ fill: rgba(37, 99, 235, 0.03); stroke: #3b82f6; stroke-width: 1.4; stroke-dasharray: 4 3; }}
+    .svg-road-preview {{ stroke: #2563eb; stroke-width: 3.5; stroke-dasharray: 6 4; fill: none; }}
     .svg-section {{ stroke: #ffffff; stroke-width: 1; cursor: pointer; transition: stroke 0.15s ease; }}
     .svg-section:hover {{ stroke: #0f172a; stroke-width: 2.6; }}
     .svg-section.selected {{
@@ -792,6 +796,12 @@ def build():
   </style>
 </head>
 <body>
+  <!-- Полноэкранный Drag & Drop оверлей для мгновенной загрузки DXF из любого окна -->
+  <div id="global-drop-overlay" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.85); z-index:99999; justify-content:center; align-items:center; flex-direction:column; color:#fff; pointer-events:none;">
+    <div style="font-size:56px; margin-bottom:16px;">📂</div>
+    <div style="font-size:24px; font-weight:700; letter-spacing:-0.02em;">Перетащите файл чертежа .DXF в любое место</div>
+    <div style="font-size:14px; color:#94a3b8; margin-top:8px;">Границы участка, слои и геопривязка определятся автоматически</div>
+  </div>
 
   <!-- ЕДИНАЯ ЧИСТАЯ ШАПКА -->
   <header class="app-header">
@@ -907,10 +917,10 @@ def build():
               <div class="control-row" style="margin-top:4px;">
                 <label class="control-label">📎 Прикрепить контур из чертежа (.dxf, .dwg)</label>
                 <div class="file-dropzone" id="dropzone-cad-sub">
-                  <span class="file-dropzone-text">Нажмите для выбора файла</span>
-                  <span class="file-dropzone-hint">Заменяет контур точной геометрией из CAD</span>
-                  <input type="file" id="file-cad-sub" accept=".dxf,.dwg" style="display:none;" />
+                  <span class="file-dropzone-text">📁 Нажмите для выбора чертежа .DXF</span>
+                  <span class="file-dropzone-hint">Заменяет контур точной геометрией из чертежа</span>
                 </div>
+                <input type="file" id="file-cad-sub" accept=".dxf,.dwg" style="display:none;" />
                 <div id="cad-sub-badge" style="display:none;"></div>
               </div>
             </div>
@@ -922,10 +932,10 @@ def build():
           <div class="control-row">
             <label class="control-label">Загрузите чертёж границы (.dxf, .dwg)</label>
             <div class="file-dropzone" id="dropzone-cad-main">
-              <span class="file-dropzone-text">Выберите или перетащите .dxf / .dwg</span>
-              <span class="file-dropzone-hint">Чертёж генплана с границей участка</span>
-              <input type="file" id="file-cad-main" accept=".dxf,.dwg" style="display:none;" />
+              <span class="file-dropzone-text">📁 Нажмите для выбора чертежа .DXF</span>
+              <span class="file-dropzone-hint">или перетащите файл .DXF в любое место окна</span>
             </div>
+            <input type="file" id="file-cad-main" accept=".dxf,.dwg" style="display:none;" />
             <div id="cad-main-badge" style="display:none;"></div>
           </div>
 
@@ -1044,6 +1054,42 @@ def build():
             <option value="L_SHAPE">Г-образные корпуса (L-Shape)</option>
             <option value="LINEAR">Линейная застройка (Пластины)</option>
           </select>
+        </div>
+
+        <!-- БЛОК НАСТРОЕК УЛИЧНО-ДОРОЖНОЙ СЕТИ И НАРЕЗКИ КВАРТАЛОВ -->
+        <div id="container-road-slicing" style="display:flex; flex-direction:column; gap:8px; margin-top:8px; padding:10px; background:rgba(37,99,235,0.03); border:1px solid #cbd5e1; border-radius:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:11.5px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:0.5px;">🛣️ Нарезка дорогами на лету</div>
+            <span class="badge" id="badge-road-blocks" style="font-size:11px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe;">1 квартал</span>
+          </div>
+
+          <div class="control-row">
+            <label class="control-label" for="cfg-road-preset">Схема нарезки</label>
+            <select class="select-custom" id="cfg-road-preset" style="width:100%;">
+              <option value="none">Без внутренних дорог (1 квартал)</option>
+              <option value="longitudinal">1 продольный бульвар (2 квартала)</option>
+              <option value="transverse">1 поперечный проезд (2 квартала)</option>
+              <option value="cross_2x2">Сетка крестом 2×2 (4 квартала)</option>
+              <option value="custom">✏️ Нарисованная дорога на плане</option>
+            </select>
+          </div>
+
+          <div class="control-row" id="row-road-width">
+            <div style="display:flex; justify-content:space-between;">
+              <label class="control-label" for="cfg-road-width">Ширина улицы</label>
+              <span id="badge-road-width" style="font-size:11px; font-weight:600; color:#2563eb;">16 м</span>
+            </div>
+            <input type="range" class="slider-input" id="cfg-road-width" min="10" max="24" step="2" value="16" />
+            <div class="control-hint">Полоса отвода (проезжая часть + тротуары)</div>
+          </div>
+
+          <div style="display:flex; gap:6px; margin-top:2px;">
+            <button class="btn btn-secondary" id="btn-draw-road-side" style="flex:1; font-size:11.5px; padding:6px 10px;" title="Кликните 2 точки на генплане для пробивки улицы">✏️ Начертить на плане</button>
+            <button class="btn" id="btn-reset-roads" style="font-size:11.5px; padding:6px 10px;" title="Сбросить нарезку">Сброс</button>
+          </div>
+          <div id="draw-road-status" style="display:none; font-size:11px; color:#1d4ed8; background:#eff6ff; border:1px solid #bfdbfe; padding:6px 8px; border-radius:4px; line-height:1.4;">
+            🎯 <strong>Режим черчения:</strong> кликните начальную и конечную точку дороги поперек участка на 2D генплане.
+          </div>
         </div>
 
         <!-- БЛОК НАСТРОЕК УРБАН-БЛОКОВ R2 -->
@@ -1417,12 +1463,16 @@ def build():
                   <path id="svg-site-bound" class="svg-site-boundary" />
                   <path id="svg-buildable" class="svg-buildable-area" />
                   <g id="svg-redlines-group"></g>
+                  <g id="svg-roads-group"></g>
+                  <g id="svg-subblocks-group"></g>
+                  <g id="svg-road-draw-preview"></g>
                   <g id="svg-sections-group"></g>
                 </g>
               </g>
             </svg>
 
             <div class="map-floating-controls">
+              <button class="map-btn" id="btn-draw-road" title="Начертить дорогу поперек участка (нарезка на кварталы)">🛣️</button>
               <button class="map-btn" id="btn-zoom-in" title="Приблизить">+</button>
               <button class="map-btn" id="btn-zoom-out" title="Отдалить">−</button>
               <button class="map-btn" id="btn-zoom-reset" title="Показать весь участок">⌂</button>
@@ -1462,7 +1512,7 @@ def build():
               <p>Кликните по любой секции на карте или выберите строку в ведомости ниже. Здесь отобразятся архитектурные параметры, квартирография и проверка высотных ограничений.</p>
             </div>
 
-            <div id="inspector-active" style="display:none; display:flex; flex-direction:column; gap:14px;">
+            <div id="inspector-active" style="display:none; flex-direction:column; gap:14px;">
               <div class="inspector-header">
                 <div>
                   <h3 class="inspector-title" id="insp-title">Дом Д1 · Секция 1</h3>
@@ -1727,11 +1777,12 @@ def build():
       let siteMode = "cadastre"; // 'cadastre' или 'cad'
 
       // Состояние 2-этапного взаимодействия (Посадка -> Застройка)
-      let isSiteLocked = false;
+      let isSiteLocked = !!(currentScenario.buildings && currentScenario.buildings.length > 0);
       let currentRotation = 0;
       let currentSiteLat = (currentScenario.geo_center && currentScenario.geo_center.lat) || 53.2502;
       let currentSiteLon = (currentScenario.geo_center && currentScenario.geo_center.lon) || 50.3184;
       let userHasMovedSite = false;
+      let userHasEnteredManualCoords = false;
 
       // Элементы степпера и баннеров этапов
       const stepperStep1 = document.getElementById("stepper-step-1");
@@ -1894,10 +1945,28 @@ def build():
       const svgSiteBound = document.getElementById("svg-site-bound");
       const svgBuildable = document.getElementById("svg-buildable");
       const svgRedlinesGroup = document.getElementById("svg-redlines-group");
+      const svgRoadsGroup = document.getElementById("svg-roads-group");
+      const svgSubblocksGroup = document.getElementById("svg-subblocks-group");
+      const svgRoadDrawPreview = document.getElementById("svg-road-draw-preview");
       const svgSectionsGroup = document.getElementById("svg-sections-group");
       const mapTooltip = document.getElementById("map-tooltip");
       const mapLegendTitle = document.getElementById("legend-title");
       const mapLegendItems = document.getElementById("legend-items");
+
+      // Дорожная сеть UI
+      const cfgRoadPreset = document.getElementById("cfg-road-preset");
+      const cfgRoadWidth = document.getElementById("cfg-road-width");
+      const badgeRoadWidth = document.getElementById("badge-road-width");
+      const badgeRoadBlocks = document.getElementById("badge-road-blocks");
+      const btnDrawRoad = document.getElementById("btn-draw-road");
+      const btnDrawRoadSide = document.getElementById("btn-draw-road-side");
+      const btnResetRoads = document.getElementById("btn-reset-roads");
+      const drawRoadStatus = document.getElementById("draw-road-status");
+
+      let currentRoadPreset = "none";
+      let customRoadLines = [];
+      let isDrawingRoad = false;
+      let drawRoadStartPt = null;
 
       // Инспектор
       const inspectorEmpty = document.getElementById("inspector-empty");
@@ -2019,13 +2088,27 @@ def build():
         if (!isSiteLocked) loadSitePreview(false);
       }});
 
+      // Функция переключения в режим чертежа
+      function switchToCadMode() {{
+        siteMode = "cad";
+        btnModeCad.classList.add("active");
+        btnModeCadastre.classList.remove("active");
+        containerModeCadastre.style.display = "none";
+        containerModeCad.style.display = "flex";
+      }}
+
       // Настройка Drag & Drop и клика для зон загрузки CAD
       function setupDropzone(dropzone, fileInput, onFileSelected) {{
         if (!dropzone || !fileInput) return;
 
-        dropzone.addEventListener("click", () => {{
+        dropzone.addEventListener("click", (e) => {{
+          if (e.target === fileInput) return;
           fileInput.value = "";
           fileInput.click();
+        }});
+
+        fileInput.addEventListener("click", (e) => {{
+          e.stopPropagation();
         }});
 
         fileInput.addEventListener("change", e => {{
@@ -2050,15 +2133,56 @@ def build():
         }});
 
         dropzone.addEventListener("drop", e => {{
+          e.preventDefault();
+          e.stopPropagation();
+          dropzone.classList.remove("dragover");
           const dt = e.dataTransfer;
           const file = dt && dt.files && dt.files[0];
           if (file) onFileSelected(file);
         }});
       }}
 
-      // Защита от перетаскивания файлов мимо зон
-      window.addEventListener("dragover", e => e.preventDefault());
-      window.addEventListener("drop", e => e.preventDefault());
+      // Глобальный Drag & Drop для всего окна браузера
+      let globalDragCount = 0;
+      window.addEventListener("dragenter", (e) => {{
+        e.preventDefault();
+        globalDragCount++;
+        const ov = document.getElementById("global-drop-overlay");
+        if (ov) ov.style.display = "flex";
+      }});
+
+      window.addEventListener("dragleave", (e) => {{
+        e.preventDefault();
+        globalDragCount--;
+        if (globalDragCount <= 0) {{
+          globalDragCount = 0;
+          const ov = document.getElementById("global-drop-overlay");
+          if (ov) ov.style.display = "none";
+        }}
+      }});
+
+      window.addEventListener("dragover", (e) => {{
+        e.preventDefault();
+      }});
+
+      window.addEventListener("drop", (e) => {{
+        e.preventDefault();
+        globalDragCount = 0;
+        const ov = document.getElementById("global-drop-overlay");
+        if (ov) ov.style.display = "none";
+
+        const dt = e.dataTransfer;
+        if (dt && dt.files && dt.files.length > 0) {{
+          const file = dt.files[0];
+          const name = (file.name || "").toLowerCase();
+          if (name.endsWith(".dxf") || name.endsWith(".dwg")) {{
+            switchToCadMode();
+            handleMainCadFile(file);
+          }} else {{
+            showToast("⚠️ Пожалуйста, перетащите файл с расширением .DXF", true);
+          }}
+        }}
+      }});
 
       // Клиентский парсер слоев DXF (быстрый предпросмотр до ответа бэкенда)
       function parseDxfLayersClientSide(dxfText) {{
@@ -2093,6 +2217,9 @@ def build():
 
       // Обработка файла для режима 1 (Прикрепление контура к кадастру)
       function handleSubCadFile(file) {{
+        switchToCadMode();
+        handleMainCadFile(file);
+        return;
         if (!file) return;
         const filename = file.name;
         const isDwg = filename.toLowerCase().endsWith(".dwg");
@@ -2423,11 +2550,15 @@ def build():
         }});
       }}
 
-      // Изменение ручных координат
-      if (cfgManualLat) cfgManualLat.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
-      if (cfgManualLon) cfgManualLon.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
-      if (cfgDwgLat) cfgDwgLat.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
-      if (cfgDwgLon) cfgDwgLon.addEventListener("change", () => {{ userHasMovedSite = true; loadSitePreview(false); }});
+      // Изменение ручных координат (только явный ввод пользователем)
+      if (cfgManualLat) cfgManualLat.addEventListener("input", () => {{ userHasEnteredManualCoords = true; }});
+      if (cfgManualLon) cfgManualLon.addEventListener("input", () => {{ userHasEnteredManualCoords = true; }});
+      if (cfgDwgLat) cfgDwgLat.addEventListener("input", () => {{ userHasEnteredManualCoords = true; }});
+      if (cfgDwgLon) cfgDwgLon.addEventListener("input", () => {{ userHasEnteredManualCoords = true; }});
+      if (cfgManualLat) cfgManualLat.addEventListener("change", () => {{ userHasEnteredManualCoords = true; userHasMovedSite = true; loadSitePreview(false); }});
+      if (cfgManualLon) cfgManualLon.addEventListener("change", () => {{ userHasEnteredManualCoords = true; userHasMovedSite = true; loadSitePreview(false); }});
+      if (cfgDwgLat) cfgDwgLat.addEventListener("change", () => {{ userHasEnteredManualCoords = true; userHasMovedSite = true; loadSitePreview(false); }});
+      if (cfgDwgLon) cfgDwgLon.addEventListener("change", () => {{ userHasEnteredManualCoords = true; userHasMovedSite = true; loadSitePreview(false); }});
       if (cfgCadMskZone) {{
         cfgCadMskZone.addEventListener("change", () => {{
           userHasMovedSite = false;
@@ -2452,6 +2583,7 @@ def build():
           chip.addEventListener("click", () => {{
             chip.classList.toggle("selected");
             updatePreferredSections();
+            selectSection(s.id);
           }});
           prefSectionsContainer.appendChild(chip);
         }});
@@ -2467,6 +2599,13 @@ def build():
         CATALOG.forEach(s => {{
           const card = document.createElement("div");
           card.className = "catalog-item-card";
+          card.setAttribute("data-id", s.id);
+          card.style.cursor = "pointer";
+          card.addEventListener("click", () => {{
+            selectSection(s.id);
+            const insp = document.getElementById("inspector-content");
+            if (insp) insp.scrollIntoView({{ behavior: "smooth", block: "nearest" }});
+          }});
           card.innerHTML = `
             <div class="catalog-item-header">
               <div>
@@ -2531,8 +2670,10 @@ def build():
         if (tab === "3d") {{
           const iframe3d = view3d.querySelector("iframe");
           if (iframe3d) {{
-            if (currentScenario.viewer_3d_html && (!iframe3d.srcdoc || iframe3d.srcdoc !== currentScenario.viewer_3d_html)) {{
-              iframe3d.srcdoc = currentScenario.viewer_3d_html;
+            const targetHtml = iframe3d.dataset.pendingSrcdoc || currentScenario.viewer_3d_html;
+            if (targetHtml && (!iframe3d.srcdoc || iframe3d.srcdoc !== targetHtml)) {{
+              iframe3d.srcdoc = targetHtml;
+              delete iframe3d.dataset.pendingSrcdoc;
             }}
             setTimeout(function() {{
               try {{
@@ -2562,25 +2703,25 @@ def build():
       function getFormData() {{
         let sendOverrideLat = 0.0;
         let sendOverrideLon = 0.0;
-        if (siteMode === "cadastre") {{
-          const mLat = parseFloat(cfgManualLat ? cfgManualLat.value : "") || 0;
-          const mLon = parseFloat(cfgManualLon ? cfgManualLon.value : "") || 0;
-          if (mLat !== 0 && mLon !== 0) {{
-            sendOverrideLat = mLat;
-            sendOverrideLon = mLon;
-          }} else if (userHasMovedSite && currentSiteLat && currentSiteLon) {{
-            sendOverrideLat = currentSiteLat;
-            sendOverrideLon = currentSiteLon;
-          }}
-        }} else {{
-          const dLat = parseFloat(cfgDwgLat ? cfgDwgLat.value : "") || 0;
-          const dLon = parseFloat(cfgDwgLon ? cfgDwgLon.value : "") || 0;
-          if (dLat !== 0 && dLon !== 0) {{
-            sendOverrideLat = dLat;
-            sendOverrideLon = dLon;
-          }} else if (userHasMovedSite && currentSiteLat && currentSiteLon) {{
-            sendOverrideLat = currentSiteLat;
-            sendOverrideLon = currentSiteLon;
+        // Оверрайд координат применяется ТОЛЬКО если пользователь интерактивно перетащил участок на карте
+        if (userHasMovedSite && currentSiteLat && currentSiteLon) {{
+          sendOverrideLat = currentSiteLat;
+          sendOverrideLon = currentSiteLon;
+        }} else if (userHasEnteredManualCoords) {{
+          if (siteMode === "cadastre") {{
+            const mLat = parseFloat(cfgManualLat ? cfgManualLat.value : "") || 0;
+            const mLon = parseFloat(cfgManualLon ? cfgManualLon.value : "") || 0;
+            if (mLat !== 0 && mLon !== 0) {{
+              sendOverrideLat = mLat;
+              sendOverrideLon = mLon;
+            }}
+          }} else {{
+            const dLat = parseFloat(cfgDwgLat ? cfgDwgLat.value : "") || 0;
+            const dLon = parseFloat(cfgDwgLon ? cfgDwgLon.value : "") || 0;
+            if (dLat !== 0 && dLon !== 0) {{
+              sendOverrideLat = dLat;
+              sendOverrideLon = dLon;
+            }}
           }}
         }}
 
@@ -2610,7 +2751,10 @@ def build():
           preferred_section_ids: preferredSectionIds.length ? preferredSectionIds : null,
           urban_block_size: cfgPeriBlockSize ? (parseFloat(cfgPeriBlockSize.value) || 100.0) : 100.0,
           internal_road_width: cfgPeriRoadWidth ? (parseFloat(cfgPeriRoadWidth.value) || 16.0) : 16.0,
-          perimeter_layout_style: cfgPeriStyle ? cfgPeriStyle.value : "U_SHAPE"
+          perimeter_layout_style: cfgPeriStyle ? cfgPeriStyle.value : "U_SHAPE",
+          road_preset: currentRoadPreset,
+          road_width: cfgRoadWidth ? (parseFloat(cfgRoadWidth.value) || 16.0) : 16.0,
+          custom_roads: customRoadLines
         }};
 
         if (cfgCadMskZone && cfgCadMskZone.value) {{
@@ -2704,10 +2848,10 @@ def build():
             if (result.geo_center) {{
               currentSiteLat = result.geo_center.lat;
               currentSiteLon = result.geo_center.lon;
-              if (cfgDwgLat) cfgDwgLat.value = currentSiteLat.toFixed(5);
-              if (cfgDwgLon) cfgDwgLon.value = currentSiteLon.toFixed(5);
-              if (cfgManualLat) cfgManualLat.value = currentSiteLat.toFixed(5);
-              if (cfgManualLon) cfgManualLon.value = currentSiteLon.toFixed(5);
+              if (cfgDwgLat) {{ cfgDwgLat.placeholder = currentSiteLat.toFixed(5); cfgDwgLat.value = ""; }}
+              if (cfgDwgLon) {{ cfgDwgLon.placeholder = currentSiteLon.toFixed(5); cfgDwgLon.value = ""; }}
+              if (cfgManualLat) {{ cfgManualLat.placeholder = currentSiteLat.toFixed(5); cfgManualLat.value = ""; }}
+              if (cfgManualLon) {{ cfgManualLon.placeholder = currentSiteLon.toFixed(5); cfgManualLon.value = ""; }}
             }}
             if (result.cad_info) {{
               updateCadInspectCard(result.cad_info, payload.cad_filename);
@@ -2813,6 +2957,12 @@ def build():
         await loadSitePreview(false);
       }}
 
+            // Прослушивание сообщений от 3D вьюера и карты
+      window.addEventListener("message", function(e) {{
+        if (e.data && e.data.type === "section_click" && e.data.section_id) {{
+          selectSection(e.data.section_id);
+        }}
+      }});
       // Прослушивание сообщений от интерактивной карты Leaflet
       window.addEventListener("message", function(e) {{
         if (!e.data || !e.data.isMapTransform) return;
@@ -3187,6 +3337,39 @@ def build():
           svgRedlinesGroup.appendChild(p);
         }});
 
+        // Дорожная сеть и урбан-блоки
+        const roadsData = s.roads || {{}};
+        if (svgRoadsGroup) {{
+          svgRoadsGroup.innerHTML = "";
+          if (roadsData.corridor_path) {{
+            const rp = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            rp.setAttribute("d", roadsData.corridor_path);
+            rp.setAttribute("class", "svg-road-corridor");
+            svgRoadsGroup.appendChild(rp);
+          }}
+          (roadsData.centerlines_paths || []).forEach(clPath => {{
+            const cl = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            cl.setAttribute("d", clPath);
+            cl.setAttribute("class", "svg-road-centerline");
+            svgRoadsGroup.appendChild(cl);
+          }});
+        }}
+
+        if (svgSubblocksGroup) {{
+          svgSubblocksGroup.innerHTML = "";
+          (roadsData.sub_blocks_paths || []).forEach(sbPath => {{
+            const sb = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            sb.setAttribute("d", sbPath);
+            sb.setAttribute("class", "svg-subblock-bound");
+            svgSubblocksGroup.appendChild(sb);
+          }});
+        }}
+
+        if (badgeRoadBlocks) {{
+          const count = roadsData.sub_blocks_count || 1;
+          badgeRoadBlocks.textContent = count === 1 ? "1 квартал" : (count < 5 ? `${{count}} квартала` : `${{count}} кварталов`);
+        }}
+
         svgSectionsGroup.innerHTML = "";
         (s.sections || []).forEach(sec => {{
           const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -3234,20 +3417,21 @@ def build():
         }}
         if (s.viewer_3d_html) {{
           const iframe3d = view3d.querySelector("iframe");
-          if (iframe3d && iframe3d.srcdoc !== s.viewer_3d_html) {{
-            iframe3d.srcdoc = s.viewer_3d_html;
-          }}
-          if (activeView === "3d" && iframe3d && iframe3d.contentWindow) {{
-            setTimeout(function() {{
-              try {{
-                iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
-              }} catch (_) {{}}
-            }}, 150);
-            setTimeout(function() {{
-              try {{
-                iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
-              }} catch (_) {{}}
-            }}, 600);
+          if (iframe3d) {{
+            if (activeView === "3d") {{
+              if (iframe3d.srcdoc !== s.viewer_3d_html) {{
+                iframe3d.srcdoc = s.viewer_3d_html;
+              }}
+              setTimeout(function() {{
+                try {{
+                  if (iframe3d.contentWindow) {{
+                    iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
+                  }}
+                }} catch (_) {{}}
+              }}, 150);
+            }} else {{
+              iframe3d.dataset.pendingSrcdoc = s.viewer_3d_html;
+            }}
           }}
         }}
       }}
@@ -3359,50 +3543,110 @@ def build():
           return;
         }}
 
-        const sec = currentScenario.sections.find(s => s.id === selectedSectionId);
-        if (!sec) return;
+        // 1. Ищем в расставленных секциях плана
+        let sec = (currentScenario && currentScenario.sections) 
+          ? currentScenario.sections.find(s => s.id === selectedSectionId || s.type_id === selectedSectionId) 
+          : null;
+
+        // 2. Ищем в каталоге секций библиотеки (по id или code)
+        let catSec = null;
+        if (typeof CATALOG !== "undefined" && Array.isArray(CATALOG)) {{
+          catSec = CATALOG.find(c => c.id === selectedSectionId || c.code === selectedSectionId || (sec && c.id === sec.type_id));
+        }}
+
+        if (!sec && !catSec) {{
+          inspectorEmpty.style.display = "flex";
+          inspectorActive.style.display = "none";
+          btnClearSelection.style.display = "none";
+          return;
+        }}
 
         inspectorEmpty.style.display = "none";
         inspectorActive.style.display = "flex";
         btnClearSelection.style.display = "inline-block";
 
-        inspTitle.textContent = `${{sec.building_name}} · Секция ${{sec.section_index}}`;
-        inspSubtitle.textContent = `Марка: ${{sec.type_name}} (${{sec.type_id}})`;
-        inspCatBadge.textContent = sec.category_label;
-        inspCatBadge.style.background = CATEGORY_COLORS[sec.category] || "#538db2";
+        if (sec) {{
+          inspTitle.textContent = `${{sec.building_name || 'Корпус'}} · Секция ${{sec.section_index || 1}}`;
+          inspSubtitle.textContent = `Марка: ${{sec.type_name || ''}} (${{sec.type_id || ''}})`;
+          inspCatBadge.textContent = sec.category_label || sec.category || '';
+          inspCatBadge.style.background = CATEGORY_COLORS[sec.category] || "#538db2";
 
-        inspFloors.textContent = `${{sec.floors}} эт.`;
-        inspHeight.textContent = `${{sec.height_m}} м`;
-        inspDims.textContent = `${{sec.width}} × ${{sec.depth}} м`;
-        inspFootprint.textContent = `${{fmt(sec.footprint_area)}} м²`;
-        inspGfa.textContent = `${{fmt(sec.gfa)}} м²`;
-        inspAptsCount.textContent = `${{sec.apartments_total}} кв.`;
+          inspFloors.textContent = `${{sec.floors || 0}} эт.`;
+          inspHeight.textContent = `${{sec.height_m || (sec.floors * 3.0).toFixed(1)}} м`;
+          inspDims.textContent = `${{sec.width || 0}} × ${{sec.depth || 0}} м`;
+          inspFootprint.textContent = `${{fmt(sec.footprint_area)}} м²`;
+          inspGfa.textContent = `${{fmt(sec.gfa)}} м²`;
+          inspAptsCount.textContent = `${{sec.apartments_total || 0}} кв.`;
 
-        inspElevators.textContent = `Лифтов: ${{sec.elevators}} шт. (пассажирский + грузопассажирский)`;
-        inspGround.textContent = sec.commercial_ground ? "1-й этаж: Коммерческие помещения и вестибюль" : "1-й этаж: Жилые квартиры с палисадником";
+          inspElevators.textContent = `Лифтов: ${{sec.elevators || 1}} шт. (пассажирский + грузопассажирский)`;
+          inspGround.textContent = sec.commercial_ground ? "1-й этаж: Коммерческие помещения и вестибюль" : "1-й этаж: Жилые квартиры с палисадником";
 
-        inspAptBars.innerHTML = "";
-        const apts = sec.apartments || {{}};
-        const total = sec.apartments_total || 1;
-        const types = [
-          {{ key: "studio", label: "Студии" }},
-          {{ key: "1k", label: "1-комн." }},
-          {{ key: "2k", label: "2-комн." }},
-          {{ key: "3k", label: "3-комн." }}
-        ];
+          inspAptBars.innerHTML = "";
+          const apts = sec.apartments || {{}};
+          const total = sec.apartments_total || 1;
+          const types = [
+            {{ key: "studio", label: "Студии" }},
+            {{ key: "1k", label: "1-комн." }},
+            {{ key: "2k", label: "2-комн." }},
+            {{ key: "3k", label: "3-комн." }}
+          ];
 
-        types.forEach(t => {{
-          const count = apts[t.key] || 0;
-          const pct = Math.round((count / total) * 100);
-          const row = document.createElement("div");
-          row.className = "apt-bar-row";
-          row.innerHTML = `
-            <span class="apt-bar-label">${{t.label}}</span>
-            <div class="apt-bar-track"><div class="apt-bar-fill" style="width:${{pct}}%;"></div></div>
-            <span class="apt-bar-val">${{count}} (${{pct}}%)</span>
-          `;
-          inspAptBars.appendChild(row);
-        }});
+          types.forEach(t => {{
+            const count = apts[t.key] || 0;
+            const pct = Math.round((count / total) * 100);
+            const row = document.createElement("div");
+            row.className = "apt-bar-row";
+            row.innerHTML = `
+              <span class="apt-bar-label">${{t.label}}</span>
+              <div class="apt-bar-track"><div class="apt-bar-fill" style="width:${{pct}}%;"></div></div>
+              <span class="apt-bar-val">${{count}} (${{pct}}%)</span>
+            `;
+            inspAptBars.appendChild(row);
+          }});
+        }} else if (catSec) {{
+          const defFl = catSec.default_floors || 9;
+          const aptsPerFl = catSec.apartments_per_floor || {{}};
+          const totalPerFl = catSec.total_apartments_per_floor || Object.values(aptsPerFl).reduce((a, b) => a + b, 0) || 1;
+          const totalApts = totalPerFl * defFl;
+          const estGfa = Math.round((catSec.floor_area || 0) * defFl);
+
+          inspTitle.textContent = `${{catSec.name}} (Паспорт типа)`;
+          inspSubtitle.textContent = `Код: ${{catSec.code}} · ${{catSec.category_name || ''}}`;
+          inspCatBadge.textContent = catSec.category;
+          inspCatBadge.style.background = CATEGORY_COLORS[catSec.category] || "#538db2";
+
+          inspFloors.textContent = `${{catSec.min_floors}}–${{catSec.max_floors}} эт. (базово: ${{defFl}} эт.)`;
+          inspHeight.textContent = `${{(defFl * 3.0).toFixed(1)}} м (при ${{defFl}} эт.)`;
+          inspDims.textContent = `${{catSec.width}} × ${{catSec.depth}} м`;
+          inspFootprint.textContent = `${{fmt(catSec.floor_area)}} м²`;
+          inspGfa.textContent = `~${{fmt(estGfa)}} м²`;
+          inspAptsCount.textContent = `~${{totalApts}} кв. (${{totalPerFl}}/эт.)`;
+
+          inspElevators.textContent = `Лифтов в секции: ${{catSec.elevators || 1}} шт.`;
+          inspGround.textContent = catSec.has_commercial_ground ? "1-й этаж: Предусмотрен стрит-ритейл / коммерция" : "1-й этаж: Жилые квартиры";
+
+          inspAptBars.innerHTML = "";
+          const types = [
+            {{ key: "studio", label: "Студии" }},
+            {{ key: "1k", label: "1-комн." }},
+            {{ key: "2k", label: "2-комн." }},
+            {{ key: "3k", label: "3-комн." }}
+          ];
+
+          types.forEach(t => {{
+            const countPerFl = aptsPerFl[t.key] || 0;
+            const count = countPerFl * defFl;
+            const pct = Math.round((countPerFl / totalPerFl) * 100);
+            const row = document.createElement("div");
+            row.className = "apt-bar-row";
+            row.innerHTML = `
+              <span class="apt-bar-label">${{t.label}}</span>
+              <div class="apt-bar-track"><div class="apt-bar-fill" style="width:${{pct}}%;"></div></div>
+              <span class="apt-bar-val">${{count}} (${{pct}}%)</span>
+            `;
+            inspAptBars.appendChild(row);
+          }});
+        }}
       }}
 
       // Зум
@@ -3414,14 +3658,160 @@ def build():
         updateSvgTransform();
       }}
 
-      svgRoot.addEventListener("pointerdown", e => {{
+      // Преобразование координат курсора на SVG в метры участка (Site local meters)
+      function convertScreenToSiteCoords(e) {{
+        const rect = svgRoot.getBoundingClientRect();
+        const clientX = e.clientX - rect.left;
+        const clientY = e.clientY - rect.top;
+
+        const viewBoxW = 1000;
+        const viewBoxH = 700;
+        const svgScaleX = viewBoxW / rect.width;
+        const svgScaleY = viewBoxH / rect.height;
+
+        const vx = (clientX - view.x) / view.zoom;
+        const vy = (clientY - view.y) / view.zoom;
+
+        const svgX = vx * svgScaleX;
+        const svgY = vy * svgScaleY;
+
+        const meta = (currentScenario && currentScenario.svg_meta) || {{
+          minx: 0, miny: 0, maxx: 200, maxy: 150, scale: 1, ox: 40, oy: 40
+        }};
+        const siteX = meta.minx + (svgX - meta.ox) / meta.scale;
+        const siteY = meta.maxy - (svgY - meta.oy) / meta.scale;
+
+        return {{ siteX, siteY, svgX, svgY }};
+      }}
+
+      function startRoadDrawing() {{
+        isDrawingRoad = true;
+        drawRoadStartPt = null;
+        if (drawRoadStatus) drawRoadStatus.style.display = "block";
+        if (btnDrawRoad) {{
+          btnDrawRoad.style.background = "#2563eb";
+          btnDrawRoad.style.color = "#ffffff";
+        }}
+        if (svgRoot) svgRoot.style.cursor = "crosshair";
+        showToast("🎯 Кликните начальную и конечную точку дороги на 2D генплане");
+      }}
+
+      function stopRoadDrawing() {{
+        isDrawingRoad = false;
+        drawRoadStartPt = null;
+        if (drawRoadStatus) drawRoadStatus.style.display = "none";
+        if (btnDrawRoad) {{
+          btnDrawRoad.style.background = "";
+          btnDrawRoad.style.color = "";
+        }}
+        if (svgRoot) svgRoot.style.cursor = "";
+        if (svgRoadDrawPreview) svgRoadDrawPreview.innerHTML = "";
+      }}
+
+      if (btnDrawRoad) {{
+        btnDrawRoad.addEventListener("click", () => {{
+          if (isDrawingRoad) {{
+            stopRoadDrawing();
+          }} else {{
+            startRoadDrawing();
+          }}
+        }});
+      }}
+
+      if (btnDrawRoadSide) {{
+        btnDrawRoadSide.addEventListener("click", () => {{
+          startRoadDrawing();
+        }});
+      }}
+
+      if (btnResetRoads) {{
+        btnResetRoads.addEventListener("click", async () => {{
+          stopRoadDrawing();
+          currentRoadPreset = "none";
+          customRoadLines = [];
+          if (cfgRoadPreset) cfgRoadPreset.value = "none";
+          showToast("Сброс нарезки дорогами");
+          await lockSiteAndGenerate();
+        }});
+      }}
+
+      if (cfgRoadWidth && badgeRoadWidth) {{
+        cfgRoadWidth.addEventListener("input", () => {{
+          badgeRoadWidth.textContent = `${{cfgRoadWidth.value}} м`;
+        }});
+        cfgRoadWidth.addEventListener("change", async () => {{
+          if (currentRoadPreset !== "none" || customRoadLines.length > 0) {{
+            await lockSiteAndGenerate();
+          }}
+        }});
+      }}
+
+      if (cfgRoadPreset) {{
+        cfgRoadPreset.addEventListener("change", async () => {{
+          currentRoadPreset = cfgRoadPreset.value;
+          if (currentRoadPreset !== "custom") {{
+            customRoadLines = [];
+          }}
+          if (currentRoadPreset === "custom") {{
+            startRoadDrawing();
+          }} else {{
+            stopRoadDrawing();
+            await lockSiteAndGenerate();
+          }}
+        }});
+      }}
+
+      let downPos = null;
+      let downSecId = null;
+
+      svgRoot.addEventListener("pointerdown", async e => {{
         if (e.button !== 0) return;
+        if (isDrawingRoad) {{
+          e.preventDefault();
+          e.stopPropagation();
+          const pt = convertScreenToSiteCoords(e);
+          if (!drawRoadStartPt) {{
+            drawRoadStartPt = pt;
+            if (svgRoadDrawPreview) {{
+              svgRoadDrawPreview.innerHTML = `
+                <circle cx="${{pt.svgX}}" cy="${{pt.svgY}}" r="5" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
+              `;
+            }}
+            showToast("✓ Начало дороги зафиксировано! Теперь кликните конец дороги.");
+          }} else {{
+            const endPt = pt;
+            customRoadLines.push([
+              [drawRoadStartPt.siteX, drawRoadStartPt.siteY],
+              [endPt.siteX, endPt.siteY]
+            ]);
+            currentRoadPreset = "custom";
+            if (cfgRoadPreset) cfgRoadPreset.value = "custom";
+            stopRoadDrawing();
+            showToast("🛣️ Дорога построена! Нарезаем участок и расставляем корпуса...");
+            await lockSiteAndGenerate();
+          }}
+          return;
+        }}
+
+        const secEl = (e.target && e.target.closest) ? e.target.closest(".svg-section") : null;
+        downSecId = secEl ? secEl.getAttribute("data-id") : null;
+        downPos = {{ x: e.clientX, y: e.clientY }};
+
         isDragging = true;
         dragStart = {{ x: e.clientX - view.x, y: e.clientY - view.y }};
         svgRoot.setPointerCapture(e.pointerId);
       }});
 
       svgRoot.addEventListener("pointermove", e => {{
+        if (isDrawingRoad && drawRoadStartPt && svgRoadDrawPreview) {{
+          const cur = convertScreenToSiteCoords(e);
+          svgRoadDrawPreview.innerHTML = `
+            <circle cx="${{drawRoadStartPt.svgX}}" cy="${{drawRoadStartPt.svgY}}" r="5" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
+            <line x1="${{drawRoadStartPt.svgX}}" y1="${{drawRoadStartPt.svgY}}" x2="${{cur.svgX}}" y2="${{cur.svgY}}" class="svg-road-preview" />
+            <circle cx="${{cur.svgX}}" cy="${{cur.svgY}}" r="4" fill="#60a5fa" stroke="#ffffff" stroke-width="1.5" />
+          `;
+          return;
+        }}
         if (!isDragging) return;
         view.x = e.clientX - dragStart.x;
         view.y = e.clientY - dragStart.y;
@@ -3432,7 +3822,15 @@ def build():
         isDragging = false;
         try {{ svgRoot.releasePointerCapture(e.pointerId); }} catch (_) {{}}
       }}
-      svgRoot.addEventListener("pointerup", endDrag);
+      svgRoot.addEventListener("pointerup", e => {{
+        endDrag(e);
+        if (downPos) {{
+          const dist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
+          if (dist < 6 && downSecId) {{
+            selectSection(downSecId);
+          }}
+        }}
+      }});
       svgRoot.addEventListener("pointercancel", endDrag);
 
       svgRoot.addEventListener("wheel", e => {{
@@ -3526,9 +3924,7 @@ def build():
       renderScenario();
 
       checkBackendHealth().then(online => {{
-        if (online) {{
-          loadSitePreview(false);
-        }}
+        updateBackendBadge(online);
       }});
     }})();
   </script>

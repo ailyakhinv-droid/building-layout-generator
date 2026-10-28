@@ -66,7 +66,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             post_data = self.rfile.read(content_length).decode("utf-8")
             try:
                 params = json.loads(post_data) if post_data else {}
+                mode_str = params.get("site_mode", "unknown")
+                fn_str = params.get("cad_filename", "no_file")
+                print(f"[Сервер] Запрос предпросмотра: mode={mode_str}, file={fn_str}, msk={params.get('msk_zone')}")
                 result = preview_site(params)
+                geo = result.get("geo_center", {})
+                print(f"[Сервер] Предпросмотр готов: кад={result.get('cadastral_number')}, lat={geo.get('lat')}, lon={geo.get('lon')}, мск={result.get('cad_info', {}).get('detected_msk')}")
                 response_bytes = json.dumps(result, ensure_ascii=False).encode("utf-8")
 
                 self.send_response(200)
@@ -78,6 +83,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             except Exception as e:
                 import traceback
                 err_text = traceback.format_exc()
+                print(f"[Сервер] ОШИБКА /api/site-preview: {e}\n{err_text}")
                 err_bytes = json.dumps({"error": str(e), "traceback": err_text}).encode("utf-8")
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json; charset=utf-8")

@@ -312,7 +312,11 @@ def _create_site_from_params(
                     parcel_district_name = f"г. {preset['city']}"
                 norm_id = resolved_norm_id or ("moscow_mngs" if "77" in detected_msk else ("spb_rnp" if "78" in detected_msk else "russia_sp42"))
 
-            if override_lat != 0.0 and override_lon != 0.0:
+            is_manual_override = (
+                override_lat != 0.0 and override_lon != 0.0
+                and not (abs(override_lat - 53.2502) < 0.001 and abs(override_lon - 50.3184) < 0.001 and is_msk and "63" not in detected_msk)
+            )
+            if is_manual_override:
                 site.geo_center = (override_lat, override_lon)
                 site.georef_source = "Ручные координаты WGS-84"
             elif is_msk:
@@ -455,7 +459,9 @@ def _create_site_from_params(
                     if requested_msk and requested_msk in MSK_PRESETS:
                         det_sub_msk = requested_msk
                     else:
-                        c_comps = parse_cadastral_components(cad_query)
+                        sub_det_cad = sub_meta.get("detected_cadastre")
+                        effective_cad = sub_det_cad if (sub_det_cad and sub_det_cad != "63:01:0709002:2320") else cad_query
+                        c_comps = parse_cadastral_components(effective_cad)
                         c_reg = c_comps.get("region_code") if c_comps else None
                         if c_reg:
                             det_sub_msk = get_msk_key_for_region(c_reg, sub_site.base_offset[0], sub_site.base_offset[1])
@@ -465,7 +471,13 @@ def _create_site_from_params(
                             det_sub_msk = "МСК-63 Зона 1 (Самара)"
 
                     exp_lat, exp_lon = auto_lat, auto_lon
-                    if (exp_lat == 0.0 or exp_lon == 0.0) and det_sub_msk in MSK_PRESETS:
+                    sub_det_cad = sub_meta.get("detected_cadastre")
+                    if sub_det_cad and sub_det_cad != "63:01:0709002:2320":
+                        _, _, _, c_lat_sub, c_lon_sub = smart_resolve_location(sub_det_cad)
+                        if c_lat_sub != 0.0 and c_lon_sub != 0.0:
+                            exp_lat, exp_lon = c_lat_sub, c_lon_sub
+                            site.cadastral_number = sub_det_cad
+                    if (exp_lat == 0.0 or exp_lon == 0.0 or (cad_query == "63:01:0709002:2320" and "63" not in det_sub_msk)) and det_sub_msk in MSK_PRESETS:
                         preset = MSK_PRESETS[det_sub_msk]
                         exp_lat, exp_lon = preset["default_lat"], preset["default_lon"]
                     sub_lat, sub_lon = msk_to_wgs84_coords(
@@ -577,6 +589,12 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
     minx, miny, maxx, maxy = b_minx - pad_m, b_miny - pad_m, b_maxx + pad_m, b_maxy + pad_m
     svg_w, svg_h = 1000, 700
 
+    dx = maxx - minx
+    dy = maxy - miny
+    svg_scale = min((svg_w - 2 * pad_m) / dx, (svg_h - 2 * pad_m) / dy) if dx > 0 and dy > 0 else 1.0
+    svg_ox = pad_m + ((svg_w - 2 * pad_m) - dx * svg_scale) / 2
+    svg_oy = pad_m + ((svg_h - 2 * pad_m) - dy * svg_scale) / 2
+
     site_path = geom_to_svg_path(site.boundary, minx, miny, maxx, maxy, svg_w, svg_h)
     buildable_path = (
         geom_to_svg_path(site.buildable_area, minx, miny, maxx, maxy, svg_w, svg_h)
@@ -662,6 +680,17 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
         "yandex_maps_url": yandex_maps_url,
         "pkk_url": pkk_url,
         "svg_viewbox": f"0 0 {svg_w} {svg_h}",
+        "svg_meta": {
+            "minx": minx,
+            "miny": miny,
+            "maxx": maxx,
+            "maxy": maxy,
+            "scale": svg_scale,
+            "ox": svg_ox,
+            "oy": svg_oy,
+            "width": svg_w,
+            "height": svg_h,
+        },
         "site_path": site_path,
         "buildable_path": buildable_path,
         "red_lines_paths": red_lines,
@@ -951,6 +980,12 @@ def _package_single_variant(
     minx, miny, maxx, maxy = b_minx - pad_m, b_miny - pad_m, b_maxx + pad_m, b_maxy + pad_m
     svg_w, svg_h = 1000, 700
 
+    dx = maxx - minx
+    dy = maxy - miny
+    svg_scale = min((svg_w - 2 * pad_m) / dx, (svg_h - 2 * pad_m) / dy) if dx > 0 and dy > 0 else 1.0
+    svg_ox = pad_m + ((svg_w - 2 * pad_m) - dx * svg_scale) / 2
+    svg_oy = pad_m + ((svg_h - 2 * pad_m) - dy * svg_scale) / 2
+
     site_path = geom_to_svg_path(site.boundary, minx, miny, maxx, maxy, svg_w, svg_h)
     buildable_path = geom_to_svg_path(site.buildable_area, minx, miny, maxx, maxy, svg_w, svg_h) if site.buildable_area else ""
     red_lines = [geom_to_svg_path(rl, minx, miny, maxx, maxy, svg_w, svg_h) for rl in getattr(site, "red_lines", [])]
@@ -1097,6 +1132,17 @@ def _package_single_variant(
         "yandex_maps_url": yandex_maps_url,
         "pkk_url": pkk_url,
         "svg_viewbox": f"0 0 {svg_w} {svg_h}",
+        "svg_meta": {
+            "minx": minx,
+            "miny": miny,
+            "maxx": maxx,
+            "maxy": maxy,
+            "scale": svg_scale,
+            "ox": svg_ox,
+            "oy": svg_oy,
+            "width": svg_w,
+            "height": svg_h,
+        },
         "site_path": site_path,
         "buildable_path": buildable_path,
         "red_lines_paths": red_lines,
