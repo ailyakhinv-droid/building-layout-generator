@@ -2024,8 +2024,8 @@
         }
         const layers = [];
         layersMap.forEach((count, name) => {
-          const lower = name.toLowerCase();
-          const isBound = lower.includes("границ") || lower.includes("участ") || lower.includes("bound") || lower.includes("cadastre") || lower.includes("земл");
+          const lower = name.toLowerCase().trim();
+          const isBound = lower === "p" || lower.startsWith("p_") || lower.startsWith("!_") || lower.includes("границ") || lower.includes("участ") || lower.includes("bound") || lower.includes("cadastre") || lower.includes("земл") || lower.includes("зу");
           const isRed = lower.includes("красн") || lower.includes("red");
           layers.push({
             name: name,

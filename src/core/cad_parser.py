@@ -57,7 +57,7 @@ class CADLayerInfo:
 
 
 BOUNDARY_KEYWORDS = [
-    "границ", "меж", "участ", "гпзу", "контур", "отвод", "территор", "земл",
+    "границ", "меж", "участ", "гпзу", "контур", "отвод", "территор", "земл", "зу", "гзу",
     "boundary", "site", "parcel", "property", "plot", "land", "border",
 ]
 
@@ -67,9 +67,48 @@ RED_LINE_KEYWORDS = [
 
 
 def _match_keywords(name: str, keywords: list[str]) -> bool:
-    """Проверить, содержит ли имя слоя ключевые слова."""
-    lowered = name.lower()
+    """Проверить, содержит ли имя слоя ключевые слова или стандартные кадастровые имена."""
+    lowered = name.lower().strip()
+    # Стандартные слои Росреестра (ПКК, ТехноКад, АРГО, Полигон)
+    if lowered in ("p", "zu", "зу", "гзу", "участок", "граница", "!_граница участка", "!_участок"):
+        return True
+    if lowered.startswith("p_") or lowered.startswith("зу_"):
+        return True
+    if lowered.startswith("!_"):
+        if any(kw in lowered for kw in keywords):
+            return True
     return any(kw in lowered for kw in keywords)
+
+
+def extract_cadastral_info_from_doc(doc: Any, filename: str = "") -> list[str]:
+    """Извлечь кадастровые номера из текстовых меток чертежа и имени файла."""
+    found: list[str] = []
+    # 1. Из имени файла (например, "72.23.0222001.16187" или "63_01_0709002_2320")
+    if filename:
+        fn_matches = re.findall(r"(\d{2})[._\-](\d{2})[._\-](\d{6,7})[._\-](\d+)", filename)
+        for m in fn_matches:
+            cad = f"{m[0]}:{m[1]}:{m[2]}:{m[3]}"
+            if cad not in found:
+                found.append(cad)
+
+    # 2. Из текстовых объектов чертежа (TEXT, MTEXT)
+    try:
+        msp = doc.modelspace()
+        cad_regex = re.compile(r"\b(\d{2}:\d{2}:\d{6,7}:\d+)\b")
+        for e in msp:
+            dxftype = e.dxftype()
+            txt = ""
+            if dxftype == "TEXT":
+                txt = getattr(e.dxf, "text", "")
+            elif dxftype == "MTEXT":
+                txt = getattr(e, "text", "")
+            if txt:
+                for c in cad_regex.findall(txt):
+                    if c not in found:
+                        found.append(c)
+    except Exception:
+        pass
+    return found
 
 
 def _load_dxf_document(file_source: str | Path | BinaryIO | bytes, filename: str = "") -> ezdxf.document.Drawing:
@@ -433,6 +472,11 @@ def parse_cad_site(
         base_offset=base_offset,
     )
 
+    detected_cads = extract_cadastral_info_from_doc(doc, filename)
+    det_cad = detected_cads[0] if detected_cads else None
+    if det_cad and not getattr(site, "cadastral_number", None):
+        site.cadastral_number = det_cad
+
     metadata = {
         "filename": filename or "site.dxf",
         "boundary_layer": boundary_layer,
@@ -443,6 +487,8 @@ def parse_cad_site(
         "area": site.area,
         "vertices_count": len(site.boundary.exterior.coords) - 1,
         "red_lines_count": len(red_lines),
+        "cadastral_numbers": detected_cads,
+        "detected_cadastre": det_cad,
     }
 
     return site, metadata

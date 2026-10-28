@@ -35,13 +35,13 @@ MSK_PRESETS: dict[str, dict[str, Any]] = {
         "city": "Самара",
         "central_meridian": 49.03333333333333,  # 49° 02' E
         "latitude_of_origin": 0.0,
-        "false_northing": -5414743.504,
-        "false_easting": 1500000.0,
+        "false_northing": -5514743.504,
+        "false_easting": 1300000.0,
         "scale_factor": 1.0,
         # Алиасы ключей для обратной совместимости
         "L0_deg": 49.03333333333333,
-        "x0": -5414743.504,
-        "y0": 1500000.0,
+        "x0": -5514743.504,
+        "y0": 1300000.0,
         "default_lat": 53.2502,
         "default_lon": 50.3184,
     },
@@ -50,12 +50,12 @@ MSK_PRESETS: dict[str, dict[str, Any]] = {
         "city": "Тольятти",
         "central_meridian": 52.03333333333333,  # 52° 02' E
         "latitude_of_origin": 0.0,
-        "false_northing": -5414743.504,
-        "false_easting": 2500000.0,
+        "false_northing": -5514743.504,
+        "false_easting": 2300000.0,
         "scale_factor": 1.0,
         "L0_deg": 52.03333333333333,
-        "x0": -5414743.504,
-        "y0": 2500000.0,
+        "x0": -5514743.504,
+        "y0": 2300000.0,
         "default_lat": 53.5078,
         "default_lon": 49.4204,
     },
@@ -554,34 +554,54 @@ def msk_to_wgs84_coords(
         else:
             base_pairs = [(c1, c2, "auto_geo"), (c2, c1, "auto_cad")]
 
-    # Расширяем кандидатов вариантами восстановления усечённых координат Востока
-    expanded: list[tuple[float, float, str]] = []
-    zone_num = int(p["y0"] // 1000000.0) if p["y0"] >= 1000000.0 else 1
+    # Варианты False Northing (X0)
+    x0_options = [p["x0"]]
+    for alt_x0 in [-5514743.504, -5711057.63, -5414743.504, -5714743.504, -6000000.0, -4514743.504]:
+        if alt_x0 not in x0_options:
+            x0_options.append(alt_x0)
 
-    for n, e, desc in base_pairs:
-        expanded.append((n, e, desc))
-        if e < 1000000.0:
-            if e > 300000.0:
-                expanded.append((n, e + zone_num * 1000000.0, f"{desc}+zone{zone_num}M"))
-            else:
-                expanded.append((n, e + p["y0"], f"{desc}+false_east"))
+    # Варианты False Easting (Y0)
+    base_y0 = p["y0"]
+    zone_num = int(base_y0 // 1000000.0) if base_y0 >= 1000000.0 else 1
+    y0_options = [base_y0]
+    for alt_y0 in [
+        zone_num * 1000000.0 + 300000.0,
+        zone_num * 1000000.0 + 500000.0,
+        zone_num * 1000000.0 + 250000.0,
+    ]:
+        if alt_y0 not in y0_options:
+            y0_options.append(alt_y0)
 
     best_point: tuple[float, float] | None = None
     min_dist_km = float("inf")
     cos_lat = math.cos(math.radians(exp_lat))
 
-    for n, e, desc in expanded:
-        try:
-            lat, lon = _single_gk_inverse(n, e, p)
-            if 40.0 <= lat <= 78.0 and 19.0 <= lon <= 180.0:
-                dlat = (lat - exp_lat) * 111.0
-                dlon = (lon - exp_lon) * 111.0 * cos_lat
-                dist_km = math.sqrt(dlat * dlat + dlon * dlon)
-                if dist_km < min_dist_km:
-                    min_dist_km = dist_km
-                    best_point = (round(lat, 6), round(lon, 6))
-        except Exception:
-            pass
+    for n_raw, e_raw, desc in base_pairs:
+        # Варианты восстановления усечённых координат Востока
+        e_candidates = [e_raw]
+        if e_raw < 1000000.0:
+            if e_raw > 300000.0:
+                e_candidates.append(e_raw + zone_num * 1000000.0)
+            else:
+                e_candidates.append(e_raw + p["y0"])
+
+        for e in e_candidates:
+            for x0 in x0_options:
+                for y0 in y0_options:
+                    p_trial = dict(p)
+                    p_trial["x0"] = x0
+                    p_trial["y0"] = y0
+                    try:
+                        lat, lon = _single_gk_inverse(n_raw, e, p_trial)
+                        if 40.0 <= lat <= 78.0 and 19.0 <= lon <= 180.0:
+                            dlat = (lat - exp_lat) * 111.0
+                            dlon = (lon - exp_lon) * 111.0 * cos_lat
+                            dist_km = math.sqrt(dlat * dlat + dlon * dlon)
+                            if dist_km < min_dist_km:
+                                min_dist_km = dist_km
+                                best_point = (round(lat, 6), round(lon, 6))
+                    except Exception:
+                        pass
 
     # Если найден кандидат в пределах разумного радиуса региона (до 800 км)
     if best_point and min_dist_km <= 800.0:
@@ -645,13 +665,13 @@ def detect_msk_by_coordinates(
             return "МСК-78 (Санкт-Петербург)"
 
     # Самарская область (МСК-63 Зона 1, Самара):
-    # X ≈ 450 000..600 000, Y ≈ 1 200 000..1 750 000
-    if 400000 <= v_small <= 650000 and 1200000 <= v_large <= 1750000:
+    # X ≈ 350 000..650 000, Y ≈ 1 200 000..1 750 000
+    if 300000 <= v_small <= 650000 and 1200000 <= v_large <= 1750000:
         return "МСК-63 Зона 1 (Самара)"
 
     # Самарская область (МСК-63 Зона 2, Тольятти):
-    # X ≈ 450 000..600 000, Y ≈ 2 200 000..2 750 000
-    if 400000 <= v_small <= 650000 and 2200000 <= v_large <= 2750000:
+    # X ≈ 350 000..650 000, Y ≈ 2 200 000..2 750 000
+    if 300000 <= v_small <= 650000 and 2200000 <= v_large <= 2750000:
         return "МСК-63 Зона 2 (Тольятти)"
 
     # Усечённые координаты МСК-63 Зона 1 (Самара):

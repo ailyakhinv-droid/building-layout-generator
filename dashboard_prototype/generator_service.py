@@ -217,11 +217,29 @@ def _create_site_from_params(
     # РЕЖИМ: ПО ЧЕРТЕЖУ DWG / DXF (ОСНОВНОЙ РЕЖИМ ПРОЕКТИРОВАНИЯ)
     # =========================================================================
     if site_mode == "cad":
-        assigned_cad = (params.get("assigned_cad_query") or "63:01:0709002:2320").strip()
+        assigned_cad = (params.get("assigned_cad_query") or "").strip()
+        file_bytes = base64.b64decode(cad_file_b64) if cad_file_b64 else None
+
+        # Предварительный парсинг чертежа для извлечения кадастрового номера
+        detected_cad = None
+        if file_bytes:
+            try:
+                from src.core.cad_parser import _load_dxf_document, extract_cadastral_info_from_doc
+                doc_tmp = _load_dxf_document(file_bytes, filename=cad_filename)
+                cads_found = extract_cadastral_info_from_doc(doc_tmp, filename=cad_filename)
+                if cads_found:
+                    detected_cad = cads_found[0]
+            except Exception:
+                pass
+
+        if not assigned_cad or assigned_cad == "63:01:0709002:2320":
+            if detected_cad:
+                assigned_cad = detected_cad
+            elif not assigned_cad:
+                assigned_cad = "63:01:0709002:2320"
+
         reg_name, dist_name, resolved_norm_id, c_lat, c_lon = smart_resolve_location(assigned_cad)
         norm_id = resolved_norm_id or "russia_sp42"
-
-        file_bytes = base64.b64decode(cad_file_b64) if cad_file_b64 else None
 
         # Если файл еще не загружен пользователем, подгружаем тестовый контур МСК для мгновенной демонстрации
         if not file_bytes:
@@ -311,6 +329,7 @@ def _create_site_from_params(
             site.cad_info = {
                 "is_cad": True,
                 "filename": cad_filename,
+                "detected_cadastre": getattr(site, "cadastral_number", None) or cad_meta.get("detected_cadastre"),
                 "boundary_layer": boundary_layer or cad_meta.get("boundary_layer") or "0",
                 "red_lines_layer": red_lines_layer or cad_meta.get("red_lines_layer") or "",
                 "vertices_count": len(site.boundary.exterior.coords) - 1,
