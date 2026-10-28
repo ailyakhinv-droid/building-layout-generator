@@ -447,6 +447,37 @@ class PlacementEngine:
 
         return buildings
 
+    def _try_place_with_nudge(
+        self,
+        create_fn,
+        base_x: float,
+        base_y: float,
+        ux: tuple[float, float],
+        uy: tuple[float, float],
+        buildings: list[Building],
+        placement_config: PlacementConfig,
+        nudge_offsets: list[tuple[float, float]] | None = None,
+    ) -> Building | None:
+        """Попробовать разместить корпус с микросдвигом (nudge), если исходная позиция не проходит."""
+        if nudge_offsets is None:
+            nudge_offsets = [
+                (0.0, 0.0),
+                (3.0, 0.0), (-3.0, 0.0),
+                (0.0, 3.0), (0.0, -3.0),
+                (6.0, 0.0), (-6.0, 0.0),
+                (0.0, 6.0), (0.0, -6.0),
+                (10.0, 0.0), (-10.0, 0.0),
+                (0.0, 10.0), (0.0, -10.0),
+            ]
+
+        for dx, dy in nudge_offsets:
+            tx = base_x + dx * ux[0] + dy * uy[0]
+            ty = base_y + dx * ux[1] + dy * uy[1]
+            cand = create_fn(tx, ty)
+            if cand and self._fits_in_buildable(cand) and self._check_constraints(cand, buildings, placement_config):
+                return cand
+        return None
+
     # ─────────────────────────────────────────────────────────────────
     # Локальная сборка центрированных секций
     # ─────────────────────────────────────────────────────────────────
@@ -906,16 +937,19 @@ class PlacementEngine:
                 if min_sec <= (3 + nx + ny) <= max_sec
             ]
 
-            # 1. Пробуем поставить П-образный корпус со двором
+            # 1. Пробуем поставить П-образный корпус со двором (с микросдвигом)
             placed = False
             for n_wl, n_wr in cand_wings:
-                cand_u = self._create_u_building(
-                    px, py, court_angle, middle, corner, end, floors,
-                    num_back, n_wl, n_wr,
-                    cascade_floors=placement_config.cascade_floors,
-                    min_wing_floors=placement_config.min_wing_floors,
+                cand_u = self._try_place_with_nudge(
+                    lambda tx, ty, wl=n_wl, wr=n_wr: self._create_u_building(
+                        tx, ty, court_angle, middle, corner, end, floors,
+                        num_back, wl, wr,
+                        cascade_floors=placement_config.cascade_floors,
+                        min_wing_floors=placement_config.min_wing_floors,
+                    ),
+                    px, py, ux, uy, buildings, placement_config
                 )
-                if cand_u and self._fits_in_buildable(cand_u) and self._check_constraints(cand_u, buildings, placement_config):
+                if cand_u:
                     buildings.append(cand_u)
                     placed = True
                     break
@@ -923,15 +957,18 @@ class PlacementEngine:
             if placed:
                 continue
 
-            # 2. Если скоба не вошла, пробуем Г-образный блок
+            # 2. Если скоба не вошла, пробуем Г-образный блок (с микросдвигом)
             for nx, ny in cand_l_shapes:
-                cand_l = self._create_l_building(
-                    px, py, court_angle, middle, corner, end, floors,
-                    num_mid_x=nx, num_mid_y=ny,
-                    cascade_floors=placement_config.cascade_floors,
-                    min_wing_floors=placement_config.min_wing_floors,
+                cand_l = self._try_place_with_nudge(
+                    lambda tx, ty, mx=nx, my=ny: self._create_l_building(
+                        tx, ty, court_angle, middle, corner, end, floors,
+                        num_mid_x=mx, num_mid_y=my,
+                        cascade_floors=placement_config.cascade_floors,
+                        min_wing_floors=placement_config.min_wing_floors,
+                    ),
+                    px, py, ux, uy, buildings, placement_config
                 )
-                if cand_l and self._fits_in_buildable(cand_l) and self._check_constraints(cand_l, buildings, placement_config):
+                if cand_l:
                     buildings.append(cand_l)
                     break
 
@@ -1103,45 +1140,68 @@ class PlacementEngine:
         uy = (math.cos(rad_n), math.sin(rad_n))
 
         u_h = middle.depth + num_wing * middle.width + end.width
-        target_oy = -width / 2.0 + u_h / 2.0 + 8.0 if width >= 110.0 else 0.0
+        u_step_y = u_h + fire_gap
+        rows = max(1, int((width + fire_gap) / u_step_y))
+        if rows > 1 and (rows * u_h + (rows - 1) * fire_gap) > (width - 10.0):
+            rows = max(1, rows - 1)
 
-        for col in range(cols):
+        span_y = (rows - 1) * u_step_y
+        start_oy = -span_y / 2.0
+
+        for row in range(rows):
             if self._is_bcr_reached(buildings, placement_config):
                 break
-            ox = start_ox + col * u_step_x
-            px = centroid.x + ox * ux[0] + target_oy * uy[0]
-            py = centroid.y + ox * ux[1] + target_oy * uy[1]
+            oy = start_oy + row * u_step_y
+            for col in range(cols):
+                if self._is_bcr_reached(buildings, placement_config):
+                    break
+                ox = start_ox + col * u_step_x
+                px = centroid.x + ox * ux[0] + oy * uy[0]
+                py = centroid.y + ox * ux[1] + oy * uy[1]
 
-            if placement_config.asymmetric_wings:
-                if middle.width > 35.0:
-                    cand_wings = [(1, 1), (1, 0), (0, 1), (0, 0)]
-                elif col % 2 == 0:
-                    cand_wings = [(2, 1), (1, 2), (1, 1), (1, 0), (0, 1), (0, 0)]
+                if placement_config.asymmetric_wings:
+                    if middle.width > 35.0:
+                        cand_wings = [(1, 1), (1, 0), (0, 1), (0, 0)]
+                    elif col % 2 == 0:
+                        cand_wings = [(2, 1), (1, 2), (1, 1), (1, 0), (0, 1), (0, 0)]
+                    else:
+                        cand_wings = [(1, 2), (2, 1), (1, 1), (0, 1), (1, 0), (0, 0)]
                 else:
-                    cand_wings = [(1, 2), (2, 1), (1, 1), (0, 1), (1, 0), (0, 0)]
-            else:
-                cand_wings = [(num_wing, num_wing), (1, 1), (0, 0)]
+                    cand_wings = [(num_wing, num_wing), (1, 1), (0, 0)]
 
-            cand_wings = [
-                (wl, wr) for wl, wr in cand_wings
-                if min_sec <= (4 + num_back + wl + wr) <= max_sec
-            ]
+                cand_wings = [
+                    (wl, wr) for wl, wr in cand_wings
+                    if min_sec <= (4 + num_back + wl + wr) <= max_sec
+                ]
 
-            for n_wl, n_wr in cand_wings:
-                cand = self._create_u_building(
-                    px, py, court_angle, middle, corner, end, floors,
-                    num_back, n_wl, n_wr,
+                for n_wl, n_wr in cand_wings:
+                    cand = self._try_place_with_nudge(
+                        lambda tx, ty, wl=n_wl, wr=n_wr: self._create_u_building(
+                            tx, ty, court_angle, middle, corner, end, floors,
+                            num_back, wl, wr,
+                            cascade_floors=placement_config.cascade_floors,
+                            min_wing_floors=placement_config.min_wing_floors,
+                        ),
+                        px, py, ux, uy, buildings, placement_config
+                    )
+                    if cand:
+                        buildings.append(cand)
+                        break
+
+        # Если ни одна скоба не вошла, пробуем по центру
+        if not buildings:
+            cand = self._try_place_with_nudge(
+                lambda tx, ty: self._create_u_building(
+                    tx, ty, court_angle, middle, corner, end, floors,
+                    num_back=1, num_wing_left=1, num_wing_right=1,
                     cascade_floors=placement_config.cascade_floors,
                     min_wing_floors=placement_config.min_wing_floors,
-                )
-                if cand and self._fits_in_buildable(cand) and self._check_constraints(cand, buildings, placement_config):
-                    buildings.append(cand)
-                    break
-
-        if not self._is_bcr_reached(buildings, placement_config):
-            self._fill_remaining_space(
-                buildable, buildings, angle, middle, end, floors, placement_config
+                ),
+                centroid.x, centroid.y, ux, uy, buildings, placement_config
             )
+            if cand:
+                buildings.append(cand)
+
         return self._enforce_normative_limits(buildings, placement_config)
 
     def _generate_l_shape_layout(
@@ -1427,28 +1487,40 @@ class PlacementEngine:
             cascade_floors=placement_config.cascade_floors,
             min_wing_floors=placement_config.min_wing_floors,
         )
-        placed_secs = self._transform_sections(local_secs, midpoint.x, midpoint.y, angle)
-        building = Building(sections=placed_secs, typology="LINEAR")
 
-        if not self._fits_in_buildable(building):
-            while len(chosen_middles) > 0:
-                chosen_middles.pop()
-                if (len(chosen_middles) + 2) < placement_config.min_sections_per_building:
-                    return None
-                local_secs = self._build_linear_local(
-                    middle, end, floors, chosen_middles,
-                    cascade_floors=placement_config.cascade_floors,
-                    min_wing_floors=placement_config.min_wing_floors,
-                )
-                placed_secs = self._transform_sections(local_secs, midpoint.x, midpoint.y, angle)
+        # Направление линии для микросдвига (nudge)
+        c0, c1 = center_line.coords[0], center_line.coords[-1]
+        dx_l = (c1[0] - c0[0]) / max(1e-6, line_len)
+        dy_l = (c1[1] - c0[1]) / max(1e-6, line_len)
+        shifts = [0.0, 2.0, -2.0, 4.0, -4.0, 6.0, -6.0]
+
+        for s in shifts:
+            mx = midpoint.x + s * dx_l
+            my = midpoint.y + s * dy_l
+            placed_secs = self._transform_sections(local_secs, mx, my, angle)
+            building = Building(sections=placed_secs, typology="LINEAR")
+            if self._fits_in_buildable(building):
+                self._placed_building_count = getattr(self, "_placed_building_count", 0) + 1
+                return building
+
+        while len(chosen_middles) > 0:
+            chosen_middles.pop()
+            if (len(chosen_middles) + 2) < placement_config.min_sections_per_building:
+                return None
+            local_secs = self._build_linear_local(
+                middle, end, floors, chosen_middles,
+                cascade_floors=placement_config.cascade_floors,
+                min_wing_floors=placement_config.min_wing_floors,
+            )
+            for s in shifts:
+                mx = midpoint.x + s * dx_l
+                my = midpoint.y + s * dy_l
+                placed_secs = self._transform_sections(local_secs, mx, my, angle)
                 building = Building(sections=placed_secs, typology="LINEAR")
                 if self._fits_in_buildable(building):
                     self._placed_building_count = getattr(self, "_placed_building_count", 0) + 1
                     return building
-            return None
-
-        self._placed_building_count = getattr(self, "_placed_building_count", 0) + 1
-        return building
+        return None
 
     def _create_linears_on_line(
         self,
@@ -1468,7 +1540,7 @@ class PlacementEngine:
 
         max_secs = placement_config.max_sections_per_building
         max_sec_len = max(end.width * 2, (max_secs - 2) * middle.width + end.width * 2)
-        norm_max_len = float(self.config.get("building_max_length", 90.0))
+        norm_max_len = float(self.config.get("building_max_length", 100.0))
         max_bldg_len = min(norm_max_len, max_sec_len)
         passage_gap = float(self.config.get("passage_gap_min", 18.0))
 

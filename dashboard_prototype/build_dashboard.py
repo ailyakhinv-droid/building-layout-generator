@@ -500,10 +500,18 @@ def build():
       background: var(--muted) !important;
     }}
     .sidebar-stage2-locked {{
-      opacity: 0.45;
-      pointer-events: none;
-      filter: grayscale(0.5);
+      opacity: 0.65;
+      filter: grayscale(0.2);
       position: relative;
+    }}
+    .sidebar-stage2-locked > *:not(.btn-generate) {{
+      pointer-events: none;
+    }}
+    .sidebar-stage2-locked .btn-generate {{
+      pointer-events: auto !important;
+      opacity: 1 !important;
+      filter: none !important;
+      cursor: pointer !important;
     }}
     .sidebar-lock-notice {{
       background: rgba(217, 119, 6, 0.08);
@@ -2522,15 +2530,25 @@ def build():
         if (tab === "3d") {{
           const iframe3d = view3d.querySelector("iframe");
           if (iframe3d) {{
-            if (currentScenario.viewer_3d_html && iframe3d.srcdoc !== currentScenario.viewer_3d_html) {{
+            if (currentScenario.viewer_3d_html && (!iframe3d.srcdoc || iframe3d.srcdoc !== currentScenario.viewer_3d_html)) {{
               iframe3d.srcdoc = currentScenario.viewer_3d_html;
             }}
-            setTimeout(() => {{
+            setTimeout(function() {{
               try {{
-                iframe3d.contentWindow.dispatchEvent(new Event("resize"));
-                iframe3d.contentWindow.postMessage({{ type: "resize" }}, "*");
+                if (iframe3d.contentWindow) {{
+                  iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
+                  iframe3d.contentWindow.dispatchEvent(new Event("resize"));
+                }}
               }} catch (_) {{}}
-            }}, 80);
+            }}, 150);
+            setTimeout(function() {{
+              try {{
+                if (iframe3d.contentWindow) {{
+                  iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
+                  iframe3d.contentWindow.dispatchEvent(new Event("resize"));
+                }}
+              }} catch (_) {{}}
+            }}, 600);
           }}
         }}
       }}
@@ -3212,8 +3230,20 @@ def build():
         }}
         if (s.viewer_3d_html) {{
           const iframe3d = view3d.querySelector("iframe");
-          if (iframe3d) {{
+          if (iframe3d && iframe3d.srcdoc !== s.viewer_3d_html) {{
             iframe3d.srcdoc = s.viewer_3d_html;
+          }}
+          if (activeView === "3d" && iframe3d && iframe3d.contentWindow) {{
+            setTimeout(function() {{
+              try {{
+                iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
+              }} catch (_) {{}}
+            }}, 150);
+            setTimeout(function() {{
+              try {{
+                iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
+              }} catch (_) {{}}
+            }}, 600);
           }}
         }}
       }}

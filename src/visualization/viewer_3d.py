@@ -650,109 +650,65 @@ def generate_3d_viewer_html(
 <script>
   const DATA = {data_json_str};
 
-  const BASEMAP_STYLES = {{
+  const BASEMAP_CONFIGS = {{
     light: {{
-      version: 8,
-      sources: {{
-        'osm-light-tiles': {{
-          type: 'raster',
-          tiles: [
-            'https://a.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
-            'https://b.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
-            'https://c.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png'
-          ],
-          tileSize: 256,
-          attribution: '&copy; OpenStreetMap contributors'
-        }}
+      sourceId: 'osm-light-tiles',
+      sourceDef: {{
+        type: 'raster',
+        tiles: [
+          'https://a.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
+          'https://b.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
+          'https://c.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png'
+        ],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap contributors'
       }},
-      layers: [
-        {{
-          id: 'osm-light-layer',
-          type: 'raster',
-          source: 'osm-light-tiles',
-          minzoom: 0,
-          maxzoom: 19,
-          paint: {{
-            'raster-saturation': -0.65,
-            'raster-contrast': -0.05,
-            'raster-brightness-min': 0.15
-          }}
-        }}
-      ]
+      paint: {{
+        'raster-saturation': -0.65,
+        'raster-contrast': -0.05,
+        'raster-brightness-min': 0.15
+      }}
     }},
     osm: {{
-      version: 8,
-      sources: {{
-        'osm-tiles': {{
-          type: 'raster',
-          tiles: [
-            'https://a.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
-            'https://b.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
-            'https://c.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png'
-          ],
-          tileSize: 256,
-          attribution: '&copy; OpenStreetMap contributors'
-        }}
+      sourceId: 'osm-tiles',
+      sourceDef: {{
+        type: 'raster',
+        tiles: [
+          'https://a.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
+          'https://b.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png',
+          'https://c.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png'
+        ],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap contributors'
       }},
-      layers: [
-        {{
-          id: 'osm-raster',
-          type: 'raster',
-          source: 'osm-tiles',
-          minzoom: 0,
-          maxzoom: 19
-        }}
-      ]
+      paint: {{}}
     }},
     satellite: {{
-      version: 8,
-      sources: {{
-        'esri-sat': {{
-          type: 'raster',
-          tiles: [
-            'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}'
-          ],
-          tileSize: 256,
-          attribution: '&copy; Esri &mdash; World Imagery'
-        }}
+      sourceId: 'esri-sat',
+      sourceDef: {{
+        type: 'raster',
+        tiles: [
+          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}'
+        ],
+        tileSize: 256,
+        attribution: '&copy; Esri &mdash; World Imagery'
       }},
-      layers: [
-        {{
-          id: 'esri-sat-layer',
-          type: 'raster',
-          source: 'esri-sat',
-          minzoom: 0,
-          maxzoom: 19
-        }}
-      ]
+      paint: {{}}
     }},
     dark: {{
-      version: 8,
-      sources: {{
-        'esri-dark': {{
-          type: 'raster',
-          tiles: [
-            'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{{z}}/{{y}}/{{x}}'
-          ],
-          tileSize: 256,
-          attribution: '&copy; Esri &mdash; Dark Gray Canvas'
-        }}
+      sourceId: 'esri-dark',
+      sourceDef: {{
+        type: 'raster',
+        tiles: [
+          'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{{z}}/{{y}}/{{x}}'
+        ],
+        tileSize: 256,
+        maxzoom: 16,
+        attribution: '&copy; Esri &mdash; Dark Gray Canvas'
       }},
-      layers: [
-        {{
-          id: 'esri-dark-layer',
-          type: 'raster',
-          source: 'esri-dark',
-          minzoom: 0,
-          maxzoom: 16
-        }}
-      ]
+      paint: {{}}
     }},
-    none: {{
-      version: 8,
-      sources: {{}},
-      layers: [{{ id: 'blank-bg', type: 'background', paint: {{ 'background-color': '#f4f2ed' }} }}]
-    }}
+    none: null
   }};
 
   // Вычисление точного Bounding Box и геометрического центра
@@ -804,7 +760,6 @@ def generate_3d_viewer_html(
   else initZoom = 16.8;
 
   const initBasemapKey = '{default_basemap}';
-  const initStyle = BASEMAP_STYLES[initBasemapKey] || BASEMAP_STYLES.none;
 
   if (!window.maplibregl) {{
     document.getElementById('loading-msg').style.display = 'block';
@@ -813,7 +768,17 @@ def generate_3d_viewer_html(
 
   const map = new maplibregl.Map({{
     container: 'map',
-    style: initStyle,
+    style: {{
+      version: 8,
+      sources: {{}},
+      layers: [
+        {{
+          id: 'blank-bg',
+          type: 'background',
+          paint: {{ 'background-color': '#f4f2ed' }}
+        }}
+      ]
+    }},
     center: [centerLon, centerLat],
     zoom: initZoom,
     pitch: 50,
@@ -972,20 +937,43 @@ def generate_3d_viewer_html(
     }}
   }}
 
-  // Применяем слои каждый раз при загрузке стиля (включая смену подложки)
-  map.on('style.load', () => {{
+  function switchBasemap(key) {{
+    const beforeId = (map.getLayer('boundary-fill') && 'boundary-fill') ||
+                     (map.getLayer('buildings-3d') && 'buildings-3d') ||
+                     undefined;
+
+    if (map.getLayer('basemap-raster')) {{
+      map.removeLayer('basemap-raster');
+    }}
+
+    const cfg = BASEMAP_CONFIGS[key];
+    if (!cfg) return;
+
+    if (!map.getSource(cfg.sourceId)) {{
+      map.addSource(cfg.sourceId, cfg.sourceDef);
+    }}
+
+    map.addLayer({{
+      id: 'basemap-raster',
+      type: 'raster',
+      source: cfg.sourceId,
+      paint: cfg.paint || {{}}
+    }}, beforeId);
+  }}
+
+  function initLayers() {{
+    switchBasemap(initBasemapKey);
     installLayers();
     updateLegend(document.getElementById('select-color-mode')?.value || 'floors');
+  }}
+
+  map.on('style.load', () => {{
+    initLayers();
   }});
 
-  map.on('error', (e) => {{
-    if (e && e.error && e.error.message && (e.error.message.includes('style') || e.error.message.includes('fetch'))) {{
-      console.warn('Сбой загрузки стиля подложки, переключаемся на OSM / холст:', e.error);
-      try {{
-        map.setStyle(BASEMAP_STYLES.osm || BASEMAP_STYLES.none);
-      }} catch (err) {{}}
-    }}
-  }});
+  if (map.isStyleLoaded()) {{
+    initLayers();
+  }}
 
   function fitToData(animated = true) {{
     map.resize();
@@ -1030,26 +1018,16 @@ def generate_3d_viewer_html(
     if (mapEl) ro.observe(mapEl);
   }}
 
-  const addLayers = installLayers;
-
-  map.once('load', function() {{
-    addLayers();
-    // Ждём реального размера контейнера
-    function waitForSize() {{
-      var el = document.getElementById('map');
-      if (el.clientWidth > 50 && el.clientHeight > 50) {{
-        map.resize();
-        fitToData();
-      }} else {{
-        requestAnimationFrame(waitForSize);
-      }}
+  function waitForSize() {{
+    var el = document.getElementById('map');
+    if (el && el.clientWidth > 50 && el.clientHeight > 50) {{
+      map.resize();
+      fitToData(false);
+    }} else {{
+      requestAnimationFrame(waitForSize);
     }}
-    requestAnimationFrame(waitForSize);
-  }});
-
-  if (map.isStyleLoaded()) {{
-    installLayers();
   }}
+  requestAnimationFrame(waitForSize);
 
   window.addEventListener('resize', () => {{
     map.resize();
@@ -1057,33 +1035,25 @@ def generate_3d_viewer_html(
 
   window.addEventListener('message', function(e) {{
     if (e.data && (e.data.type === 'activate' || e.data.type === 'resize')) {{
-      setTimeout(function() {{ map.resize(); fitToData(); }}, 50);
-      setTimeout(function() {{ map.resize(); fitToData(); }}, 300);
+      setTimeout(function() {{ map.resize(); fitToData(false); }}, 50);
+      setTimeout(function() {{ map.resize(); fitToData(false); }}, 300);
     }}
   }});
-
-  async function switchBasemap(key) {{
-    const target = BASEMAP_STYLES[key];
-    if (!target) return;
-    try {{
-      if (typeof target === 'string') {{
-        const resp = await fetch(target);
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const styleObj = await resp.json();
-        map.setStyle(styleObj);
-      }} else {{
-        map.setStyle(target);
-      }}
-    }} catch (e) {{
-      console.warn('Подложка ' + key + ' недоступна, переключаемся на OSM / холст:', e);
-      map.setStyle(BASEMAP_STYLES.osm || BASEMAP_STYLES.none);
-    }}
-  }}
 
   // Панель: скрыть/показать
   const uiPanel = document.getElementById('ui-panel');
   const btnHide = document.getElementById('btn-hide-panel');
   const btnShow = document.getElementById('btn-show-panel');
+
+  // Если встроено во фрейм дашборда (standalone=False) или экран узкий (< 720px) —
+  // сворачиваем панель ТЭП по умолчанию, чтобы она не перекрывала 3D-сцену
+  const isEmbedded = !{str(standalone).lower()};
+  if (isEmbedded || window.innerWidth < 720) {{
+    if (uiPanel) {{
+      uiPanel.classList.add('collapsed');
+      if (btnShow) btnShow.style.display = 'block';
+    }}
+  }}
 
   if (btnHide && btnShow && uiPanel) {{
     btnHide.addEventListener('click', () => {{

@@ -288,6 +288,8 @@ class Optimizer:
                 urban_block_size=self.base_placement_config.urban_block_size,
                 internal_road_width=self.base_placement_config.internal_road_width,
                 perimeter_layout_style=self.base_placement_config.perimeter_layout_style,
+                max_bcr=self.base_placement_config.max_bcr,
+                max_far=self.base_placement_config.max_far,
             )
             buildings = engine.generate(placement_config)
 
