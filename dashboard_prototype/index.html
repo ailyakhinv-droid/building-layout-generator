@@ -898,14 +898,20 @@
 
           <div class="control-row">
             <label class="control-label" for="cfg-dwg-assigned-cad">Присвоить кадастровый номер / регион</label>
-            <input type="text" class="input-text" id="cfg-dwg-assigned-cad" value="63:01:0709002:2320" placeholder="Кадастровый номер для РНГП" />
+            <input type="text" class="input-text" id="cfg-dwg-assigned-cad" value="" placeholder="Например: 72:23:0222001:16187 или адрес" />
           </div>
 
           <!-- Выбор системы координат МСК -->
           <div class="control-row" id="cad-msk-container">
-            <label class="control-label" for="cfg-cad-msk-zone">Система координат (МСК)</label>
-            <select class="select-custom" id="cfg-cad-msk-zone" style="width:100%;">
-              <option value="">(Автоопределение по чертежу и региону)</option>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+              <label class="control-label" for="cfg-cad-msk-zone" style="margin-bottom:0;">Система координат (МСК)</label>
+              <span id="msk-detected-badge" style="font-size:10px; font-weight:700; color:var(--primary); background:rgba(37,99,235,0.08); padding:2px 6px; border-radius:4px;">Регион</span>
+            </div>
+            <select class="select-custom" id="cfg-cad-msk-zone" style="width:100%; font-weight:600;">
+              <option value="">(Автоопределение по чертежу и кадастру)</option>
+              <option value="МСК-72 Зона 1 (Тюмень)" selected>МСК-72 Зона 1 (Тюмень / ЖК Акватория)</option>
+              <option value="МСК г. Тюмени">МСК г. Тюмени</option>
+              <option value="МСК-72 Зона 2 (Тобольск / Ишим)">МСК-72 Зона 2 (Тобольск / Ишим)</option>
               <option value="МСК-63 Зона 1 (Самара)">МСК-63 Зона 1 (Самара)</option>
               <option value="МСК-63 Зона 2 (Тольятти / Сызрань)">МСК-63 Зона 2 (Тольятти / Сызрань)</option>
               <option value="МСК-77 (Москва)">МСК-77 (Москва)</option>
@@ -915,9 +921,6 @@
               <option value="МСК-16 Зона 1 (Татарстан / Казань)">МСК-16 Зона 1 (Татарстан / Казань)</option>
               <option value="МСК-66 Зона 1 (Свердловская обл. / Екатеринбург)">МСК-66 Зона 1 (Свердловская обл. / Екатеринбург)</option>
               <option value="МСК-23 Зона 1 (Краснодарский край)">МСК-23 Зона 1 (Краснодарский край)</option>
-              <option value="МСК-72 Зона 1 (Тюмень)">МСК-72 Зона 1 (Тюмень)</option>
-              <option value="МСК г. Тюмени">МСК г. Тюмени</option>
-              <option value="МСК-72 Зона 2 (Тобольск / Ишим)">МСК-72 Зона 2 (Тобольск / Ишим)</option>
               <option value="МСК-22 Зона 2 (Барнаул)">МСК-22 Зона 2 (Барнаул)</option>
             </select>
           </div>
@@ -948,6 +951,16 @@
             <div class="control-row">
               <label class="control-label" for="cfg-dwg-lon">Долгота (Lon)</label>
               <input type="number" class="input-text" id="cfg-dwg-lon" value="0.0" step="0.0001" placeholder="0.0 — авто" />
+            </div>
+          </div>
+
+          <!-- Интерактивная посадка кликом на карте -->
+          <div class="control-row" style="margin-top:4px;">
+            <button type="button" id="btn-pick-map-point" class="btn btn-secondary" style="width:100%; display:flex; align-items:center; justify-content:center; gap:6px; font-weight:600; padding:8px 12px; border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
+              <span id="pick-map-btn-icon">📍</span> <span id="pick-map-btn-text">Указать посадку кликом на карте</span>
+            </button>
+            <div id="pick-map-hint" style="display:none; font-size:11px; color:#1e40af; background:#eff6ff; border:1px solid #bfdbfe; border-radius:4px; padding:6px 10px; margin-top:6px; line-height:1.4;">
+              🎯 <b>Режим посадки активен:</b> кликните в любое место на карте, чтобы мгновенно перенести туда центр участка.
             </div>
           </div>
         </div>
@@ -1832,6 +1845,11 @@
       const cfgDwgLat = document.getElementById("cfg-dwg-lat");
       const cfgDwgLon = document.getElementById("cfg-dwg-lon");
       const cfgCadMskZone = document.getElementById("cfg-cad-msk-zone");
+      const btnPickMapPoint = document.getElementById("btn-pick-map-point");
+      const pickMapBtnIcon = document.getElementById("pick-map-btn-icon");
+      const pickMapBtnText = document.getElementById("pick-map-btn-text");
+      const pickMapHint = document.getElementById("pick-map-hint");
+      let isPickingMapPoint = false;
       const cadInspectCard = document.getElementById("cad-inspect-card");
       const cadCardTitle = document.getElementById("cad-card-title");
       const cadCardStatus = document.getElementById("cad-card-status");
@@ -2571,6 +2589,43 @@
         });
       }
 
+      function togglePickMapPoint(forceState) {
+        isPickingMapPoint = forceState !== undefined ? forceState : !isPickingMapPoint;
+        if (isPickingMapPoint) {
+          if (btnPickMapPoint) {
+            btnPickMapPoint.classList.add("btn-active");
+            btnPickMapPoint.style.background = "#fee2e2";
+            btnPickMapPoint.style.borderColor = "#ef4444";
+            btnPickMapPoint.style.color = "#b91c1c";
+          }
+          if (pickMapBtnIcon) pickMapBtnIcon.textContent = "❌";
+          if (pickMapBtnText) pickMapBtnText.textContent = "Отменить выбор точки";
+          if (pickMapHint) pickMapHint.style.display = "block";
+          switchMainTab("map");
+          const ifr = document.getElementById("iframe-osm");
+          if (ifr && ifr.contentWindow) {
+            ifr.contentWindow.postMessage({ type: "startPickPoint" }, "*");
+          }
+        } else {
+          if (btnPickMapPoint) {
+            btnPickMapPoint.classList.remove("btn-active");
+            btnPickMapPoint.style.background = "";
+            btnPickMapPoint.style.borderColor = "";
+            btnPickMapPoint.style.color = "";
+          }
+          if (pickMapBtnIcon) pickMapBtnIcon.textContent = "📍";
+          if (pickMapBtnText) pickMapBtnText.textContent = "Указать посадку кликом на карте";
+          if (pickMapHint) pickMapHint.style.display = "none";
+          const ifr = document.getElementById("iframe-osm");
+          if (ifr && ifr.contentWindow) {
+            ifr.contentWindow.postMessage({ type: "cancelPickPoint" }, "*");
+          }
+        }
+      }
+      if (btnPickMapPoint) {
+        btnPickMapPoint.addEventListener("click", () => togglePickMapPoint());
+      }
+
       cfgGenMode.addEventListener("change", e => {
         cfgTargetContainer.style.display = e.target.value === "target" ? "flex" : "none";
       });
@@ -2773,7 +2828,7 @@
             base.cad_filename = uploadedCadFilename;
           }
         } else {
-          base.assigned_cad_query = cfgDwgAssignedCad.value.trim() || "63:01:0709002:2320";
+          base.assigned_cad_query = cfgDwgAssignedCad.value.trim();
           base.boundary_layer = cfgBoundaryLayer.value || null;
           base.red_lines_layer = cfgRedlineLayer.value || null;
           if (uploadedCadBase64) {
@@ -2968,6 +3023,25 @@
       });
       // Прослушивание сообщений от интерактивной карты Leaflet
       window.addEventListener("message", function(e) {
+        if (e.data && e.data.type === "mapPointPicked") {
+          const pLat = Number(e.data.lat);
+          const pLon = Number(e.data.lon);
+          togglePickMapPoint(false);
+          userHasEnteredManualCoords = true;
+          userHasMovedSite = true;
+          currentSiteLat = pLat;
+          currentSiteLon = pLon;
+          if (cfgDwgLat) cfgDwgLat.value = pLat.toFixed(6);
+          if (cfgDwgLon) cfgDwgLon.value = pLon.toFixed(6);
+          if (cfgManualLat) cfgManualLat.value = pLat.toFixed(6);
+          if (cfgManualLon) cfgManualLon.value = pLon.toFixed(6);
+          if (siteCoordsLabel) {
+            siteCoordsLabel.textContent = `WGS-84: [${pLat.toFixed(5)}, ${pLon.toFixed(5)}]`;
+          }
+          loadSitePreview(false);
+          return;
+        }
+
         if (!e.data || !e.data.isMapTransform) return;
         const t = e.data.transform;
         if (!t) return;

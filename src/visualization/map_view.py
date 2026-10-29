@@ -617,8 +617,43 @@ def generate_leaflet_map_html(
             }});
         }}
 
+        // Режим клика по карте для точной интерактивной посадки участка
+        var _isPickingMapPoint = false;
+        window.addEventListener('message', function(ev) {{
+            if (!ev.data) return;
+            if (ev.data.type === 'startPickPoint') {{
+                _isPickingMapPoint = true;
+                map.getContainer().style.cursor = 'crosshair';
+            }} else if (ev.data.type === 'cancelPickPoint') {{
+                _isPickingMapPoint = false;
+                map.getContainer().style.cursor = '';
+            }}
+        }});
+
+        map.on('click', function(e) {{
+            if (_isPickingMapPoint) {{
+                _isPickingMapPoint = false;
+                map.getContainer().style.cursor = '';
+                window.parent.postMessage({{
+                    type: 'mapPointPicked',
+                    lat: Number(e.latlng.lat.toFixed(6)),
+                    lon: Number(e.latlng.lng.toFixed(6))
+                }}, '*');
+            }}
+        }});
+
         // Информационный попап по клику на контур (только если не было перетаскивания)
         boundaryPolygon.on('click', function(e) {{
+            if (_isPickingMapPoint) {{
+                _isPickingMapPoint = false;
+                map.getContainer().style.cursor = '';
+                window.parent.postMessage({{
+                    type: 'mapPointPicked',
+                    lat: Number(e.latlng.lat.toFixed(6)),
+                    lon: Number(e.latlng.lng.toFixed(6))
+                }}, '*');
+                return;
+            }}
             if (boundaryPolygon.dragging && boundaryPolygon.dragging.moved()) return;
             var p = boundaryData.properties;
             var html = '<div class="popup-card">' +

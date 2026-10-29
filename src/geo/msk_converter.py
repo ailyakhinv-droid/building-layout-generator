@@ -160,30 +160,30 @@ MSK_PRESETS: dict[str, dict[str, Any]] = {
     "МСК-72 Зона 1 (Тюмень)": {
         "region": "Тюменская область",
         "city": "Тюмень",
-        "central_meridian": 65.96666667,  # 65° 58' E (Тюмень / Заречный / Алебашево)
+        "central_meridian": 66.08333333333333,  # 66° 05' E (Тюмень / ЖК Акватория / СК-63 C3)
         "latitude_of_origin": 0.0,
         "false_northing": -6000000.0,
         "false_easting": 1500000.0,
         "scale_factor": 1.0,
-        "L0_deg": 65.96666667,
+        "L0_deg": 66.08333333333333,
         "x0": -6000000.0,
         "y0": 1500000.0,
-        "default_lat": 57.1600,
-        "default_lon": 65.5560,
+        "default_lat": 57.161069,
+        "default_lon": 65.674079,
     },
     "МСК г. Тюмени": {
         "region": "Тюменская область",
         "city": "Тюмень",
-        "central_meridian": 65.96666667,  # 65° 58' E
+        "central_meridian": 66.08333333333333,  # 66° 05' E
         "latitude_of_origin": 0.0,
         "false_northing": -6000000.0,
         "false_easting": 1500000.0,
         "scale_factor": 1.0,
-        "L0_deg": 65.96666667,
+        "L0_deg": 66.08333333333333,
         "x0": -6000000.0,
         "y0": 1500000.0,
-        "default_lat": 57.1600,
-        "default_lon": 65.5560,
+        "default_lat": 57.161069,
+        "default_lon": 65.674079,
     },
     "МСК-72 Зона 2 (Тобольск / Ишим)": {
         "region": "Тюменская область",
@@ -593,7 +593,7 @@ def msk_to_wgs84_coords(
     # Варианты Центрального меридиана (L0)
     l0_options = [p["L0_deg"]]
     if "72" in canonical_key or "Тюмен" in canonical_key:
-        for alt_l0 in [65.96666667, 66.0, 66.03333333, 66.05, 65.51666667]:
+        for alt_l0 in [66.08333333333333, 65.96666667, 66.0, 66.03333333, 66.05, 65.51666667]:
             if alt_l0 not in l0_options:
                 l0_options.append(alt_l0)
     elif "63" in canonical_key or "Самар" in canonical_key:
@@ -682,23 +682,35 @@ def detect_msk_by_coordinates(
 
     # Если передан код региона — приоритетно используем его
     if region_hint:
-        clean_hint = str(region_hint).strip()
+        clean_hint = str(region_hint).strip().lower()
         c_hint = clean_hint.zfill(2)
-        if c_hint == "63" or "самар" in clean_hint.lower():
-            return "МСК-63 Зона 2 (Тольятти)" if v_large > 2000000.0 else "МСК-63 Зона 1 (Самара)"
-        elif c_hint == "50" or "москов" in clean_hint.lower():
-            return "МСК-50 Зона 2 (МО Восток)" if v_large > 2000000.0 else "МСК-50 Зона 1 (МО Запад)"
-        elif c_hint == "72" or "тюмен" in clean_hint.lower():
+        if c_hint == "72" or "тюмен" in clean_hint:
             return "МСК-72 Зона 2 (Тобольск / Ишим)" if v_large > 2000000.0 else "МСК-72 Зона 1 (Тюмень)"
-        elif c_hint == "77" or "москв" in clean_hint.lower():
+        elif c_hint == "63" or "самар" in clean_hint:
+            return "МСК-63 Зона 2 (Тольятти)" if v_large > 2000000.0 else "МСК-63 Зона 1 (Самара)"
+        elif c_hint == "50" or "москов" in clean_hint:
+            return "МСК-50 Зона 2 (МО Восток)" if v_large > 2000000.0 else "МСК-50 Зона 1 (МО Запад)"
+        elif c_hint == "77" or "москв" in clean_hint:
             return "МСК-77 (Москва)"
-        elif c_hint == "78" or "петербург" in clean_hint.lower():
+        elif c_hint == "78" or "петербург" in clean_hint or "спб" in clean_hint:
             return "МСК-78 (Санкт-Петербург)"
+        elif c_hint == "16" or "татар" in clean_hint or "казан" in clean_hint:
+            return "МСК-16 Зона 1 (Татарстан)"
+        elif c_hint == "66" or "свердл" in clean_hint or "екатерин" in clean_hint:
+            return "МСК-66 Зона 1 (Свердловская обл.)"
+        elif c_hint == "23" or "краснодар" in clean_hint:
+            return "МСК-23 Зона 1 (Краснодар)"
+        elif c_hint == "22" or "алтай" in clean_hint or "барнаул" in clean_hint:
+            return "МСК-22 Зона 2 (Барнаул)"
 
-    # Самарская область (МСК-63 Зона 1, Самара):
-    # X ≈ 350 000..650 000, Y ≈ 1 200 000..1 750 000
-    if 300000 <= v_small <= 650000 and 1200000 <= v_large <= 1750000:
-        return "МСК-63 Зона 1 (Самара)"
+    # Без явного кода региона: если координаты однозначно попадают в специфические диапазоны:
+    # Москва МСК-77: малые координаты 0..50 000
+    if v_small < 50000 and v_large < 50000 and (v_small > 500 or v_large > 500):
+        return "МСК-77 (Москва)"
+
+    # Санкт-Петербург МСК-78 (близко к нулю или условные координаты)
+    if v_small < 100000 and v_large < 150000:
+        return "МСК-78 (Санкт-Петербург)"
 
     # Самарская область (МСК-63 Зона 2, Тольятти):
     # X ≈ 350 000..650 000, Y ≈ 2 200 000..2 750 000

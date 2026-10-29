@@ -211,9 +211,9 @@ def _create_site_from_params(
         red_lines_layer = None
 
     site = None
-    parcel_region_name = "Самарская область"
-    parcel_district_name = "г. Самара"
-    parcel_address = "г. Самара"
+    parcel_region_name = "Тюменская область"
+    parcel_district_name = "г. Тюмень"
+    parcel_address = "г. Тюмень"
     norm_id = "russia_sp42"
 
     # =========================================================================
@@ -250,11 +250,15 @@ def _create_site_from_params(
         if not assigned_cad or assigned_cad == "63:01:0709002:2320":
             if detected_cad:
                 assigned_cad = detected_cad
-            elif not assigned_cad:
-                assigned_cad = "63:01:0709002:2320"
+            else:
+                assigned_cad = ""
 
-        reg_name, dist_name, resolved_norm_id, c_lat, c_lon = smart_resolve_location(assigned_cad)
-        norm_id = resolved_norm_id or "russia_sp42"
+        if assigned_cad:
+            reg_name, dist_name, resolved_norm_id, c_lat, c_lon = smart_resolve_location(assigned_cad)
+            norm_id = resolved_norm_id or "russia_sp42"
+        else:
+            reg_name, dist_name, resolved_norm_id, c_lat, c_lon = "Тюменская область", "г. Тюмень", "russia_sp42", 57.161069, 65.674079
+            norm_id = "russia_sp42"
 
         # Если файл еще не загружен пользователем, подгружаем тестовый контур МСК для мгновенной демонстрации
         if not file_bytes:
@@ -292,38 +296,37 @@ def _create_site_from_params(
             except Exception as e:
                 print(f"Ошибка чтения слоев CAD: {e}")
 
-            comps = parse_cadastral_components(assigned_cad)
-            reg_code = comps.get("region_code") if comps else "63"
+            comps = parse_cadastral_components(assigned_cad) if assigned_cad else {}
+            reg_code = comps.get("region_code") if comps else None
 
             # Определение системы координат МСК
             is_msk = abs(site.base_offset[0]) > 500 or abs(site.base_offset[1]) > 500
             requested_msk = params.get("msk_zone")
             if requested_msk and requested_msk in MSK_PRESETS:
                 detected_msk = requested_msk
-            elif is_msk:
+            elif reg_code:
                 detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
                 if not detected_msk:
                     detected_msk = detect_msk_by_coordinates(site.base_offset[0], site.base_offset[1], region_hint=reg_code)
-                if not detected_msk and reg_code:
-                    detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
-                if not detected_msk:
-                    detected_msk = "МСК-63 Зона 1 (Самара)"
             else:
-                detected_msk = "МСК-63 Зона 1 (Самара)"
+                detected_msk = detect_msk_by_coordinates(site.base_offset[0], site.base_offset[1])
 
-            exp_c = (c_lat, c_lon)
+            if not detected_msk:
+                detected_msk = "МСК-72 Зона 1 (Тюмень)"
+
             if detected_msk in MSK_PRESETS:
                 preset = MSK_PRESETS[detected_msk]
-                if c_lat == 0.0 or c_lon == 0.0 or (assigned_cad == "63:01:0709002:2320" and "63" not in detected_msk):
+                if not assigned_cad or c_lat == 0.0 or c_lon == 0.0 or ("63" in assigned_cad and "63" not in detected_msk) or ("72" in assigned_cad and "72" not in detected_msk):
                     exp_c = (preset["default_lat"], preset["default_lon"])
+                    parcel_region_name = preset.get("region", reg_name or "Российская Федерация")
+                    parcel_district_name = f"г. {preset['city']}" if preset.get("city") else (dist_name or "")
                 else:
                     exp_c = (c_lat, c_lon)
-                parcel_region_name = reg_name if (reg_name and reg_name != "Самарская область") else preset.get("region", reg_name)
-                if dist_name and dist_name != "г. Самара":
-                    parcel_district_name = dist_name
-                elif preset.get("city"):
-                    parcel_district_name = f"г. {preset['city']}"
+                    parcel_region_name = reg_name or preset.get("region", "Российская Федерация")
+                    parcel_district_name = dist_name or (f"г. {preset['city']}" if preset.get("city") else "")
                 norm_id = resolved_norm_id or ("moscow_mngs" if "77" in detected_msk else ("spb_rnp" if "78" in detected_msk else "russia_sp42"))
+            else:
+                exp_c = (c_lat, c_lon)
 
             is_manual_override = (
                 override_lat != 0.0 and override_lon != 0.0
@@ -678,7 +681,7 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
         viewer_3d_data = None
         viewer_3d_html = f"<!-- 3D Preview Error: {e} -->"
 
-    geo_lat, geo_lon = site.geo_center if site.geo_center else (53.2502, 50.3184)
+    geo_lat, geo_lon = site.geo_center if site.geo_center else (57.161069, 65.674079)
     yandex_maps_url = f"https://yandex.ru/maps/?pt={geo_lon:.6f},{geo_lat:.6f}&z=16&l=map"
     pkk_url = f"https://pkk.rosreestr.ru/#/search/{geo_lat:.6f},{geo_lon:.6f}/16"
 
@@ -1137,7 +1140,7 @@ def _package_single_variant(
         viewer_3d_data = None
         viewer_3d_html = f"<!-- 3D: {e} -->"
 
-    geo_lat, geo_lon = site.geo_center if site.geo_center else (53.2502, 50.3184)
+    geo_lat, geo_lon = site.geo_center if site.geo_center else (57.161069, 65.674079)
     yandex_maps_url = f"https://yandex.ru/maps/?pt={geo_lon:.6f},{geo_lat:.6f}&z=16&l=map"
     pkk_url = f"https://pkk.rosreestr.ru/#/search/{geo_lat:.6f},{geo_lon:.6f}/16"
 
