@@ -249,7 +249,7 @@ def generate_3d_viewer_html(
     tep: TEP | None = None,
     title: str = "3D-визуализация застройки участка",
     height: int | str = 600,
-    default_basemap: str = "light",
+    default_basemap: str = "osm",
     standalone: bool = False,
 ) -> str:
     """Сгенерировать HTML-код интерактивного 3D-вьюера на MapLibre GL JS.
@@ -260,7 +260,7 @@ def generate_3d_viewer_html(
         tep: Рассчитанные ТЭП участка (TEP).
         title: Название проекта или страницы.
         height: Высота карты в пикселях или строкой (например, '100%').
-        default_basemap: Начальная подложка ('none', 'light', 'dark').
+        default_basemap: Начальная подложка ('osm', 'light', 'satellite', 'dark', 'none').
         standalone: Если True — готовый полноэкранный HTML-документ для сохранения в файл.
 
     Returns:
@@ -618,8 +618,8 @@ def generate_3d_viewer_html(
     <div class="group">
       <div class="group-title">Картографическая подложка</div>
       <select id="select-basemap">
+        <option value="osm" selected>OpenStreetMap (Схема)</option>
         <option value="light">Светлая архитектурная (OSM Light)</option>
-        <option value="osm">OpenStreetMap (Схема)</option>
         <option value="satellite">Спутник (Esri World Imagery)</option>
         <option value="dark">Тёмная подложка (Esri Dark)</option>
         <option value="none">Без подложки (Холст)</option>
@@ -694,7 +694,7 @@ def generate_3d_viewer_html(
 {data_json_str}
 </script>
 <script>
-  const DATA = JSON.parse(document.getElementById('city-data').textContent);
+  let DATA = JSON.parse(document.getElementById('city-data').textContent);
   window.DATA = DATA;
 
   const BASEMAP_CONFIGS = {{
@@ -726,6 +726,7 @@ def generate_3d_viewer_html(
           'https://c.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png'
         ],
         tileSize: 256,
+        maxzoom: 19,
         attribution: '&copy; OpenStreetMap contributors'
       }},
       paint: {{}}
@@ -791,9 +792,9 @@ def generate_3d_viewer_html(
     return [[minLon, minLat], [maxLon, maxLat]];
   }}
 
-  const siteBounds = computeBounds([DATA.boundary, DATA.buildings]) || [[30.33, 59.93], [30.34, 59.94]];
-  const centerLon = (siteBounds[0][0] + siteBounds[1][0]) / 2;
-  const centerLat = (siteBounds[0][1] + siteBounds[1][1]) / 2;
+  let siteBounds = computeBounds([DATA.boundary, DATA.buildings]) || [[30.33, 59.93], [30.34, 59.94]];
+  let centerLon = (siteBounds[0][0] + siteBounds[1][0]) / 2;
+  let centerLat = (siteBounds[0][1] + siteBounds[1][1]) / 2;
 
   // Оценка начального зума по размеру участка
   const dLon = siteBounds[1][0] - siteBounds[0][0];
@@ -844,8 +845,8 @@ def generate_3d_viewer_html(
       }},
       center: [centerLon, centerLat],
       zoom: initZoom,
-      pitch: 50,
-      bearing: -18,
+      pitch: 45,
+      bearing: 0,
       antialias: true
     }});
     window.map = map;
@@ -1082,6 +1083,11 @@ def generate_3d_viewer_html(
       source: cfg.sourceId,
       paint: cfg.paint || {{}}
     }}, beforeId);
+
+    const sel = document.getElementById('select-basemap');
+    if (sel && sel.value !== key) {{
+      sel.value = key;
+    }}
   }}
 
   function initLayers() {{
@@ -1107,8 +1113,8 @@ def generate_3d_viewer_html(
     try {{
       map.fitBounds(siteBounds, {{
         padding: {{ top: vPad, bottom: vPad, left: leftPad, right: rightPad }},
-        pitch: 50,
-        bearing: -18,
+        pitch: 45,
+        bearing: 0,
         duration: animated ? 800 : 0,
         maxZoom: 18.0
       }});
@@ -1254,7 +1260,12 @@ def generate_3d_viewer_html(
     if (!newData) return;
     DATA = newData;
     window.DATA = newData;
-    siteBounds = computeBounds([DATA.boundary, DATA.buildings]) || [[30.33, 59.93], [30.34, 59.94]];
+    const newBounds = computeBounds([DATA.boundary, DATA.buildings]);
+    if (newBounds) {{
+      siteBounds = newBounds;
+      centerLon = (siteBounds[0][0] + siteBounds[1][0]) / 2;
+      centerLat = (siteBounds[0][1] + siteBounds[1][1]) / 2;
+    }}
 
     if (!map) {{
       initMapIfReady();
@@ -1283,6 +1294,9 @@ def generate_3d_viewer_html(
     if (!e.data) return;
     if (e.data.type === 'loadData' && e.data.data) {{
       updateViewerData(e.data.data);
+      if (e.data.basemap && map) {{
+        switchBasemap(e.data.basemap);
+      }}
     }} else if (e.data.type === 'activate' || e.data.type === 'resize') {{
       if (!map) {{
         initMapIfReady();

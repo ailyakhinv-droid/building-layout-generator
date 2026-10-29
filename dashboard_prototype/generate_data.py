@@ -216,7 +216,7 @@ def generate_scenario_data(cad_query: str, typology: str, target_floors: int, sc
 
     try:
         viewer_3d_data = build_3d_geojson_data(site, buildings, tep)
-        viewer_3d_html = generate_3d_viewer_html(site, buildings, tep, height="640px", default_basemap="light", standalone=False)
+        viewer_3d_html = generate_3d_viewer_html(site, buildings, tep, height="640px", default_basemap="osm", standalone=False)
     except Exception as e:
         viewer_3d_data = None
         viewer_3d_html = f"<!-- 3D Viewer error: {e} -->"

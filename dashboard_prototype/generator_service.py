@@ -203,7 +203,9 @@ def _create_site_from_params(
     override_lat = float(params.get("override_lat", 0.0))
     override_lon = float(params.get("override_lon", 0.0))
 
-    cad_file_b64 = params.get("cad_file_base64")
+    cad_file_b64 = params.get("cad_file_base64") or params.get("cad_file")
+    if cad_file_b64 and isinstance(cad_file_b64, str) and "," in cad_file_b64 and cad_file_b64.startswith("data:"):
+        cad_file_b64 = cad_file_b64.split(",", 1)[1]
     cad_filename = params.get("cad_filename", "contour.dxf")
     boundary_layer = params.get("boundary_layer") or None
     red_lines_layer = params.get("red_lines_layer") or None
@@ -469,7 +471,7 @@ def _create_site_from_params(
 
                 # Если чертеж содержит геодезические координаты МСК и не задан ручной override
                 is_sub_msk = abs(sub_site.base_offset[0]) > 500 or abs(sub_site.base_offset[1]) > 500
-                det_sub_msk = "МСК-63 Зона 1 (Самара)"
+                det_sub_msk = "МСК-72 Зона 1 (Тюмень)"
                 if is_sub_msk and (override_lat == 0.0 or override_lon == 0.0):
                     requested_msk = params.get("msk_zone")
                     if requested_msk and requested_msk in MSK_PRESETS:
@@ -484,7 +486,7 @@ def _create_site_from_params(
                         if not det_sub_msk:
                             det_sub_msk = detect_msk_by_coordinates(sub_site.base_offset[0], sub_site.base_offset[1], region_hint=c_reg)
                         if not det_sub_msk:
-                            det_sub_msk = "МСК-63 Зона 1 (Самара)"
+                            det_sub_msk = "МСК-72 Зона 1 (Тюмень)"
 
                     exp_lat, exp_lon = auto_lat, auto_lon
                     sub_det_cad = sub_meta.get("detected_cadastre")
@@ -1139,7 +1141,7 @@ def _package_single_variant(
 
     try:
         viewer_3d_data = build_3d_geojson_data(site, buildings, tep)
-        viewer_3d_html = generate_3d_viewer_html(site, buildings, tep, height="640px", default_basemap="light", standalone=False)
+        viewer_3d_html = generate_3d_viewer_html(site, buildings, tep, height="640px", default_basemap="osm", standalone=False)
     except Exception as e:
         viewer_3d_data = None
         viewer_3d_html = f"<!-- 3D: {e} -->"

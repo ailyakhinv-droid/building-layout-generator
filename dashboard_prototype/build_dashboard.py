@@ -2816,7 +2816,7 @@ def build():
                   iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
                   iframe3d.contentWindow.dispatchEvent(new Event("resize"));
                   if (currentScenario && currentScenario.viewer_3d_data) {{
-                    iframe3d.contentWindow.postMessage({{ type: "loadData", data: currentScenario.viewer_3d_data }}, "*");
+                    iframe3d.contentWindow.postMessage({{ type: "loadData", data: currentScenario.viewer_3d_data, basemap: "osm" }}, "*");
                   }}
                 }}
               }} catch (_) {{}}
@@ -3585,7 +3585,7 @@ def build():
         const iframe3d = view3d.querySelector("iframe");
         if (iframe3d && iframe3d.contentWindow && s.viewer_3d_data) {{
           try {{
-            iframe3d.contentWindow.postMessage({{ type: "loadData", data: s.viewer_3d_data }}, "*");
+            iframe3d.contentWindow.postMessage({{ type: "loadData", data: s.viewer_3d_data, basemap: "osm" }}, "*");
           }} catch (_) {{}}
         }}
       }}
@@ -4142,7 +4142,7 @@ def build():
         if (e.data && e.data.type === "viewer3dReady") {{
           const iframe3d = document.getElementById("iframe-3d");
           if (iframe3d && iframe3d.contentWindow && currentScenario && currentScenario.viewer_3d_data) {{
-            iframe3d.contentWindow.postMessage({{ type: "loadData", data: currentScenario.viewer_3d_data }}, "*");
+            iframe3d.contentWindow.postMessage({{ type: "loadData", data: currentScenario.viewer_3d_data, basemap: "osm" }}, "*");
           }}
         }}
       }});
