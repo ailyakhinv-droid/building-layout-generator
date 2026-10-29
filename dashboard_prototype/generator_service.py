@@ -891,9 +891,11 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     )
 
     # Вариант 2 (Максимум GFA)
-    v2_floors = min(24, max(target_floors + 3, 16))
+    # Даже при максимальной застройке предельная этажность и высотность строго учитываются
+    max_f_cap = 25
     if max_building_height_m and max_building_height_m > 0:
-        v2_floors = min(v2_floors, int(max_building_height_m // floor_height))
+        max_f_cap = min(max_f_cap, int(max_building_height_m // floor_height))
+    v2_floors = min(max_f_cap, target_floors)
     v2_cfg = PlacementConfig(
         target_floors=v2_floors,
         max_sections_per_building=max(max_sections, 10),
@@ -932,8 +934,10 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         var2["variant_name"] = "Максимум GFA"
         var2["variant_tag"] = "Инвестиционный"
 
-    # Вариант 3 (Комфорт-класс)
-    v3_floors = max(8, min(target_floors - 3, 11))
+    # Вариант 3 (Комфорт-класс) — пониженная этажность с акцентом на просторные дворы
+    v3_floors = max(3, min(target_floors, target_floors - 2)) if target_floors > 5 else target_floors
+    if max_building_height_m and max_building_height_m > 0:
+        v3_floors = min(v3_floors, int(max_building_height_m // floor_height))
     v3_cfg = PlacementConfig(
         target_floors=v3_floors,
         max_sections_per_building=max(2, max_sections - 2),

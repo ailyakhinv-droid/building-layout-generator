@@ -208,10 +208,14 @@ class Optimizer:
             if self.base_placement_config.ground_floor_height is not None
             else self.config.get("ground_floor_height", floor_h)
         )
-        if max_h and max_h > 0:
+        if max_h and float(max_h) > 0:
             extra_first = max(0.0, float(ground_h) - float(floor_h))
             max_f_from_h = max(1, int((float(max_h) - extra_first) // float(floor_h)))
             max_f = min(max_f, max_f_from_h)
+
+        # Ограничение по целевой этажности пользователя (потолок этажности)
+        if self.base_placement_config.target_floors and self.base_placement_config.target_floors > 0:
+            max_f = min(max_f, int(self.base_placement_config.target_floors))
 
         if min_f > max_f:
             min_f = max_f

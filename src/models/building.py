@@ -41,9 +41,11 @@ class PlacedSection:
     ground_floor_height: float | None = None
 
     def __post_init__(self) -> None:
-        """Установить этажность по умолчанию, если не задана."""
+        """Установить этажность по умолчанию, если не задана, и ограничить максимумом секции."""
         if self.floors <= 0:
             self.floors = self.section_type.default_floors
+        else:
+            self.floors = max(1, min(self.floors, self.section_type.max_floors))
 
     @property
     def footprint(self) -> Polygon:
@@ -198,8 +200,10 @@ class Building:
 
     @property
     def height(self) -> float:
-        """Высота здания в метрах (максимальная этажность × высота этажа)."""
-        return self.floors * _DEFAULT_FLOOR_HEIGHT
+        """Высота здания в метрах (максимальная высота среди размещенных секций)."""
+        if not self.sections:
+            return 0.0
+        return max((section.height for section in self.sections), default=0.0)
 
     def get_apartment_count(self) -> dict[str, dict[str, int]]:
         """Получить детальную раскладку квартир по секциям.

@@ -2527,10 +2527,31 @@
         setRotation(parseInt(e.target.value, 10) || 0, false, true);
       });
 
-      cfgFloorsSlider.addEventListener("input", e => cfgFloorsBadge.textContent = `${e.target.value} эт.`);
-      cfgMaxSectionsSlider.addEventListener("input", e => cfgMaxSectionsBadge.textContent = e.target.value);
-      cfgFarSlider.addEventListener("input", e => cfgFarBadge.textContent = Number(e.target.value).toFixed(2));
-      cfgBcrSlider.addEventListener("input", e => cfgBcrBadge.textContent = `${Math.round(e.target.value * 100)}%`);
+      let regenerateTimer = null;
+      function scheduleRegeneration() {
+        if (!isSiteLocked) return;
+        if (regenerateTimer) clearTimeout(regenerateTimer);
+        regenerateTimer = setTimeout(() => {
+          lockSiteAndGenerate();
+        }, 500);
+      }
+
+      cfgFloorsSlider.addEventListener("input", e => {
+        cfgFloorsBadge.textContent = `${e.target.value} эт.`;
+        scheduleRegeneration();
+      });
+      cfgMaxSectionsSlider.addEventListener("input", e => {
+        cfgMaxSectionsBadge.textContent = e.target.value;
+        scheduleRegeneration();
+      });
+      cfgFarSlider.addEventListener("input", e => {
+        cfgFarBadge.textContent = Number(e.target.value).toFixed(2);
+        scheduleRegeneration();
+      });
+      cfgBcrSlider.addEventListener("input", e => {
+        cfgBcrBadge.textContent = `${Math.round(e.target.value * 100)}%`;
+        scheduleRegeneration();
+      });
 
       // Переключение пресетов участков (автоматически сбрасывает на Шаг 1)
       cfgParcelPresets.addEventListener("change", e => {
@@ -2628,7 +2649,23 @@
 
       cfgGenMode.addEventListener("change", e => {
         cfgTargetContainer.style.display = e.target.value === "target" ? "flex" : "none";
+        scheduleRegeneration();
       });
+      if (cfgTypology) {
+        cfgTypology.addEventListener("change", () => {
+          scheduleRegeneration();
+        });
+      }
+      if (cfgMaxH) cfgMaxH.addEventListener("change", scheduleRegeneration);
+      if (cfgFloorH) cfgFloorH.addEventListener("change", scheduleRegeneration);
+      if (cfgCascadeFloors) cfgCascadeFloors.addEventListener("change", scheduleRegeneration);
+      if (cfgAsymmetricWings) cfgAsymmetricWings.addEventListener("change", scheduleRegeneration);
+      if (cfgTowersMixed) cfgTowersMixed.addEventListener("change", scheduleRegeneration);
+      if (cfgVarInsolation) cfgVarInsolation.addEventListener("change", scheduleRegeneration);
+      if (cfgCourtOrient) cfgCourtOrient.addEventListener("change", scheduleRegeneration);
+      if (cfgRegionalNorm) cfgRegionalNorm.addEventListener("change", scheduleRegeneration);
+      if (cfgTargetMetric) cfgTargetMetric.addEventListener("change", scheduleRegeneration);
+      if (cfgTargetVal) cfgTargetVal.addEventListener("change", scheduleRegeneration);
 
       // Чипсы секций
       function renderPrefSectionChips() {
@@ -2650,6 +2687,7 @@
       function updatePreferredSections() {
         preferredSectionIds = Array.from(prefSectionsContainer.querySelectorAll(".section-chip.selected")).map(c => c.getAttribute("data-id"));
         prefCountHint.textContent = preferredSectionIds.length ? `Выбрано: ${preferredSectionIds.length}` : "Все типы";
+        scheduleRegeneration();
       }
 
       function renderCatalogCards() {

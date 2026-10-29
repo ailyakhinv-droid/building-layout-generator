@@ -731,8 +731,24 @@ class PerimeterPlacementEngine:
         if raw_bcr is None and isinstance(self.config, dict):
             raw_bcr = self.config.get("max_bcr")
         max_bcr = float(raw_bcr) if raw_bcr is not None and float(raw_bcr) > 0 else None
+
+        raw_far = _get_val("max_far", None)
+        if raw_far is None and isinstance(self.config, dict):
+            raw_far = self.config.get("max_far")
+        max_far = float(raw_far) if raw_far is not None and float(raw_far) > 0 else None
+
+        raw_max_h = _get_val("max_building_height_m", None)
+        if raw_max_h is None and isinstance(self.config, dict):
+            raw_max_h = self.config.get("max_building_height_m")
+        max_h = float(raw_max_h) if raw_max_h is not None and float(raw_max_h) > 0 else None
+        if max_h:
+            extra_first = max(0.0, float(gr_h or fl_h) - fl_h)
+            max_floors_from_h = max(1, int((max_h - extra_first) // fl_h))
+            target_floors = min(target_floors, max_floors_from_h)
+
         site_area = getattr(self.site, "area", 0.0) or 0.0
         allowed_fp = site_area * max_bcr if max_bcr and site_area > 0 else None
+        allowed_gfa = site_area * max_far if max_far and site_area > 0 else None
 
         corner_sec = corner_pool[0] if corner_pool else self.library.get_corner_sections()[0]
         end_sec = end_pool[0] if end_pool else self.library.get_end_sections()[0]
@@ -752,6 +768,10 @@ class PerimeterPlacementEngine:
             if allowed_fp is not None:
                 cur_fp = sum(b.footprint.area for b in all_buildings)
                 if cur_fp >= allowed_fp * 0.999:
+                    break
+            if allowed_gfa is not None:
+                cur_gfa = sum(b.total_gfa for b in all_buildings)
+                if cur_gfa >= allowed_gfa * 0.999:
                     break
 
             block_rot = rotate(block, -angle, origin=(0, 0))
@@ -774,6 +794,10 @@ class PerimeterPlacementEngine:
                 if allowed_fp is not None:
                     cur_fp = sum(b.footprint.area for b in all_buildings)
                     if cur_fp + bldg.footprint.area > allowed_fp * 1.005:
+                        continue
+                if allowed_gfa is not None:
+                    cur_gfa = sum(b.total_gfa for b in all_buildings)
+                    if cur_gfa + bldg.total_gfa > allowed_gfa * 1.005:
                         continue
 
                 if buildable_area.buffer(0.5).contains(bldg.footprint):
