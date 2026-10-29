@@ -249,7 +249,16 @@ def _create_site_from_params(
             except Exception:
                 pass
 
-        if not assigned_cad or assigned_cad == "63:01:0709002:2320":
+        # Фильтруем фиктивный номер 63:01:0709002:2320 если имя файла явно указывает на другой регион/город
+        fn_lower = (cad_filename or "").lower()
+        if detected_cad == "63:01:0709002:2320" and any(k in fn_lower for k in ["тюмен", "72", "москв", "77", "спб", "петербург", "78"]):
+            detected_cad = None
+
+        # Если файл свежезагружен (cad_file_b64 передан) и в нем обнаружен кадастровый номер,
+        # он имеет приоритет над старым assigned_cad из предыдущего файла/сессии
+        if cad_file_b64 and detected_cad:
+            assigned_cad = detected_cad
+        elif not assigned_cad or assigned_cad == "63:01:0709002:2320":
             if detected_cad:
                 assigned_cad = detected_cad
             else:

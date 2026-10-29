@@ -102,7 +102,7 @@ class RoadSlicer:
                 # Поперечная дорога (горизонтальный разрез)
                 lines.append(LineString([(minx - pad, cy), (maxx + pad, cy)]))
 
-        elif preset in ("cross_2x2", "cross", "grid"):
+        elif preset in ("cross_2x2", "cross", "grid", "grid_2x2"):
             lines.append(LineString([(minx - pad, cy), (maxx + pad, cy)]))
             lines.append(LineString([(cx, miny - pad), (cx, maxy + pad)]))
 

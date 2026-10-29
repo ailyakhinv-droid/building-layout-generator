@@ -2335,6 +2335,16 @@ def build():
           return;
         }}
 
+        // СБРОС устаревших параметров от предыдущего файла
+        if (cfgDwgAssignedCad) cfgDwgAssignedCad.value = "";
+        if (cfgBoundaryLayer) cfgBoundaryLayer.value = "";
+        if (cfgRedlineLayer) cfgRedlineLayer.value = "";
+        if (cfgCadMskZone) cfgCadMskZone.value = "";
+        if (cfgDwgLat) cfgDwgLat.value = "";
+        if (cfgDwgLon) cfgDwgLon.value = "";
+        if (cfgManualLat) cfgManualLat.value = "";
+        if (cfgManualLon) cfgManualLon.value = "";
+
         cadMainBadge.style.display = "inline-flex";
         cadMainBadge.className = "file-badge";
         cadMainBadge.textContent = `⏳ Загрузка ${{file.name}}...`;

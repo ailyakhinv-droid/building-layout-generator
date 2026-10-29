@@ -668,6 +668,10 @@ def generate_3d_viewer_html(
         <span class="count-badge" id="count-surroundings">0 зд.</span>
       </label>
       <label class="toggle-row">
+        <input type="checkbox" id="toggle-roads" checked>
+        <span>Улично-дорожная сеть</span>
+      </label>
+      <label class="toggle-row">
         <input type="checkbox" id="toggle-buildable" checked>
         <span>Зона допустимой застройки</span>
       </label>
@@ -932,22 +936,62 @@ def generate_3d_viewer_html(
   }}
 
   function installLayers() {{
-    // 1. Граница участка
+    const emptyFC = {{ type: 'FeatureCollection', features: [] }};
+
+    // 1. Источники данных (всегда регистрируются)
     if (!map.getSource('boundary')) {{
-      map.addSource('boundary', {{ type: 'geojson', data: DATA.boundary }});
-    }} else {{
+      map.addSource('boundary', {{ type: 'geojson', data: DATA.boundary || emptyFC }});
+    }} else if (DATA.boundary) {{
       map.getSource('boundary').setData(DATA.boundary);
     }}
+
+    if (!map.getSource('buildable')) {{
+      map.addSource('buildable', {{ type: 'geojson', data: DATA.buildable || emptyFC }});
+    }} else if (DATA.buildable) {{
+      map.getSource('buildable').setData(DATA.buildable);
+    }}
+
+    if (!map.getSource('red_lines')) {{
+      map.addSource('red_lines', {{ type: 'geojson', data: DATA.red_lines || emptyFC }});
+    }} else if (DATA.red_lines) {{
+      map.getSource('red_lines').setData(DATA.red_lines);
+    }}
+
+    if (!map.getSource('roads')) {{
+      map.addSource('roads', {{ type: 'geojson', data: DATA.roads || emptyFC }});
+    }} else if (DATA.roads) {{
+      map.getSource('roads').setData(DATA.roads);
+    }}
+
+    if (!map.getSource('surroundings')) {{
+      map.addSource('surroundings', {{ type: 'geojson', data: DATA.surroundings || emptyFC }});
+    }} else if (DATA.surroundings) {{
+      map.getSource('surroundings').setData(DATA.surroundings);
+    }}
+
+    if (!map.getSource('buildings')) {{
+      map.addSource('buildings', {{ type: 'geojson', data: DATA.buildings || emptyFC }});
+    }} else if (DATA.buildings) {{
+      map.getSource('buildings').setData(DATA.buildings);
+    }}
+
+    // Слой-разделитель: плоские векторные слои (граница, дороги, красные линии)
+    // должны ВСЕГДА ложиться НИЖЕ 3D-зданий и фонового окружения
+    const beforeVectorId = (map.getLayer('surroundings-3d') && 'surroundings-3d') ||
+                           (map.getLayer('buildings-3d') && 'buildings-3d') ||
+                           undefined;
+
+    // 2. Граница участка (полупрозрачная заливка + контрастная линия)
     if (!map.getLayer('boundary-fill')) {{
       map.addLayer({{
         id: 'boundary-fill',
         type: 'fill',
         source: 'boundary',
         paint: {{
-          'fill-color': '#cbd5e1',
-          'fill-opacity': 0.25
+          'fill-color': '#3b82f6',
+          'fill-opacity': 0.12
         }}
-      }});
+      }}, beforeVectorId);
     }}
     if (!map.getLayer('boundary-line')) {{
       map.addLayer({{
@@ -956,138 +1000,105 @@ def generate_3d_viewer_html(
         source: 'boundary',
         paint: {{
           'line-color': '#0f172a',
-          'line-width': 2.8,
+          'line-width': 3.2,
           'line-dasharray': [3, 1.5]
         }}
-      }});
+      }}, beforeVectorId);
     }}
 
-    // 2. Зона допустимой застройки
-    if (DATA.buildable.features && DATA.buildable.features.length) {{
-      if (!map.getSource('buildable')) {{
-        map.addSource('buildable', {{ type: 'geojson', data: DATA.buildable }});
-      }} else {{
-        map.getSource('buildable').setData(DATA.buildable);
-      }}
-      if (!map.getLayer('buildable-fill')) {{
-        map.addLayer({{
-          id: 'buildable-fill',
-          type: 'fill',
-          source: 'buildable',
-          paint: {{
-            'fill-color': '#22c55e',
-            'fill-opacity': 0.10
-          }}
-        }});
-      }}
-      if (!map.getLayer('buildable-line')) {{
-        map.addLayer({{
-          id: 'buildable-line',
-          type: 'line',
-          source: 'buildable',
-          paint: {{
-            'line-color': '#16a34a',
-            'line-width': 1.8,
-            'line-dasharray': [2, 1]
-          }}
-        }});
-      }}
+    // 3. Зона допустимой застройки
+    if (!map.getLayer('buildable-fill')) {{
+      map.addLayer({{
+        id: 'buildable-fill',
+        type: 'fill',
+        source: 'buildable',
+        paint: {{
+          'fill-color': '#22c55e',
+          'fill-opacity': 0.10
+        }}
+      }}, beforeVectorId);
+    }}
+    if (!map.getLayer('buildable-line')) {{
+      map.addLayer({{
+        id: 'buildable-line',
+        type: 'line',
+        source: 'buildable',
+        paint: {{
+          'line-color': '#16a34a',
+          'line-width': 1.8,
+          'line-dasharray': [2, 1]
+        }}
+      }}, beforeVectorId);
     }}
 
-    // 3. Красные линии
-    if (DATA.red_lines.features && DATA.red_lines.features.length) {{
-      if (!map.getSource('red_lines')) {{
-        map.addSource('red_lines', {{ type: 'geojson', data: DATA.red_lines }});
-      }} else {{
-        map.getSource('red_lines').setData(DATA.red_lines);
-      }}
-      if (!map.getLayer('redlines-line')) {{
-        map.addLayer({{
-          id: 'redlines-line',
-          type: 'line',
-          source: 'red_lines',
-          paint: {{
-            'line-color': '#ef4444',
-            'line-width': 2.5
-          }}
-        }});
-      }}
+    // 4. Красные линии
+    if (!map.getLayer('redlines-line')) {{
+      map.addLayer({{
+        id: 'redlines-line',
+        type: 'line',
+        source: 'red_lines',
+        paint: {{
+          'line-color': '#ef4444',
+          'line-width': 2.5
+        }}
+      }}, beforeVectorId);
     }}
 
-    // 3.1. Улично-дорожная сеть (Проезжая часть и разметка)
-    if (DATA.roads && DATA.roads.features && DATA.roads.features.length) {{
-      if (!map.getSource('roads')) {{
-        map.addSource('roads', {{ type: 'geojson', data: DATA.roads }});
-      }} else {{
-        map.getSource('roads').setData(DATA.roads);
-      }}
-      if (!map.getLayer('roads-buffer-fill')) {{
-        map.addLayer({{
-          id: 'roads-buffer-fill',
-          type: 'fill',
-          source: 'roads',
-          filter: ['==', ['get', 'type'], 'road_buffer'],
-          paint: {{
-            'fill-color': '#94a3b8',
-            'fill-opacity': 0.35
-          }}
-        }});
-      }}
-      if (!map.getLayer('roads-fill')) {{
-        map.addLayer({{
-          id: 'roads-fill',
-          type: 'fill',
-          source: 'roads',
-          filter: ['==', ['get', 'type'], 'road_corridor'],
-          paint: {{
-            'fill-color': '#334155',
-            'fill-opacity': 0.95
-          }}
-        }});
-      }}
-      if (!map.getLayer('roads-line')) {{
-        map.addLayer({{
-          id: 'roads-line',
-          type: 'line',
-          source: 'roads',
-          filter: ['==', ['get', 'type'], 'road_centerline'],
-          paint: {{
-            'line-color': '#ffffff',
-            'line-width': 2.0,
-            'line-dasharray': [3, 3]
-          }}
-        }});
-      }}
+    // 5. Внутриквартальные дороги (УДС)
+    if (!map.getLayer('roads-buffer-fill')) {{
+      map.addLayer({{
+        id: 'roads-buffer-fill',
+        type: 'fill',
+        source: 'roads',
+        filter: ['==', ['get', 'type'], 'road_buffer'],
+        paint: {{
+          'fill-color': '#94a3b8',
+          'fill-opacity': 0.35
+        }}
+      }}, beforeVectorId);
+    }}
+    if (!map.getLayer('roads-fill')) {{
+      map.addLayer({{
+        id: 'roads-fill',
+        type: 'fill',
+        source: 'roads',
+        filter: ['==', ['get', 'type'], 'road_corridor'],
+        paint: {{
+          'fill-color': '#334155',
+          'fill-opacity': 0.95
+        }}
+      }}, beforeVectorId);
+    }}
+    if (!map.getLayer('roads-line')) {{
+      map.addLayer({{
+        id: 'roads-line',
+        type: 'line',
+        source: 'roads',
+        filter: ['==', ['get', 'type'], 'road_centerline'],
+        paint: {{
+          'line-color': '#ffffff',
+          'line-width': 2.0,
+          'line-dasharray': [3, 3]
+        }}
+      }}, beforeVectorId);
     }}
 
-    // 3.2. Окружающая застройка (OSM)
-    if (DATA.surroundings && DATA.surroundings.features && DATA.surroundings.features.length) {{
-      if (!map.getSource('surroundings')) {{
-        map.addSource('surroundings', {{ type: 'geojson', data: DATA.surroundings }});
-      }} else {{
-        map.getSource('surroundings').setData(DATA.surroundings);
-      }}
-      if (!map.getLayer('surroundings-3d')) {{
-        map.addLayer({{
-          id: 'surroundings-3d',
-          type: 'fill-extrusion',
-          source: 'surroundings',
-          paint: {{
-            'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
-            'fill-extrusion-base': 0,
-            'fill-extrusion-color': '#cbd5e1',
-            'fill-extrusion-opacity': 0.78
-          }}
-        }});
-      }}
+    // 6. Окружающая застройка (OSM)
+    if (!map.getLayer('surroundings-3d')) {{
+      map.addLayer({{
+        id: 'surroundings-3d',
+        type: 'fill-extrusion',
+        source: 'surroundings',
+        paint: {{
+          'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
+          'fill-extrusion-base': 0,
+          'fill-extrusion-color': '#cbd5e1',
+          'fill-extrusion-opacity': 0.78
+        }}
+      }}, map.getLayer('buildings-3d') ? 'buildings-3d' : undefined);
     }}
 
-    // 4. 3D-здания (экструзия)
-    if (!map.getSource('buildings')) {{
-      map.addSource('buildings', {{ type: 'geojson', data: DATA.buildings }});
-    }} else {{
-      map.getSource('buildings').setData(DATA.buildings);
-    }}
+    // 7. 3D-здания проекта (экструзия)
     if (!map.getLayer('buildings-3d')) {{
       const colorSelect = document.getElementById('select-color-mode');
       const colorMode = (colorSelect && colorSelect.value) || 'floors';
@@ -1106,8 +1117,14 @@ def generate_3d_viewer_html(
   }}
 
   function switchBasemap(key) {{
-    const beforeId = (map.getLayer('surroundings-3d') && 'surroundings-3d') ||
-                     (map.getLayer('boundary-fill') && 'boundary-fill') ||
+    // Подложка ВСЕГДА кладется под самый нижний векторный слой участка
+    const beforeId = (map.getLayer('boundary-fill') && 'boundary-fill') ||
+                     (map.getLayer('boundary-line') && 'boundary-line') ||
+                     (map.getLayer('buildable-fill') && 'buildable-fill') ||
+                     (map.getLayer('roads-buffer-fill') && 'roads-buffer-fill') ||
+                     (map.getLayer('roads-fill') && 'roads-fill') ||
+                     (map.getLayer('roads-line') && 'roads-line') ||
+                     (map.getLayer('surroundings-3d') && 'surroundings-3d') ||
                      (map.getLayer('buildings-3d') && 'buildings-3d') ||
                      undefined;
 
@@ -1136,8 +1153,8 @@ def generate_3d_viewer_html(
   }}
 
   function initLayers() {{
-    switchBasemap(initBasemapKey);
     installLayers();
+    switchBasemap(initBasemapKey);
     updateLegend(document.getElementById('select-color-mode')?.value || 'floors');
   }}
 
@@ -1253,6 +1270,7 @@ def generate_3d_viewer_html(
     }}
     setupToggle('toggle-buildings', ['buildings-3d']);
     setupToggle('toggle-surroundings', ['surroundings-3d']);
+    setupToggle('toggle-roads', ['roads-fill', 'roads-line', 'roads-buffer-fill']);
     setupToggle('toggle-boundary', ['boundary-line', 'boundary-fill']);
     const surrCntInit = (DATA.surroundings && DATA.surroundings.features) ? DATA.surroundings.features.length : 0;
     const badgeSurrInit = document.getElementById('count-surroundings');
@@ -1341,44 +1359,10 @@ def generate_3d_viewer_html(
     if (!map) {{
       initMapIfReady();
     }} else {{
-      if (map.getSource('boundary') && DATA.boundary) {{
-        map.getSource('boundary').setData(DATA.boundary);
-      }}
-      if (map.getSource('buildable') && DATA.buildable) {{
-        map.getSource('buildable').setData(DATA.buildable);
-      }}
-      if (map.getSource('red_lines') && DATA.red_lines) {{
-        map.getSource('red_lines').setData(DATA.red_lines);
-      }}
-      if (map.getSource('roads') && DATA.roads) {{
-        map.getSource('roads').setData(DATA.roads);
-      }}
-      if (map.getSource('buildings') && DATA.buildings) {{
-        map.getSource('buildings').setData(DATA.buildings);
-      }}
-      if (DATA.surroundings) {{
-        if (!map.getSource('surroundings')) {{
-          map.addSource('surroundings', {{ type: 'geojson', data: DATA.surroundings }});
-        }} else {{
-          map.getSource('surroundings').setData(DATA.surroundings);
-        }}
-        if (!map.getLayer('surroundings-3d') && DATA.surroundings.features && DATA.surroundings.features.length) {{
-          map.addLayer({{
-            id: 'surroundings-3d',
-            type: 'fill-extrusion',
-            source: 'surroundings',
-            paint: {{
-              'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
-              'fill-extrusion-base': 0,
-              'fill-extrusion-color': '#cbd5e1',
-              'fill-extrusion-opacity': 0.78
-            }}
-          }}, map.getLayer('buildings-3d') ? 'buildings-3d' : undefined);
-        }}
-        const badgeSurrUpd = document.getElementById('count-surroundings');
-        if (badgeSurrUpd) {{
-          badgeSurrUpd.textContent = `${{DATA.surroundings.features ? DATA.surroundings.features.length : 0}} зд.`;
-        }}
+      installLayers();
+      const badgeSurrUpd = document.getElementById('count-surroundings');
+      if (badgeSurrUpd) {{
+        badgeSurrUpd.textContent = `${{(DATA.surroundings && DATA.surroundings.features) ? DATA.surroundings.features.length : 0}} зд.`;
       }}
       setTimeout(() => fitToData(true), 60);
     }}

@@ -104,6 +104,10 @@ def extract_cadastral_info_from_doc(doc: Any, filename: str = "") -> list[str]:
                 txt = getattr(e, "text", "")
             if txt:
                 for c in cad_regex.findall(txt):
+                    # Если демо-номер 63:01:0709002:2320 найден как метка, но имя файла указывает на другой регион
+                    fn_low = (filename or "").lower()
+                    if c == "63:01:0709002:2320" and any(k in fn_low for k in ["тюмен", "72", "москв", "77", "спб", "петербург", "78"]):
+                        continue
                     if c not in found:
                         found.append(c)
     except Exception:
@@ -390,23 +394,41 @@ def parse_cad_site(
         polygons = _extract_polygons_from_layer(msp, actual_boundary_layer)
 
     # 2. Если на указанном слое полигонов нет, ищем среди слоёв-кандидатов
+    # и выбираем слой с НАИБОЛЬШИМ полигоном (чтобы не схватить мелкий штамп или подотдел)
     if not polygons:
+        best_cand_layer = None
+        best_cand_polys: list[Polygon] = []
+        best_cand_area = 0.0
         for cand in [l for l in layers_info if l.is_candidate]:
             cand_polys = _extract_polygons_from_layer(msp, cand.name)
             if cand_polys:
-                polygons = cand_polys
-                actual_boundary_layer = cand.name
-                break
+                max_a = max(p.area for p in cand_polys)
+                if max_a > best_cand_area:
+                    best_cand_area = max_a
+                    best_cand_polys = cand_polys
+                    best_cand_layer = cand.name
+        if best_cand_polys:
+            polygons = best_cand_polys
+            actual_boundary_layer = best_cand_layer
 
-    # 3. Если кандидатов нет, перебираем все остальные слои
+    # 3. Если среди кандидатов полигонов нет, перебираем все остальные слои чертежа
+    # и аналогично выбираем слой с максимальной площадью полигона
     if not polygons:
+        best_other_layer = None
+        best_other_polys: list[Polygon] = []
+        best_other_area = 0.0
         for l in layers_info:
             if l.name != actual_boundary_layer:
                 l_polys = _extract_polygons_from_layer(msp, l.name)
                 if l_polys:
-                    polygons = l_polys
-                    actual_boundary_layer = l.name
-                    break
+                    max_a = max(p.area for p in l_polys)
+                    if max_a > best_other_area:
+                        best_other_area = max_a
+                        best_other_polys = l_polys
+                        best_other_layer = l.name
+        if best_other_polys:
+            polygons = best_other_polys
+            actual_boundary_layer = best_other_layer
 
     # 4. Если на отдельных слоях полигонов нет, пробуем собрать линии по всей модели
     if not polygons:
@@ -436,7 +458,8 @@ def parse_cad_site(
             "Убедитесь, что контур начерчен замкнутой полилинией (LWPOLYLINE) либо сшитыми отрезками."
         )
 
-    # Берём наибольший полигон на выбранном слое
+    # Берём наибольший полигон на выбранном слое (гарантируем выбор основного участка)
+    polygons.sort(key=lambda p: p.area, reverse=True)
     site_polygon = polygons[0]
     boundary_layer = actual_boundary_layer
 
