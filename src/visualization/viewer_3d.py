@@ -89,6 +89,8 @@ def build_3d_geojson_data(
     site: Site,
     buildings: list[Building] | None = None,
     tep: TEP | None = None,
+    include_surroundings: bool = True,
+    surroundings_radius: float = 400.0,
 ) -> dict[str, Any]:
     """Сформировать словарь GeoJSON-слоев для 3D-визуализации."""
     center_lat, center_lon = _get_site_geo_center(site)
@@ -234,12 +236,27 @@ def build_3d_geojson_data(
                     },
                 })
 
+    # 6. Окружающая застройка из OpenStreetMap (OSM)
+    surroundings_data = {"type": "FeatureCollection", "features": []}
+    if include_surroundings and abs(center_lat) > 1.0 and abs(center_lon) > 1.0:
+        try:
+            from src.geo.osm_surroundings import get_surrounding_buildings
+            surroundings_data = get_surrounding_buildings(
+                center_lat,
+                center_lon,
+                radius_m=surroundings_radius,
+                exclude_geom=boundary_wgs,
+            )
+        except Exception as e:
+            surroundings_data = {"type": "FeatureCollection", "features": []}
+
     return {
         "boundary": {"type": "FeatureCollection", "features": [boundary_feature]},
         "buildable": {"type": "FeatureCollection", "features": [buildable_feature] if buildable_feature else []},
         "red_lines": {"type": "FeatureCollection", "features": red_line_features},
         "roads": {"type": "FeatureCollection", "features": road_features},
         "buildings": {"type": "FeatureCollection", "features": building_features},
+        "surroundings": surroundings_data,
     }
 
 
@@ -646,6 +663,11 @@ def generate_3d_viewer_html(
         <span class="count-badge">{s_count} секц.</span>
       </label>
       <label class="toggle-row">
+        <input type="checkbox" id="toggle-surroundings" checked>
+        <span>Окружение (OSM)</span>
+        <span class="count-badge" id="count-surroundings">0 зд.</span>
+      </label>
+      <label class="toggle-row">
         <input type="checkbox" id="toggle-buildable" checked>
         <span>Зона допустимой застройки</span>
       </label>
@@ -1038,6 +1060,28 @@ def generate_3d_viewer_html(
       }}
     }}
 
+    // 3.2. Окружающая застройка (OSM)
+    if (DATA.surroundings && DATA.surroundings.features && DATA.surroundings.features.length) {{
+      if (!map.getSource('surroundings')) {{
+        map.addSource('surroundings', {{ type: 'geojson', data: DATA.surroundings }});
+      }} else {{
+        map.getSource('surroundings').setData(DATA.surroundings);
+      }}
+      if (!map.getLayer('surroundings-3d')) {{
+        map.addLayer({{
+          id: 'surroundings-3d',
+          type: 'fill-extrusion',
+          source: 'surroundings',
+          paint: {{
+            'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
+            'fill-extrusion-base': 0,
+            'fill-extrusion-color': '#cbd5e1',
+            'fill-extrusion-opacity': 0.78
+          }}
+        }});
+      }}
+    }}
+
     // 4. 3D-здания (экструзия)
     if (!map.getSource('buildings')) {{
       map.addSource('buildings', {{ type: 'geojson', data: DATA.buildings }});
@@ -1062,7 +1106,8 @@ def generate_3d_viewer_html(
   }}
 
   function switchBasemap(key) {{
-    const beforeId = (map.getLayer('boundary-fill') && 'boundary-fill') ||
+    const beforeId = (map.getLayer('surroundings-3d') && 'surroundings-3d') ||
+                     (map.getLayer('boundary-fill') && 'boundary-fill') ||
                      (map.getLayer('buildings-3d') && 'buildings-3d') ||
                      undefined;
 
@@ -1207,7 +1252,11 @@ def generate_3d_viewer_html(
       }});
     }}
     setupToggle('toggle-buildings', ['buildings-3d']);
+    setupToggle('toggle-surroundings', ['surroundings-3d']);
     setupToggle('toggle-boundary', ['boundary-line', 'boundary-fill']);
+    const surrCntInit = (DATA.surroundings && DATA.surroundings.features) ? DATA.surroundings.features.length : 0;
+    const badgeSurrInit = document.getElementById('count-surroundings');
+    if (badgeSurrInit) badgeSurrInit.textContent = `${{surrCntInit}} зд.`;
     setupToggle('toggle-buildable', ['buildable-line', 'buildable-fill']);
     setupToggle('toggle-redlines', ['redlines-line']);
 
@@ -1219,6 +1268,28 @@ def generate_3d_viewer_html(
     }});
 
     if (map) {{
+      map.on('click', 'surroundings-3d', (e) => {{
+        if (!e.features.length) return;
+        const p = e.features[0].properties;
+        const content = `
+          <div class="popup-title">${{p.name || 'Окружающее здание'}}</div>
+          <div class="popup-row"><span class="popup-label">Тип объекта:</span><span class="popup-val">${{p.building_type || 'Здание'}}</span></div>
+          <div class="popup-row"><span class="popup-label">Этажность:</span><span class="popup-val">${{p.levels || p.floors || '-'}} эт. (${{p.height || '-'}} м)</span></div>
+          <div class="popup-row"><span class="popup-label">Источник:</span><span class="popup-val" style="color:#64748b;">OpenStreetMap (OSM)</span></div>
+          <div style="margin-top:6px;padding-top:4px;border-top:1px dashed #cbd5e1;font-size:11px;color:#64748b;">
+            Существующая фоновая застройка окружения
+          </div>
+        `;
+        popup.setLngLat(e.lngLat).setHTML(content).addTo(map);
+      }});
+
+      map.on('mouseenter', 'surroundings-3d', () => {{
+        map.getCanvas().style.cursor = 'pointer';
+      }});
+      map.on('mouseleave', 'surroundings-3d', () => {{
+        map.getCanvas().style.cursor = '';
+      }});
+
       map.on('click', 'buildings-3d', (e) => {{
         if (!e.features.length) return;
         const p = e.features[0].properties;
@@ -1284,6 +1355,30 @@ def generate_3d_viewer_html(
       }}
       if (map.getSource('buildings') && DATA.buildings) {{
         map.getSource('buildings').setData(DATA.buildings);
+      }}
+      if (DATA.surroundings) {{
+        if (!map.getSource('surroundings')) {{
+          map.addSource('surroundings', {{ type: 'geojson', data: DATA.surroundings }});
+        }} else {{
+          map.getSource('surroundings').setData(DATA.surroundings);
+        }}
+        if (!map.getLayer('surroundings-3d') && DATA.surroundings.features && DATA.surroundings.features.length) {{
+          map.addLayer({{
+            id: 'surroundings-3d',
+            type: 'fill-extrusion',
+            source: 'surroundings',
+            paint: {{
+              'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
+              'fill-extrusion-base': 0,
+              'fill-extrusion-color': '#cbd5e1',
+              'fill-extrusion-opacity': 0.78
+            }}
+          }}, map.getLayer('buildings-3d') ? 'buildings-3d' : undefined);
+        }}
+        const badgeSurrUpd = document.getElementById('count-surroundings');
+        if (badgeSurrUpd) {{
+          badgeSurrUpd.textContent = `${{DATA.surroundings.features ? DATA.surroundings.features.length : 0}} зд.`;
+        }}
       }}
       setTimeout(() => fitToData(true), 60);
     }}
