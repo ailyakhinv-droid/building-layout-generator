@@ -26,6 +26,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 import shapely
 import yaml
 from shapely.geometry import Polygon, MultiPolygon, LineString, LinearRing
+from shapely.ops import unary_union
 
 from src.models.site import Site
 from src.models.building import Building
@@ -44,7 +45,7 @@ from src.core.tep_calculator import calculate_tep, check_normatives
 from src.core.regional_norms import load_regional_norms, get_regional_norm
 from src.core.territory_balance import calculate_territory_balance, TerritoryBalanceResult
 from src.library.section_library import SectionLibrary
-from src.visualization.viewer_3d import generate_3d_viewer_html
+from src.visualization.viewer_3d import build_3d_geojson_data, generate_3d_viewer_html
 from src.visualization.map_view import generate_leaflet_map_html
 from src.export.dxf_export import export_dxf
 from src.export.html_3d_export import export_3d_html
@@ -221,6 +222,18 @@ def _create_site_from_params(
     if site_mode == "cad":
         assigned_cad = (params.get("assigned_cad_query") or "").strip()
         file_bytes = base64.b64decode(cad_file_b64) if cad_file_b64 else None
+
+        # Если file_bytes не переданы через base64, проверяем cad_filename как локальный путь к файлу
+        if not file_bytes and cad_filename:
+            for cand in [Path(cad_filename), PROJECT_ROOT / cad_filename]:
+                if cand.exists() and cand.is_file():
+                    try:
+                        with open(cand, "rb") as f_cand:
+                            file_bytes = f_cand.read()
+                        cad_filename = cand.name
+                        break
+                    except Exception:
+                        pass
 
         # Предварительный парсинг чертежа для извлечения кадастрового номера
         detected_cad = None
@@ -553,6 +566,10 @@ def _create_site_from_params(
     # Улично-дорожная сеть и нарезка кварталов (RoadSlicer)
     road_preset = params.get("road_preset", "none")
     road_width = float(params.get("road_width", 16.0))
+    road_setback = float(params.get("road_setback", 4.0))
+    road_pos = float(params.get("road_pos", 0.5))
+    road_pos_x = float(params.get("road_pos_x", 0.5))
+    road_pos_y = float(params.get("road_pos_y", 0.5))
     custom_roads = params.get("custom_roads") or []
 
     try:
@@ -563,8 +580,14 @@ def _create_site_from_params(
             road_lines=custom_roads,
             preset=road_preset,
             road_width=road_width,
+            road_setback=road_setback,
+            pos_ratio=road_pos,
+            pos_ratio_x=road_pos_x,
+            pos_ratio_y=road_pos_y,
         )
         site.roads_result = road_res
+        if road_res.roads_polygon is not None and not road_res.roads_polygon.is_empty and road_res.sub_blocks:
+            site.buildable_area = unary_union(road_res.sub_blocks)
     except Exception as e:
         print(f"Ошибка нарезки дорожной сетью: {e}")
         site.roads_result = None
@@ -609,11 +632,14 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
     # Дороги и урбан-блоки
     roads_result = getattr(site, "roads_result", None)
     roads_corridor_path = ""
+    roads_buffer_path = ""
     roads_centerlines = []
     sub_blocks_paths = []
     if roads_result:
         if roads_result.roads_polygon and not roads_result.roads_polygon.is_empty:
             roads_corridor_path = geom_to_svg_path(roads_result.roads_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+        if getattr(roads_result, "buffer_polygon", None) and not roads_result.buffer_polygon.is_empty:
+            roads_buffer_path = geom_to_svg_path(roads_result.buffer_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
         roads_centerlines = [
             geom_to_svg_path(cl, minx, miny, maxx, maxy, svg_w, svg_h)
             for cl in getattr(roads_result, "centerlines", [])
@@ -639,6 +665,7 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
         leaflet_html = f"<!-- Leaflet Preview Error: {e} -->"
 
     try:
+        viewer_3d_data = build_3d_geojson_data(site, buildings=None, tep=None)
         viewer_3d_html = generate_3d_viewer_html(
             site,
             buildings=None,
@@ -648,6 +675,7 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
             standalone=False,
         )
     except Exception as e:
+        viewer_3d_data = None
         viewer_3d_html = f"<!-- 3D Preview Error: {e} -->"
 
     geo_lat, geo_lon = site.geo_center if site.geo_center else (53.2502, 50.3184)
@@ -696,15 +724,19 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
         "red_lines_paths": red_lines,
         "roads": {
             "corridor_path": roads_corridor_path,
+            "buffer_path": roads_buffer_path,
             "centerlines_paths": roads_centerlines,
             "sub_blocks_paths": sub_blocks_paths,
             "sub_blocks_count": len(sub_blocks_paths),
             "area_sqm": roads_result.roads_area_sqm if roads_result else 0.0,
+            "buffer_area_sqm": getattr(roads_result, "buffer_area_sqm", 0.0) if roads_result else 0.0,
             "length_m": roads_result.roads_length_m if roads_result else 0.0,
+            "road_setback": getattr(roads_result, "road_setback", 4.0) if roads_result else 4.0,
         },
         "optimization_note": "",
         "leaflet_html": leaflet_html,
         "viewer_3d_html": viewer_3d_html,
+        "viewer_3d_data": viewer_3d_data,
         "buildings": [],
         "sections": [],
         "tep": {
@@ -782,7 +814,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
 
     def _generate_buildings_for_site(target_site: Site, p_cfg: PlacementConfig) -> list[Building]:
         roads_res = getattr(target_site, "roads_result", None)
-        if roads_res and getattr(roads_res, "sub_blocks", None) and len(roads_res.sub_blocks) > 1:
+        if roads_res and getattr(roads_res, "roads_polygon", None) is not None and getattr(roads_res, "sub_blocks", None) and len(roads_res.sub_blocks) >= 1:
             all_b = []
             for s_idx, s_poly in enumerate(roads_res.sub_blocks):
                 sub_site = Site(boundary=s_poly)
@@ -993,14 +1025,18 @@ def _package_single_variant(
     # Дорожная сеть и под-блоки
     roads_result = getattr(site, "roads_result", None)
     roads_corridor_path = ""
+    roads_buffer_path = ""
     roads_centerlines = []
     sub_blocks_paths = []
     roads_area_sqm = 0.0
+    roads_buffer_area_sqm = 0.0
     roads_length_m = 0.0
 
     if roads_result:
         if roads_result.roads_polygon and not roads_result.roads_polygon.is_empty:
             roads_corridor_path = geom_to_svg_path(roads_result.roads_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+        if getattr(roads_result, "buffer_polygon", None) and not roads_result.buffer_polygon.is_empty:
+            roads_buffer_path = geom_to_svg_path(roads_result.buffer_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
         roads_centerlines = [
             geom_to_svg_path(cl, minx, miny, maxx, maxy, svg_w, svg_h)
             for cl in getattr(roads_result, "centerlines", [])
@@ -1012,6 +1048,7 @@ def _package_single_variant(
             if not sb.is_empty
         ]
         roads_area_sqm = roads_result.roads_area_sqm
+        roads_buffer_area_sqm = getattr(roads_result, "buffer_area_sqm", 0.0)
         roads_length_m = roads_result.roads_length_m
 
     category_labels = {
@@ -1094,8 +1131,10 @@ def _package_single_variant(
         leaflet_html = f"<!-- Leaflet: {e} -->"
 
     try:
+        viewer_3d_data = build_3d_geojson_data(site, buildings, tep)
         viewer_3d_html = generate_3d_viewer_html(site, buildings, tep, height="640px", default_basemap="light", standalone=False)
     except Exception as e:
+        viewer_3d_data = None
         viewer_3d_html = f"<!-- 3D: {e} -->"
 
     geo_lat, geo_lon = site.geo_center if site.geo_center else (53.2502, 50.3184)
@@ -1148,13 +1187,18 @@ def _package_single_variant(
         "red_lines_paths": red_lines,
         "roads": {
             "corridor_path": roads_corridor_path,
+            "buffer_path": roads_buffer_path,
             "centerlines_paths": roads_centerlines,
             "sub_blocks_paths": sub_blocks_paths,
             "sub_blocks_count": len(sub_blocks_paths),
             "area_sqm": roads_area_sqm,
+            "buffer_area_sqm": roads_buffer_area_sqm,
             "length_m": roads_length_m,
+            "road_setback": getattr(roads_result, "road_setback", 4.0) if roads_result else 4.0,
         },
         "optimization_note": opt_note,
+        "viewer_3d_html": viewer_3d_html,
+        "viewer_3d_data": viewer_3d_data,
         "tep": {
             "gfa": round(tep.total_gfa),
             "residential_area": round(tep.residential_area),
@@ -1232,6 +1276,10 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
     # Улично-дорожная сеть и нарезка кварталов (RoadSlicer)
     road_preset = params.get("road_preset", "none")
     road_width = float(params.get("road_width", 16.0))
+    road_setback = float(params.get("road_setback", 4.0))
+    road_pos = float(params.get("road_pos", 0.5))
+    road_pos_x = float(params.get("road_pos_x", 0.5))
+    road_pos_y = float(params.get("road_pos_y", 0.5))
     custom_roads = params.get("custom_roads") or []
 
     try:
@@ -1242,8 +1290,14 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
             road_lines=custom_roads,
             preset=road_preset,
             road_width=road_width,
+            road_setback=road_setback,
+            pos_ratio=road_pos,
+            pos_ratio_x=road_pos_x,
+            pos_ratio_y=road_pos_y,
         )
         site.roads_result = road_res
+        if road_res.roads_polygon is not None and not road_res.roads_polygon.is_empty and road_res.sub_blocks:
+            site.buildable_area = unary_union(road_res.sub_blocks)
     except Exception as e:
         print(f"Ошибка нарезки дорожной сетью: {e}")
         site.roads_result = None

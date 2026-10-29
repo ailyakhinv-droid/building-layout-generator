@@ -47,6 +47,12 @@ class DashboardHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(DIR), **kwargs)
 
+    def _safe_write(self, data: bytes):
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            pass
+
     def _send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
@@ -79,7 +85,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(response_bytes)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(response_bytes)
+                self._safe_write(response_bytes)
             except Exception as e:
                 import traceback
                 err_text = traceback.format_exc()
@@ -90,7 +96,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(err_bytes)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(err_bytes)
+                self._safe_write(err_bytes)
             return
 
         # 1. Генерация застройки (Этап 2)
@@ -107,7 +113,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(response_bytes)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(response_bytes)
+                self._safe_write(response_bytes)
             except Exception as e:
                 import traceback
                 err_text = traceback.format_exc()
@@ -117,7 +123,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(err_bytes)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(err_bytes)
+                self._safe_write(err_bytes)
             return
 
         # 2. Матрица вариантов по этажности
@@ -134,7 +140,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(response_bytes)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(response_bytes)
+                self._safe_write(response_bytes)
             except Exception as e:
                 err_bytes = json.dumps({"error": str(e)}).encode("utf-8")
                 self.send_response(500)
@@ -142,7 +148,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(err_bytes)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(err_bytes)
+                self._safe_write(err_bytes)
             return
 
         # 2b. Активация выбранного концептуального варианта
@@ -160,7 +166,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(response_bytes)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(response_bytes)
+                self._safe_write(response_bytes)
             except Exception as e:
                 err_bytes = json.dumps({"error": str(e)}).encode("utf-8")
                 self.send_response(500)
@@ -168,7 +174,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(err_bytes)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(err_bytes)
+                self._safe_write(err_bytes)
             return
 
         # 3. Инспекция слоев CAD файла
@@ -189,7 +195,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(response_bytes)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(response_bytes)
+                self._safe_write(response_bytes)
             except Exception as e:
                 err_bytes = json.dumps({"error": str(e)}).encode("utf-8")
                 self.send_response(500)
@@ -197,7 +203,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(err_bytes)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(err_bytes)
+                self._safe_write(err_bytes)
             return
 
         self.send_error(404, "Endpoint not found")
@@ -213,7 +219,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self._send_cors_headers()
             self.end_headers()
-            self.wfile.write(body)
+            self._safe_write(body)
             return
 
         # Главная страница
@@ -226,7 +232,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self.send_header("Content-Length", str(len(content)))
             self._send_cors_headers()
             self.end_headers()
-            self.wfile.write(content)
+            self._safe_write(content)
             return
 
         # Каталог типовых секций
@@ -239,7 +245,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(bytes_out)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(bytes_out)
+                self._safe_write(bytes_out)
             except Exception as e:
                 self.send_error(500, str(e))
             return
@@ -257,7 +263,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(data)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(data)
+                self._safe_write(data)
             except Exception as e:
                 self.send_error(500, f"Ошибка экспорта DXF: {e}")
             return
@@ -275,7 +281,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(data)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(data)
+                self._safe_write(data)
             except Exception as e:
                 self.send_error(500, f"Ошибка экспорта 3D HTML: {e}")
             return
@@ -293,7 +299,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(data)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(data)
+                self._safe_write(data)
             except Exception as e:
                 self.send_error(500, f"Ошибка экспорта GeoJSON: {e}")
             return
@@ -309,7 +315,7 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(bytes_out)))
                 self._send_cors_headers()
                 self.end_headers()
-                self.wfile.write(bytes_out)
+                self._safe_write(bytes_out)
             except Exception as e:
                 self.send_error(500, f"Ошибка формирования отчета: {e}")
             return
@@ -356,10 +362,18 @@ def main():
 
     webbrowser.open(url)
 
+    ThreadingHTTPServer.allow_reuse_address = True
     try:
-        server.serve_forever()
+        while True:
+            try:
+                server.serve_forever()
+            except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+                continue
     except KeyboardInterrupt:
         print("\nСервер остановлен.")
+    except Exception as e:
+        print(f"\nОшибка сервера: {e}")
+    finally:
         server.server_close()
 
 

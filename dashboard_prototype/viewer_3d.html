@@ -1,0 +1,1028 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D-визуализация застройки участка</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+  <style>
+    :root {
+      --ink: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --panel-bg: rgba(255, 255, 255, 0.96);
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--ink);
+      background: #f4f2ed;
+      overflow: hidden;
+    }
+    #map-container {
+      position: relative;
+      width: 100%;
+      height: 640px;
+      min-height: 480px;
+      background: #f4f2ed;
+    }
+    #map {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #f4f2ed;
+    }
+    .panel-toggle-btn {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 30;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--ink);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      cursor: pointer;
+      display: none;
+    }
+    .ui-panel {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 20;
+      width: 320px;
+      max-height: calc(100% - 28px);
+      overflow-y: auto;
+      background: var(--panel-bg);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+      font-size: 13px;
+      transition: transform 0.25s ease, opacity 0.25s ease;
+    }
+    .ui-panel.collapsed {
+      transform: translateX(-340px);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .panel-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 4px;
+    }
+    .panel-title {
+      font-size: 15.5px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      margin: 0;
+      color: var(--ink);
+    }
+    .close-panel-btn {
+      background: transparent;
+      border: none;
+      font-size: 16px;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .panel-subtitle {
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .reset-btn {
+      margin-top: 8px;
+      width: 100%;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .reset-btn:hover {
+      background: #dbeafe;
+      color: var(--accent-hover);
+    }
+    .group {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .group:last-child {
+      border-bottom: none;
+    }
+    .group-title {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+    select {
+      width: 100%;
+      padding: 7px 10px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--ink);
+      outline: none;
+      cursor: pointer;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 28px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .toggle-row .count-badge {
+      margin-left: auto;
+      font-size: 11px;
+      color: #64748b;
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .slider-wrap {
+      margin-top: 8px;
+    }
+    .slider-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 4px;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .tep-table {
+      width: 100%;
+      font-size: 12px;
+      border-collapse: collapse;
+      margin-top: 4px;
+    }
+    .tep-table td {
+      padding: 4px 0;
+      border-bottom: 1px dashed #f1f5f9;
+    }
+    .tep-table td.label {
+      color: var(--muted);
+    }
+    .tep-table td.val {
+      text-align: right;
+      font-weight: 600;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+    .legend-box {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 11.5px;
+      color: #475569;
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-chip {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .maplibregl-popup-content {
+      border-radius: 10px;
+      padding: 12px 14px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.18);
+      border: 1px solid #e2e8f0;
+      font-size: 12.5px;
+      line-height: 1.45;
+      min-width: 230px;
+    }
+    .popup-title {
+      font-weight: 700;
+      font-size: 13.5px;
+      color: #0f172a;
+      margin-bottom: 6px;
+      padding-bottom: 4px;
+      border-bottom: 2px solid var(--accent);
+    }
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 3px 0;
+    }
+    .popup-label { color: #64748b; }
+    .popup-val { font-weight: 600; color: #1e293b; }
+    .compass-hint {
+      position: absolute;
+      bottom: 14px;
+      right: 14px;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.92);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      color: #475569;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      pointer-events: none;
+    }
+    .loading-notice {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 5;
+      background: rgba(255, 255, 255, 0.94);
+      padding: 14px 22px;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #334155;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+<div id="map-container">
+  <div id="map"></div>
+  <div id="loading-msg" class="loading-notice">Загрузка 3D-сцены...</div>
+
+  <button id="btn-show-panel" class="panel-toggle-btn" type="button">☰ Меню и ТЭП</button>
+
+  <div class="compass-hint">
+    🖱️ ПКМ / Ctrl + ЛКМ — вращение и наклон | Колесико — зум
+  </div>
+
+  <aside id="ui-panel" class="ui-panel">
+    <header class="panel-header">
+      <div class="panel-header-top">
+        <h1 class="panel-title">3D-визуализация застройки участка</h1>
+        <button id="btn-hide-panel" class="close-panel-btn" title="Свернуть панель" type="button">✕</button>
+      </div>
+      <div class="panel-subtitle">Кадастр: <b>63:01:0709002:2320</b></div>
+      <button id="btn-reset-view" class="reset-btn" type="button">Вернуться к участку ↗</button>
+    </header>
+
+    <div class="group">
+      <div class="group-title">Картографическая подложка</div>
+      <select id="select-basemap">
+        <option value="light">Светлая архитектурная (OSM Light)</option>
+        <option value="osm">OpenStreetMap (Схема)</option>
+        <option value="satellite">Спутник (Esri World Imagery)</option>
+        <option value="dark">Тёмная подложка (Esri Dark)</option>
+        <option value="none">Без подложки (Холст)</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Раскраска 3D-зданий</div>
+      <select id="select-color-mode">
+        <option value="floors">По этажности (Градиент)</option>
+        <option value="buildings">По корпусам</option>
+        <option value="categories">По типам секций</option>
+        <option value="neutral">Нейтральный архитектурный</option>
+      </select>
+
+      <div id="legend-wrap" class="legend-box"></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Слои генплана</div>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-buildings" checked>
+        <span>3D Корпуса</span>
+        <span class="count-badge">26 секц.</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-buildable" checked>
+        <span>Зона допустимой застройки</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-boundary" checked>
+        <span>Граница участка</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-redlines" checked>
+        <span>Красные линии</span>
+      </label>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Фильтр по этажности</div>
+      <div class="slider-wrap">
+        <div class="slider-label">
+          <span>Мин. этажей:</span>
+          <b id="val-floor-min">1</b>
+        </div>
+        <input type="range" id="slider-floor-min" min="1" max="35" value="1" step="1">
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">ТЭП земельного участка</div>
+      <table class="tep-table">
+        <tr><td class="label">Площадь участка:</td><td class="val">42,500.0 м² (4.25 га)</td></tr>
+        <tr><td class="label">Количество корпусов:</td><td class="val">8 шт.</td></tr>
+        <tr><td class="label">Секций всего:</td><td class="val">26 шт.</td></tr>
+        <tr><td class="label">Площадь застройки:</td><td class="val">11,121.3 м²</td></tr>
+        <tr><td class="label">Плотность (FAR):</td><td class="val">2.34</td></tr>
+        <tr><td class="label">Процент застройки (BCR):</td><td class="val">26.2%</td></tr>
+        <tr><td class="label">Общая площадь (GFA):</td><td class="val">99,384.0 м²</td></tr>
+        <tr><td class="label">Жилая площадь:</td><td class="val">64,226.2 м²</td></tr>
+        <tr><td class="label">Квартир всего:</td><td class="val">1088</td></tr>
+        <tr><td class="label">Расчетное население:</td><td class="val">3 531.6 чел.</td></tr>
+        <tr><td class="label">Машиномест:</td><td class="val">544 м/м</td></tr>
+        <tr><td class="label">Доля озеленения:</td><td class="val">73.8%</td></tr>
+      </table>
+    </div>
+  </aside>
+</div>
+
+<script type="application/json" id="city-data">
+{"boundary": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.3184, 53.2502], [50.32199558798261, 53.2502], [50.32199558798261, 53.25163767273301], [50.32094687482102, 53.25181738182464], [50.3184, 53.25181738182464], [50.3184, 53.2502]]]}, "properties": {"type": "boundary", "name": "Граница земельного участка", "cadastral_number": "63:01:0709002:2320", "address": "Самарская область, г. Самара, Кировский р-н, пос. Зубчаниновка, кв-л 0709002, уч. 2320", "area": 42500.0, "area_ha": 4.25}}]}, "buildable": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.31848988969956, 53.25025391272749], [50.31848988969956, 53.25176346909715], [50.32093428532412, 53.25176346909715], [50.321905698283054, 53.2515970062865], [50.321905698283054, 53.25025391272749], [50.31848988969956, 53.25025391272749]]]}, "properties": {"type": "buildable", "name": "Зона допустимой застройки", "area": 37703.4}}]}, "red_lines": {"type": "FeatureCollection", "features": []}, "roads": {"type": "FeatureCollection", "features": []}, "buildings": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.318735862300315, 53.251047195947145], [50.31904942753563, 53.251047195947145], [50.31904942753563, 53.25089534176472], [50.31893332000703, 53.25089534176472], [50.31893332000703, 53.250796052491594], [50.318735862300315, 53.250796052491594], [50.318735862300315, 53.251047195947145]]]}, "properties": {"id": "1_1", "building_id": 1, "section_index": 1, "building_name": "Корпус 1", "section_name": "Северная (С)", "full_name": "Корпус 1, Секция 1 (Северная (С))", "category": "CORNER", "category_name": "Угловая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 499.4, "gfa": 4483.0, "living_area": 3227.8, "apartments": 45, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#E67E22"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.319727345686516, 53.25089444321926], [50.319727345686516, 53.251047195947145], [50.31904942753563, 53.251047195947145], [50.31904942753563, 53.25089444321926], [50.319727345686516, 53.25089444321926]]]}, "properties": {"id": "1_2", "building_id": 1, "section_index": 2, "building_name": "Корпус 1", "section_name": "Меридиональная (М5)", "full_name": "Корпус 1, Секция 2 (Меридиональная (М5))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 14, "levels": 14, "height": 42.0, "height_m": 42.0, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 769.2, "gfa": 10436.2, "living_area": 7514.1, "apartments": 140, "has_commercial": false, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32004091092183, 53.251047195947145], [50.319727345686516, 53.251047195947145], [50.319727345686516, 53.25089534176472], [50.31984345321512, 53.25089534176472], [50.31984345321512, 53.250796052491594], [50.32004091092183, 53.250796052491594], [50.32004091092183, 53.251047195947145]]]}, "properties": {"id": "1_3", "building_id": 1, "section_index": 3, "building_name": "Корпус 1", "section_name": "Северная (С)", "full_name": "Корпус 1, Секция 3 (Северная (С))", "category": "CORNER", "category_name": "Угловая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 499.4, "gfa": 4483.0, "living_area": 3227.8, "apartments": 45, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#E67E22"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.31899054978241, 53.250796052491594], [50.318735862300315, 53.250796052491594], [50.318735862300315, 53.25051615558139], [50.31899054978241, 53.25051615558139], [50.31899054978241, 53.250796052491594]]]}, "properties": {"id": "1_4", "building_id": 1, "section_index": 4, "building_name": "Корпус 1", "section_name": "Меридиональная (М8)", "full_name": "Корпус 1, Секция 4 (Меридиональная (М8))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 8, "levels": 8, "height": 25.5, "height_m": 25.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 529.5, "gfa": 4076.4, "living_area": 2935.0, "apartments": 48, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.31899054978241, 53.25051615558139], [50.318735862300315, 53.25051615558139], [50.318735862300315, 53.2503153306715], [50.31899054978241, 53.2503153306715], [50.31899054978241, 53.25051615558139]]]}, "properties": {"id": "1_5", "building_id": 1, "section_index": 5, "building_name": "Корпус 1", "section_name": "Широтная (Ш2)", "full_name": "Корпус 1, Секция 5 (Широтная (Ш2))", "category": "END", "category_name": "Торцевая", "floors": 7, "levels": 7, "height": 22.5, "height_m": 22.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 379.9, "gfa": 2556.0, "living_area": 1840.3, "apartments": 28, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32004091092183, 53.250796052491594], [50.319786223439735, 53.250796052491594], [50.319786223439735, 53.25051615558139], [50.32004091092183, 53.25051615558139], [50.32004091092183, 53.250796052491594]]]}, "properties": {"id": "1_6", "building_id": 1, "section_index": 6, "building_name": "Корпус 1", "section_name": "Меридиональная (М8)", "full_name": "Корпус 1, Секция 6 (Меридиональная (М8))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 8, "levels": 8, "height": 25.5, "height_m": 25.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 529.5, "gfa": 4076.4, "living_area": 2935.0, "apartments": 48, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32004091092183, 53.25051615558139], [50.319786223439735, 53.25051615558139], [50.319786223439735, 53.2503153306715], [50.32004091092183, 53.2503153306715], [50.32004091092183, 53.25051615558139]]]}, "properties": {"id": "1_7", "building_id": 1, "section_index": 7, "building_name": "Корпус 1", "section_name": "Широтная (Ш2)", "full_name": "Корпус 1, Секция 7 (Широтная (Ш2))", "category": "END", "category_name": "Торцевая", "floors": 7, "levels": 7, "height": 22.5, "height_m": 22.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 379.9, "gfa": 2556.0, "living_area": 1840.3, "apartments": 28, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32031058002053, 53.251047195947145], [50.32062414525585, 53.251047195947145], [50.32062414525585, 53.25089534176472], [50.320508037727244, 53.25089534176472], [50.320508037727244, 53.250796052491594], [50.32031058002053, 53.250796052491594], [50.32031058002053, 53.251047195947145]]]}, "properties": {"id": "2_1", "building_id": 2, "section_index": 1, "building_name": "Корпус 2", "section_name": "Северная (С)", "full_name": "Корпус 2, Секция 1 (Северная (С))", "category": "CORNER", "category_name": "Угловая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 499.4, "gfa": 4483.0, "living_area": 3227.8, "apartments": 45, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#E67E22"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32130206340674, 53.25089444321926], [50.32130206340674, 53.251047195947145], [50.32062414525585, 53.251047195947145], [50.32062414525585, 53.25089444321926], [50.32130206340674, 53.25089444321926]]]}, "properties": {"id": "2_2", "building_id": 2, "section_index": 2, "building_name": "Корпус 2", "section_name": "Меридиональная (М5)", "full_name": "Корпус 2, Секция 2 (Меридиональная (М5))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 14, "levels": 14, "height": 42.0, "height_m": 42.0, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 769.2, "gfa": 10436.2, "living_area": 7514.1, "apartments": 140, "has_commercial": false, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32161562864206, 53.251047195947145], [50.32130206340674, 53.251047195947145], [50.32130206340674, 53.25089534176472], [50.321418170935345, 53.25089534176472], [50.321418170935345, 53.250796052491594], [50.32161562864206, 53.250796052491594], [50.32161562864206, 53.251047195947145]]]}, "properties": {"id": "2_3", "building_id": 2, "section_index": 3, "building_name": "Корпус 2", "section_name": "Северная (С)", "full_name": "Корпус 2, Секция 3 (Северная (С))", "category": "CORNER", "category_name": "Угловая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 499.4, "gfa": 4483.0, "living_area": 3227.8, "apartments": 45, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#E67E22"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32056526750264, 53.250796052491594], [50.32031058002053, 53.250796052491594], [50.32031058002053, 53.25051615558139], [50.32056526750264, 53.25051615558139], [50.32056526750264, 53.250796052491594]]]}, "properties": {"id": "2_4", "building_id": 2, "section_index": 4, "building_name": "Корпус 2", "section_name": "Меридиональная (М8)", "full_name": "Корпус 2, Секция 4 (Меридиональная (М8))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 8, "levels": 8, "height": 25.5, "height_m": 25.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 529.5, "gfa": 4076.4, "living_area": 2935.0, "apartments": 48, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32056526750264, 53.25051615558139], [50.32031058002053, 53.25051615558139], [50.32031058002053, 53.2503153306715], [50.32056526750264, 53.2503153306715], [50.32056526750264, 53.25051615558139]]]}, "properties": {"id": "2_5", "building_id": 2, "section_index": 5, "building_name": "Корпус 2", "section_name": "Широтная (Ш2)", "full_name": "Корпус 2, Секция 5 (Широтная (Ш2))", "category": "END", "category_name": "Торцевая", "floors": 7, "levels": 7, "height": 22.5, "height_m": 22.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 379.9, "gfa": 2556.0, "living_area": 1840.3, "apartments": 28, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32161562864206, 53.250796052491594], [50.32136094115995, 53.250796052491594], [50.32136094115995, 53.25051615558139], [50.32161562864206, 53.25051615558139], [50.32161562864206, 53.250796052491594]]]}, "properties": {"id": "2_6", "building_id": 2, "section_index": 6, "building_name": "Корпус 2", "section_name": "Меридиональная (М8)", "full_name": "Корпус 2, Секция 6 (Меридиональная (М8))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 8, "levels": 8, "height": 25.5, "height_m": 25.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 529.5, "gfa": 4076.4, "living_area": 2935.0, "apartments": 48, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32161562864206, 53.25051615558139], [50.32136094115995, 53.25051615558139], [50.32136094115995, 53.2503153306715], [50.32161562864206, 53.2503153306715], [50.32161562864206, 53.25051615558139]]]}, "properties": {"id": "2_7", "building_id": 2, "section_index": 7, "building_name": "Корпус 2", "section_name": "Широтная (Ш2)", "full_name": "Корпус 2, Секция 7 (Широтная (Ш2))", "category": "END", "category_name": "Торцевая", "floors": 7, "levels": 7, "height": 22.5, "height_m": 22.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 379.9, "gfa": 2556.0, "living_area": 1840.3, "apartments": 28, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 32666.9, "building_apartments": 352, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32142628655203, 53.25141748753589], [50.321171599069935, 53.25141748753589], [50.321171599069935, 53.25124361898974], [50.32142628655203, 53.25124361898974], [50.32142628655203, 53.25141748753589]]]}, "properties": {"id": "3_1", "building_id": 3, "section_index": 1, "building_name": "Корпус 3", "section_name": "Широтная (Ш1)", "full_name": "Корпус 3, Секция 1 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 328.9, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#2ECC71", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32142628655203, 53.25159135608204], [50.321171599069935, 53.25159135608204], [50.321171599069935, 53.25141748753589], [50.32142628655203, 53.25141748753589], [50.32142628655203, 53.25159135608204]]]}, "properties": {"id": "3_2", "building_id": 3, "section_index": 2, "building_name": "Корпус 3", "section_name": "Широтная (Ш1)", "full_name": "Корпус 3, Секция 2 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#2ECC71", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32094687482102, 53.25145025979505], [50.32069218733891, 53.25145025979505], [50.32069218733891, 53.25127639124891], [50.32094687482102, 53.25127639124891], [50.32094687482102, 53.25145025979505]]]}, "properties": {"id": "4_1", "building_id": 4, "section_index": 1, "building_name": "Корпус 4", "section_name": "Широтная (Ш1)", "full_name": "Корпус 4, Секция 1 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#9B59B6", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.32094687482102, 53.2516241283412], [50.32069218733891, 53.2516241283412], [50.32069218733891, 53.25145025979505], [50.32094687482102, 53.25145025979505], [50.32094687482102, 53.2516241283412]]]}, "properties": {"id": "4_2", "building_id": 4, "section_index": 2, "building_name": "Корпус 4", "section_name": "Широтная (Ш1)", "full_name": "Корпус 4, Секция 2 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#9B59B6", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.320467463090004, 53.25145025979505], [50.3202127756079, 53.25145025979505], [50.3202127756079, 53.25127639124891], [50.320467463090004, 53.25127639124891], [50.320467463090004, 53.25145025979505]]]}, "properties": {"id": "5_1", "building_id": 5, "section_index": 1, "building_name": "Корпус 5", "section_name": "Широтная (Ш1)", "full_name": "Корпус 5, Секция 1 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#E74C3C", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.320467463090004, 53.2516241283412], [50.3202127756079, 53.2516241283412], [50.3202127756079, 53.25145025979505], [50.320467463090004, 53.25145025979505], [50.320467463090004, 53.2516241283412]]]}, "properties": {"id": "5_2", "building_id": 5, "section_index": 2, "building_name": "Корпус 5", "section_name": "Широтная (Ш1)", "full_name": "Корпус 5, Секция 2 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#E74C3C", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.31998805135899, 53.25145025979505], [50.319733363876885, 53.25145025979505], [50.319733363876885, 53.25127639124891], [50.31998805135899, 53.25127639124891], [50.31998805135899, 53.25145025979505]]]}, "properties": {"id": "6_1", "building_id": 6, "section_index": 1, "building_name": "Корпус 6", "section_name": "Широтная (Ш1)", "full_name": "Корпус 6, Секция 1 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#1ABC9C", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.31998805135899, 53.2516241283412], [50.319733363876885, 53.2516241283412], [50.319733363876885, 53.25145025979505], [50.31998805135899, 53.25145025979505], [50.31998805135899, 53.2516241283412]]]}, "properties": {"id": "6_2", "building_id": 6, "section_index": 2, "building_name": "Корпус 6", "section_name": "Широтная (Ш1)", "full_name": "Корпус 6, Секция 2 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#1ABC9C", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.31950863962797, 53.25145025979505], [50.31925395214587, 53.25145025979505], [50.31925395214587, 53.25127639124891], [50.31950863962797, 53.25127639124891], [50.31950863962797, 53.25145025979505]]]}, "properties": {"id": "7_1", "building_id": 7, "section_index": 1, "building_name": "Корпус 7", "section_name": "Широтная (Ш1)", "full_name": "Корпус 7, Секция 1 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#E67E22", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.31950863962797, 53.2516241283412], [50.31925395214587, 53.2516241283412], [50.31925395214587, 53.25145025979505], [50.31950863962797, 53.25145025979505], [50.31950863962797, 53.2516241283412]]]}, "properties": {"id": "7_2", "building_id": 7, "section_index": 2, "building_name": "Корпус 7", "section_name": "Широтная (Ш1)", "full_name": "Корпус 7, Секция 2 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#E67E22", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.319029227896955, 53.25145025979505], [50.31877454041485, 53.25145025979505], [50.31877454041485, 53.25127639124891], [50.319029227896955, 53.25127639124891], [50.319029227896955, 53.25145025979505]]]}, "properties": {"id": "8_1", "building_id": 8, "section_index": 1, "building_name": "Корпус 8", "section_name": "Широтная (Ш1)", "full_name": "Корпус 8, Секция 1 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#34495E", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[50.319029227896955, 53.2516241283412], [50.31877454041485, 53.2516241283412], [50.31877454041485, 53.25145025979505], [50.319029227896955, 53.25145025979505], [50.319029227896955, 53.2516241283412]]]}, "properties": {"id": "8_2", "building_id": 8, "section_index": 2, "building_name": "Корпус 8", "section_name": "Широтная (Ш1)", "full_name": "Корпус 8, Секция 2 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 27.0, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#34495E", "color_category": "#8E44AD"}}]}}
+</script>
+<script>
+  const DATA = JSON.parse(document.getElementById('city-data').textContent);
+  window.DATA = DATA;
+
+  const BASEMAP_CONFIGS = {
+    light: {
+      sourceId: 'osm-light-tiles',
+      sourceDef: {
+        type: 'raster',
+        tiles: [
+          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+        ],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap contributors'
+      },
+      paint: {
+        'raster-saturation': -0.65,
+        'raster-contrast': -0.05,
+        'raster-brightness-min': 0.15
+      }
+    },
+    osm: {
+      sourceId: 'osm-tiles',
+      sourceDef: {
+        type: 'raster',
+        tiles: [
+          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png'
+        ],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap contributors'
+      },
+      paint: {}
+    },
+    satellite: {
+      sourceId: 'esri-sat',
+      sourceDef: {
+        type: 'raster',
+        tiles: [
+          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+        ],
+        tileSize: 256,
+        attribution: '&copy; Esri &mdash; World Imagery'
+      },
+      paint: {}
+    },
+    dark: {
+      sourceId: 'esri-dark',
+      sourceDef: {
+        type: 'raster',
+        tiles: [
+          'https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
+        ],
+        tileSize: 256,
+        maxzoom: 16,
+        attribution: '&copy; Esri &mdash; Dark Gray Canvas'
+      },
+      paint: {}
+    },
+    none: null
+  };
+
+  // Вычисление точного Bounding Box и геометрического центра
+  function computeBounds(fcList) {
+    let minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
+    let count = 0;
+
+    function walk(coords) {
+      if (Array.isArray(coords) && coords.length >= 2 && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+        const lon = coords[0];
+        const lat = coords[1];
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        count++;
+      } else if (Array.isArray(coords)) {
+        coords.forEach(walk);
+      }
+    }
+
+    fcList.forEach(fc => {
+      if (fc && fc.features) {
+        fc.features.forEach(f => {
+          if (f.geometry && f.geometry.coordinates) {
+            walk(f.geometry.coordinates);
+          }
+        });
+      }
+    });
+
+    if (count === 0) return null;
+    return [[minLon, minLat], [maxLon, maxLat]];
+  }
+
+  const siteBounds = computeBounds([DATA.boundary, DATA.buildings]) || [[30.33, 59.93], [30.34, 59.94]];
+  const centerLon = (siteBounds[0][0] + siteBounds[1][0]) / 2;
+  const centerLat = (siteBounds[0][1] + siteBounds[1][1]) / 2;
+
+  // Оценка начального зума по размеру участка
+  const dLon = siteBounds[1][0] - siteBounds[0][0];
+  const dLat = siteBounds[1][1] - siteBounds[0][1];
+  const maxSpan = Math.max(dLon, dLat);
+  let initZoom = 16.5;
+  if (maxSpan > 0.05) initZoom = 12.5;
+  else if (maxSpan > 0.02) initZoom = 14.0;
+  else if (maxSpan > 0.008) initZoom = 15.2;
+  else if (maxSpan > 0.003) initZoom = 16.2;
+  else initZoom = 16.8;
+
+  const initBasemapKey = 'light';
+
+  if (!window.maplibregl) {
+    document.getElementById('loading-msg').style.display = 'block';
+    document.getElementById('loading-msg').innerText = 'Не удалось загрузить библиотеку 3D-карты MapLibre GL.';
+  }
+
+  let map = null;
+  let mapInitialized = false;
+
+  function initMapIfReady() {
+    if (mapInitialized) return true;
+    const container = document.getElementById('map');
+    if (!container) return false;
+    const cWidth = container.clientWidth;
+    const cHeight = container.clientHeight;
+    // Если контейнер скрыт (display: none или размер 0) — откладываем создание карты
+    if (cWidth < 50 || cHeight < 50) {
+      return false;
+    }
+
+    mapInitialized = true;
+
+    map = new maplibregl.Map({
+      container: 'map',
+      style: {
+        version: 8,
+        sources: {},
+        layers: [
+          {
+            id: 'blank-bg',
+            type: 'background',
+            paint: { 'background-color': '#f4f2ed' }
+          }
+        ]
+      },
+      center: [centerLon, centerLat],
+      zoom: initZoom,
+      pitch: 50,
+      bearing: -18,
+      antialias: true
+    });
+    window.map = map;
+
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+    map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-right');
+
+    map.on('style.load', () => {
+      initLayers();
+    });
+
+    if (map.isStyleLoaded()) {
+      initLayers();
+    }
+
+    setupControls();
+
+    setTimeout(() => fitToData(false), 80);
+    return true;
+  }
+
+  const COLOR_EXPRESSIONS = {
+    floors: [
+      'interpolate', ['linear'], ['to-number', ['get', 'floors'], 1],
+      1, '#38bdf8',
+      5, '#3b82f6',
+      9, '#10b981',
+      12, '#f59e0b',
+      16, '#f97316',
+      24, '#ef4444'
+    ],
+    buildings: ['coalesce', ['get', 'color_building'], '#3b82f6'],
+    categories: ['coalesce', ['get', 'color_category'], '#2E86AB'],
+    neutral: '#cbd5e1'
+  };
+
+  function updateLegend(mode) {
+    const el = document.getElementById('legend-wrap');
+    if (!el) return;
+    if (mode === 'floors') {
+      el.innerHTML = `
+        <div class="legend-row"><span class="legend-chip" style="background:#38bdf8"></span> 1–4 этажа</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#3b82f6"></span> 5–8 этажей</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#10b981"></span> 9–11 этажей</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#f59e0b"></span> 12–15 этажей</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#f97316"></span> 16–23 этажа</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#ef4444"></span> 24+ этажей</div>
+      `;
+    } else if (mode === 'categories') {
+      el.innerHTML = `
+        <div class="legend-row"><span class="legend-chip" style="background:#2E86AB"></span> Рядовая секция</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#E67E22"></span> Угловая секция</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#8E44AD"></span> Торцевая секция</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#9B59B6"></span> Точечная башня</div>
+      `;
+    } else if (mode === 'buildings') {
+      el.innerHTML = '<div style="color:#64748b;font-size:11px;">Каждый корпус окрашен индивидуальным цветом</div>';
+    } else {
+      el.innerHTML = '<div style="color:#64748b;font-size:11px;">Монохромный архитектурный стиль</div>';
+    }
+  }
+
+  function installLayers() {
+    // 1. Граница участка
+    if (!map.getSource('boundary')) {
+      map.addSource('boundary', { type: 'geojson', data: DATA.boundary });
+    } else {
+      map.getSource('boundary').setData(DATA.boundary);
+    }
+    if (!map.getLayer('boundary-fill')) {
+      map.addLayer({
+        id: 'boundary-fill',
+        type: 'fill',
+        source: 'boundary',
+        paint: {
+          'fill-color': '#cbd5e1',
+          'fill-opacity': 0.25
+        }
+      });
+    }
+    if (!map.getLayer('boundary-line')) {
+      map.addLayer({
+        id: 'boundary-line',
+        type: 'line',
+        source: 'boundary',
+        paint: {
+          'line-color': '#0f172a',
+          'line-width': 2.8,
+          'line-dasharray': [3, 1.5]
+        }
+      });
+    }
+
+    // 2. Зона допустимой застройки
+    if (DATA.buildable.features && DATA.buildable.features.length) {
+      if (!map.getSource('buildable')) {
+        map.addSource('buildable', { type: 'geojson', data: DATA.buildable });
+      } else {
+        map.getSource('buildable').setData(DATA.buildable);
+      }
+      if (!map.getLayer('buildable-fill')) {
+        map.addLayer({
+          id: 'buildable-fill',
+          type: 'fill',
+          source: 'buildable',
+          paint: {
+            'fill-color': '#22c55e',
+            'fill-opacity': 0.10
+          }
+        });
+      }
+      if (!map.getLayer('buildable-line')) {
+        map.addLayer({
+          id: 'buildable-line',
+          type: 'line',
+          source: 'buildable',
+          paint: {
+            'line-color': '#16a34a',
+            'line-width': 1.8,
+            'line-dasharray': [2, 1]
+          }
+        });
+      }
+    }
+
+    // 3. Красные линии
+    if (DATA.red_lines.features && DATA.red_lines.features.length) {
+      if (!map.getSource('red_lines')) {
+        map.addSource('red_lines', { type: 'geojson', data: DATA.red_lines });
+      } else {
+        map.getSource('red_lines').setData(DATA.red_lines);
+      }
+      if (!map.getLayer('redlines-line')) {
+        map.addLayer({
+          id: 'redlines-line',
+          type: 'line',
+          source: 'red_lines',
+          paint: {
+            'line-color': '#ef4444',
+            'line-width': 2.5
+          }
+        });
+      }
+    }
+
+    // 3.1. Улично-дорожная сеть (Проезжая часть и разметка)
+    if (DATA.roads && DATA.roads.features && DATA.roads.features.length) {
+      if (!map.getSource('roads')) {
+        map.addSource('roads', { type: 'geojson', data: DATA.roads });
+      } else {
+        map.getSource('roads').setData(DATA.roads);
+      }
+      if (!map.getLayer('roads-buffer-fill')) {
+        map.addLayer({
+          id: 'roads-buffer-fill',
+          type: 'fill',
+          source: 'roads',
+          filter: ['==', ['get', 'type'], 'road_buffer'],
+          paint: {
+            'fill-color': '#94a3b8',
+            'fill-opacity': 0.35
+          }
+        });
+      }
+      if (!map.getLayer('roads-fill')) {
+        map.addLayer({
+          id: 'roads-fill',
+          type: 'fill',
+          source: 'roads',
+          filter: ['==', ['get', 'type'], 'road_corridor'],
+          paint: {
+            'fill-color': '#334155',
+            'fill-opacity': 0.95
+          }
+        });
+      }
+      if (!map.getLayer('roads-line')) {
+        map.addLayer({
+          id: 'roads-line',
+          type: 'line',
+          source: 'roads',
+          filter: ['==', ['get', 'type'], 'road_centerline'],
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': 2.0,
+            'line-dasharray': [3, 3]
+          }
+        });
+      }
+    }
+
+    // 4. 3D-здания (экструзия)
+    if (!map.getSource('buildings')) {
+      map.addSource('buildings', { type: 'geojson', data: DATA.buildings });
+    } else {
+      map.getSource('buildings').setData(DATA.buildings);
+    }
+    if (!map.getLayer('buildings-3d')) {
+      const colorSelect = document.getElementById('select-color-mode');
+      const colorMode = (colorSelect && colorSelect.value) || 'floors';
+      map.addLayer({
+        id: 'buildings-3d',
+        type: 'fill-extrusion',
+        source: 'buildings',
+        paint: {
+          'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
+          'fill-extrusion-base': ['to-number', ['coalesce', ['get', 'min_height'], 0], 0],
+          'fill-extrusion-color': COLOR_EXPRESSIONS[colorMode] || COLOR_EXPRESSIONS.floors,
+          'fill-extrusion-opacity': 0.95
+        }
+      });
+    }
+  }
+
+  function switchBasemap(key) {
+    const beforeId = (map.getLayer('boundary-fill') && 'boundary-fill') ||
+                     (map.getLayer('buildings-3d') && 'buildings-3d') ||
+                     undefined;
+
+    if (map.getLayer('basemap-raster')) {
+      map.removeLayer('basemap-raster');
+    }
+
+    const cfg = BASEMAP_CONFIGS[key];
+    if (!cfg) return;
+
+    if (!map.getSource(cfg.sourceId)) {
+      map.addSource(cfg.sourceId, cfg.sourceDef);
+    }
+
+    map.addLayer({
+      id: 'basemap-raster',
+      type: 'raster',
+      source: cfg.sourceId,
+      paint: cfg.paint || {}
+    }, beforeId);
+  }
+
+  function initLayers() {
+    switchBasemap(initBasemapKey);
+    installLayers();
+    updateLegend(document.getElementById('select-color-mode')?.value || 'floors');
+  }
+
+  function fitToData(animated = true) {
+    if (!map) return;
+    map.resize();
+    const container = map.getContainer();
+    const cWidth = container ? container.clientWidth : window.innerWidth;
+    const cHeight = container ? container.clientHeight : window.innerHeight;
+    if (cWidth < 50 || cHeight < 50) return;
+
+    const panel = document.getElementById('ui-panel');
+    const isPanelVisible = panel && !panel.classList.contains('collapsed');
+    const leftPad = isPanelVisible && cWidth > 680 ? Math.min(340, Math.floor(cWidth * 0.35)) : 30;
+    const rightPad = Math.min(40, Math.floor(cWidth * 0.08));
+    const vPad = Math.min(50, Math.floor(cHeight * 0.12));
+
+    try {
+      map.fitBounds(siteBounds, {
+        padding: { top: vPad, bottom: vPad, left: leftPad, right: rightPad },
+        pitch: 50,
+        bearing: -18,
+        duration: animated ? 800 : 0,
+        maxZoom: 18.0
+      });
+    } catch (err) {
+      console.warn("fitBounds warning:", err);
+    }
+  }
+
+  let controlsConfigured = false;
+  function setupControls() {
+    if (controlsConfigured) return;
+    controlsConfigured = true;
+
+    // Панель: скрыть/показать
+    const uiPanel = document.getElementById('ui-panel');
+    const btnHide = document.getElementById('btn-hide-panel');
+    const btnShow = document.getElementById('btn-show-panel');
+
+    const isEmbedded = !false;
+    if (isEmbedded || window.innerWidth < 720) {
+      if (uiPanel) {
+        uiPanel.classList.add('collapsed');
+        if (btnShow) btnShow.style.display = 'block';
+      }
+    }
+
+    if (btnHide && btnShow && uiPanel) {
+      btnHide.addEventListener('click', () => {
+        uiPanel.classList.add('collapsed');
+        btnShow.style.display = 'block';
+        setTimeout(() => fitToData(true), 250);
+      });
+      btnShow.addEventListener('click', () => {
+        uiPanel.classList.remove('collapsed');
+        btnShow.style.display = 'none';
+        setTimeout(() => fitToData(true), 250);
+      });
+    }
+
+    // Сброс ракурса
+    const btnReset = document.getElementById('btn-reset-view');
+    if (btnReset) {
+      btnReset.addEventListener('click', () => fitToData(true));
+    }
+
+    // Смена подложки
+    const selBasemap = document.getElementById('select-basemap');
+    if (selBasemap) {
+      selBasemap.addEventListener('change', (e) => {
+        switchBasemap(e.target.value);
+      });
+    }
+
+    // Смена палитры
+    const selColor = document.getElementById('select-color-mode');
+    if (selColor) {
+      selColor.addEventListener('change', (e) => {
+        const mode = e.target.value;
+        updateLegend(mode);
+        if (map && map.getLayer('buildings-3d')) {
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-color', COLOR_EXPRESSIONS[mode]);
+        }
+      });
+    }
+
+    // Фильтр этажности
+    const floorSlider = document.getElementById('slider-floor-min');
+    const floorVal = document.getElementById('val-floor-min');
+    if (floorSlider && floorVal) {
+      floorSlider.addEventListener('input', (e) => {
+        const minF = parseInt(e.target.value, 10);
+        floorVal.textContent = minF;
+        if (map && map.getLayer('buildings-3d')) {
+          map.setFilter('buildings-3d', ['>=', ['to-number', ['get', 'floors'], 1], minF]);
+        }
+      });
+    }
+
+    // Чекбоксы слоев
+    function setupToggle(checkboxId, layerIds) {
+      const cb = document.getElementById(checkboxId);
+      if (!cb) return;
+      cb.addEventListener('change', (e) => {
+        const vis = e.target.checked ? 'visible' : 'none';
+        layerIds.forEach(id => {
+          if (map && map.getLayer(id)) {
+            map.setLayoutProperty(id, 'visibility', vis);
+          }
+        });
+      });
+    }
+    setupToggle('toggle-buildings', ['buildings-3d']);
+    setupToggle('toggle-boundary', ['boundary-line', 'boundary-fill']);
+    setupToggle('toggle-buildable', ['buildable-line', 'buildable-fill']);
+    setupToggle('toggle-redlines', ['redlines-line']);
+
+    // Popup карточки при клике
+    const popup = new maplibregl.Popup({
+      closeButton: true,
+      closeOnClick: true,
+      maxWidth: '310px'
+    });
+
+    if (map) {
+      map.on('click', 'buildings-3d', (e) => {
+        if (!e.features.length) return;
+        const p = e.features[0].properties;
+
+        const content = `
+          <div class="popup-title">${p.full_name}</div>
+          <div class="popup-row"><span class="popup-label">Тип секции:</span><span class="popup-val">${p.category_name}</span></div>
+          <div class="popup-row"><span class="popup-label">Этажность:</span><span class="popup-val">${p.floors} эт. (h = ${p.height} м)</span></div>
+          <div class="popup-row"><span class="popup-label">Высота типового этажа:</span><span class="popup-val">${p.floor_height} м</span></div>
+          <div class="popup-row"><span class="popup-label">Площадь пятна:</span><span class="popup-val">${p.footprint_area} м²</span></div>
+          <div class="popup-row"><span class="popup-label">Общая площадь (GFA):</span><span class="popup-val">${p.gfa} м²</span></div>
+          <div class="popup-row"><span class="popup-label">Жилая площадь:</span><span class="popup-val">${p.living_area} м²</span></div>
+          <div class="popup-row"><span class="popup-label">Квартир в секции:</span><span class="popup-val">${p.apartments} шт.</span></div>
+          <div class="popup-row"><span class="popup-label">1-й этаж коммерция:</span><span class="popup-val">${p.has_commercial ? 'Да' : 'Нет'}</span></div>
+          <div style="margin-top:6px;padding-top:4px;border-top:1px dashed #cbd5e1;font-size:11px;color:#64748b;">
+            <b>${p.building_name}</b>: этажность ${p.building_floors} эт. (${p.building_height} м), ${p.building_sections} секц.
+          </div>
+        `;
+
+        popup.setLngLat(e.lngLat).setHTML(content).addTo(map);
+
+        if (window.parent && window.parent !== window) {
+          try {
+            window.parent.postMessage({ type: 'section_click', section_id: p.id || p.section_id }, '*');
+          } catch (_) {}
+        }
+      });
+
+      map.on('mouseenter', 'buildings-3d', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'buildings-3d', () => {
+        map.getCanvas().style.cursor = '';
+      });
+    }
+  }
+
+  function updateViewerData(newData) {
+    if (!newData) return;
+    DATA = newData;
+    window.DATA = newData;
+    siteBounds = computeBounds([DATA.boundary, DATA.buildings]) || [[30.33, 59.93], [30.34, 59.94]];
+
+    if (!map) {
+      initMapIfReady();
+    } else {
+      if (map.getSource('boundary') && DATA.boundary) {
+        map.getSource('boundary').setData(DATA.boundary);
+      }
+      if (map.getSource('buildable') && DATA.buildable) {
+        map.getSource('buildable').setData(DATA.buildable);
+      }
+      if (map.getSource('red_lines') && DATA.red_lines) {
+        map.getSource('red_lines').setData(DATA.red_lines);
+      }
+      if (map.getSource('roads') && DATA.roads) {
+        map.getSource('roads').setData(DATA.roads);
+      }
+      if (map.getSource('buildings') && DATA.buildings) {
+        map.getSource('buildings').setData(DATA.buildings);
+      }
+      setTimeout(() => fitToData(true), 60);
+    }
+  }
+
+  // Единый слушатель сообщений от родительского окна
+  window.addEventListener('message', function(e) {
+    if (!e.data) return;
+    if (e.data.type === 'loadData' && e.data.data) {
+      updateViewerData(e.data.data);
+    } else if (e.data.type === 'activate' || e.data.type === 'resize') {
+      if (!map) {
+        initMapIfReady();
+      } else {
+        map.resize();
+        setTimeout(function() { map.resize(); fitToData(false); }, 50);
+        setTimeout(function() { map.resize(); fitToData(false); }, 250);
+      }
+    }
+  });
+
+  // 1. Попытка немедленной инициализации карты (если контейнер уже имеет размер)
+  if (!initMapIfReady()) {
+    // 2. ResizeObserver отслеживает появление контейнера (снятие display: none)
+    if (window.ResizeObserver) {
+      let roTimer = null;
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 50 && entry.contentRect.height > 50) {
+            if (!map) {
+              initMapIfReady();
+            } else {
+              map.resize();
+              clearTimeout(roTimer);
+              roTimer = setTimeout(() => fitToData(false), 80);
+            }
+          }
+        }
+      });
+      const mapEl = document.getElementById('map');
+      if (mapEl) ro.observe(mapEl);
+    }
+
+    // 3. Ожидание через requestAnimationFrame (страховка)
+    function waitForContainer() {
+      if (!initMapIfReady()) {
+        requestAnimationFrame(waitForContainer);
+      }
+    }
+    requestAnimationFrame(waitForContainer);
+  } else {
+    window.addEventListener('resize', () => {
+      if (map) map.resize();
+    });
+  }
+
+  // Оповещаем родительский дашборд о готовности фрейма к приёму данных
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'viewer3dReady' }, '*');
+    }
+  } catch(_) {}
+</script>
+</body>
+</html>

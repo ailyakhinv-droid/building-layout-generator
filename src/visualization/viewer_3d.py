@@ -173,7 +173,9 @@ def build_3d_geojson_data(
                         "category": cat,
                         "category_name": cat_name,
                         "floors": sec_floors,
+                        "levels": sec_floors,
                         "height": sec_height,
+                        "height_m": sec_height,
                         "floor_height": floor_h,
                         "min_height": 0.0,
                         "footprint_area": sec_footprint,
@@ -206,6 +208,18 @@ def build_3d_geojson_data(
                     "type": "road_corridor",
                     "name": "Проезжая часть / Внутриквартальная улица",
                     "area": round(r_poly.area, 1),
+                },
+            })
+        if getattr(roads_result, "buffer_polygon", None) and not roads_result.buffer_polygon.is_empty:
+            buf_poly = roads_result.buffer_polygon
+            buf_wgs = _to_wgs84(buf_poly, center_lat, center_lon)
+            road_features.append({
+                "type": "Feature",
+                "geometry": mapping(buf_wgs),
+                "properties": {
+                    "type": "road_buffer",
+                    "name": f"Техническая зона / отступ {getattr(roads_result, 'road_setback', 4)} м",
+                    "area": round(buf_poly.area, 1),
                 },
             })
         for idx, cl in enumerate(getattr(roads_result, "centerlines", [])):
@@ -676,8 +690,12 @@ def generate_3d_viewer_html(
   </aside>
 </div>
 
+<script type="application/json" id="city-data">
+{data_json_str}
+</script>
 <script>
-  const DATA = {data_json_str};
+  const DATA = JSON.parse(document.getElementById('city-data').textContent);
+  window.DATA = DATA;
 
   const BASEMAP_CONFIGS = {{
     light: {{
@@ -795,29 +813,59 @@ def generate_3d_viewer_html(
     document.getElementById('loading-msg').innerText = 'Не удалось загрузить библиотеку 3D-карты MapLibre GL.';
   }}
 
-  const map = new maplibregl.Map({{
-    container: 'map',
-    style: {{
-      version: 8,
-      sources: {{}},
-      layers: [
-        {{
-          id: 'blank-bg',
-          type: 'background',
-          paint: {{ 'background-color': '#f4f2ed' }}
-        }}
-      ]
-    }},
-    center: [centerLon, centerLat],
-    zoom: initZoom,
-    pitch: 50,
-    bearing: -18,
-    antialias: true
-  }});
-  window.map = map;
+  let map = null;
+  let mapInitialized = false;
 
-  map.addControl(new maplibregl.NavigationControl({{ visualizePitch: true }}), 'top-right');
-  map.addControl(new maplibregl.ScaleControl({{ maxWidth: 100, unit: 'metric' }}), 'bottom-right');
+  function initMapIfReady() {{
+    if (mapInitialized) return true;
+    const container = document.getElementById('map');
+    if (!container) return false;
+    const cWidth = container.clientWidth;
+    const cHeight = container.clientHeight;
+    // Если контейнер скрыт (display: none или размер 0) — откладываем создание карты
+    if (cWidth < 50 || cHeight < 50) {{
+      return false;
+    }}
+
+    mapInitialized = true;
+
+    map = new maplibregl.Map({{
+      container: 'map',
+      style: {{
+        version: 8,
+        sources: {{}},
+        layers: [
+          {{
+            id: 'blank-bg',
+            type: 'background',
+            paint: {{ 'background-color': '#f4f2ed' }}
+          }}
+        ]
+      }},
+      center: [centerLon, centerLat],
+      zoom: initZoom,
+      pitch: 50,
+      bearing: -18,
+      antialias: true
+    }});
+    window.map = map;
+
+    map.addControl(new maplibregl.NavigationControl({{ visualizePitch: true }}), 'top-right');
+    map.addControl(new maplibregl.ScaleControl({{ maxWidth: 100, unit: 'metric' }}), 'bottom-right');
+
+    map.on('style.load', () => {{
+      initLayers();
+    }});
+
+    if (map.isStyleLoaded()) {{
+      initLayers();
+    }}
+
+    setupControls();
+
+    setTimeout(() => fitToData(false), 80);
+    return true;
+  }}
 
   const COLOR_EXPRESSIONS = {{
     floors: [
@@ -950,6 +998,18 @@ def generate_3d_viewer_html(
       }} else {{
         map.getSource('roads').setData(DATA.roads);
       }}
+      if (!map.getLayer('roads-buffer-fill')) {{
+        map.addLayer({{
+          id: 'roads-buffer-fill',
+          type: 'fill',
+          source: 'roads',
+          filter: ['==', ['get', 'type'], 'road_buffer'],
+          paint: {{
+            'fill-color': '#94a3b8',
+            'fill-opacity': 0.35
+          }}
+        }});
+      }}
       if (!map.getLayer('roads-fill')) {{
         map.addLayer({{
           id: 'roads-fill',
@@ -991,8 +1051,8 @@ def generate_3d_viewer_html(
         type: 'fill-extrusion',
         source: 'buildings',
         paint: {{
-          'fill-extrusion-height': ['to-number', ['get', 'height'], 9],
-          'fill-extrusion-base': ['to-number', ['get', 'min_height'], 0],
+          'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
+          'fill-extrusion-base': ['to-number', ['coalesce', ['get', 'min_height'], 0], 0],
           'fill-extrusion-color': COLOR_EXPRESSIONS[colorMode] || COLOR_EXPRESSIONS.floors,
           'fill-extrusion-opacity': 0.95
         }}
@@ -1030,19 +1090,13 @@ def generate_3d_viewer_html(
     updateLegend(document.getElementById('select-color-mode')?.value || 'floors');
   }}
 
-  map.on('style.load', () => {{
-    initLayers();
-  }});
-
-  if (map.isStyleLoaded()) {{
-    initLayers();
-  }}
-
   function fitToData(animated = true) {{
+    if (!map) return;
     map.resize();
     const container = map.getContainer();
     const cWidth = container ? container.clientWidth : window.innerWidth;
     const cHeight = container ? container.clientHeight : window.innerHeight;
+    if (cWidth < 50 || cHeight < 50) return;
 
     const panel = document.getElementById('ui-panel');
     const isPanelVisible = panel && !panel.classList.contains('collapsed');
@@ -1063,156 +1117,224 @@ def generate_3d_viewer_html(
     }}
   }}
 
-  // ResizeObserver для автоматического пробуждения при показе вкладки 3D
-  if (window.ResizeObserver) {{
-    let roTimer = null;
-    const ro = new ResizeObserver((entries) => {{
-      for (const entry of entries) {{
-        if (entry.contentRect.width > 50 && entry.contentRect.height > 50) {{
-          map.resize();
-          clearTimeout(roTimer);
-          roTimer = setTimeout(() => {{
-            fitToData(false);
-          }}, 80);
-        }}
+  let controlsConfigured = false;
+  function setupControls() {{
+    if (controlsConfigured) return;
+    controlsConfigured = true;
+
+    // Панель: скрыть/показать
+    const uiPanel = document.getElementById('ui-panel');
+    const btnHide = document.getElementById('btn-hide-panel');
+    const btnShow = document.getElementById('btn-show-panel');
+
+    const isEmbedded = !{str(standalone).lower()};
+    if (isEmbedded || window.innerWidth < 720) {{
+      if (uiPanel) {{
+        uiPanel.classList.add('collapsed');
+        if (btnShow) btnShow.style.display = 'block';
       }}
-    }});
-    const mapEl = document.getElementById('map');
-    if (mapEl) ro.observe(mapEl);
-  }}
-
-  function waitForSize() {{
-    var el = document.getElementById('map');
-    if (el && el.clientWidth > 50 && el.clientHeight > 50) {{
-      map.resize();
-      fitToData(false);
-    }} else {{
-      requestAnimationFrame(waitForSize);
     }}
-  }}
-  requestAnimationFrame(waitForSize);
 
-  window.addEventListener('resize', () => {{
-    map.resize();
-  }});
-
-  window.addEventListener('message', function(e) {{
-    if (e.data && (e.data.type === 'activate' || e.data.type === 'resize')) {{
-      setTimeout(function() {{ map.resize(); fitToData(false); }}, 50);
-      setTimeout(function() {{ map.resize(); fitToData(false); }}, 300);
+    if (btnHide && btnShow && uiPanel) {{
+      btnHide.addEventListener('click', () => {{
+        uiPanel.classList.add('collapsed');
+        btnShow.style.display = 'block';
+        setTimeout(() => fitToData(true), 250);
+      }});
+      btnShow.addEventListener('click', () => {{
+        uiPanel.classList.remove('collapsed');
+        btnShow.style.display = 'none';
+        setTimeout(() => fitToData(true), 250);
+      }});
     }}
-  }});
 
-  // Панель: скрыть/показать
-  const uiPanel = document.getElementById('ui-panel');
-  const btnHide = document.getElementById('btn-hide-panel');
-  const btnShow = document.getElementById('btn-show-panel');
-
-  // Если встроено во фрейм дашборда (standalone=False) или экран узкий (< 720px) —
-  // сворачиваем панель ТЭП по умолчанию, чтобы она не перекрывала 3D-сцену
-  const isEmbedded = !{str(standalone).lower()};
-  if (isEmbedded || window.innerWidth < 720) {{
-    if (uiPanel) {{
-      uiPanel.classList.add('collapsed');
-      if (btnShow) btnShow.style.display = 'block';
+    // Сброс ракурса
+    const btnReset = document.getElementById('btn-reset-view');
+    if (btnReset) {{
+      btnReset.addEventListener('click', () => fitToData(true));
     }}
-  }}
 
-  if (btnHide && btnShow && uiPanel) {{
-    btnHide.addEventListener('click', () => {{
-      uiPanel.classList.add('collapsed');
-      btnShow.style.display = 'block';
-      setTimeout(() => fitToData(true), 250);
-    }});
-    btnShow.addEventListener('click', () => {{
-      uiPanel.classList.remove('collapsed');
-      btnShow.style.display = 'none';
-      setTimeout(() => fitToData(true), 250);
-    }});
-  }}
-
-  // Сброс ракурса
-  document.getElementById('btn-reset-view').addEventListener('click', () => fitToData(true));
-
-  // Смена подложки (если доступен селектор)
-  const selBasemap = document.getElementById('select-basemap');
-  if (selBasemap) {{
-    selBasemap.addEventListener('change', (e) => {{
-      switchBasemap(e.target.value);
-    }});
-  }}
-
-  // Смена палитры
-  document.getElementById('select-color-mode').addEventListener('change', (e) => {{
-    const mode = e.target.value;
-    updateLegend(mode);
-    if (map.getLayer('buildings-3d')) {{
-      map.setPaintProperty('buildings-3d', 'fill-extrusion-color', COLOR_EXPRESSIONS[mode]);
+    // Смена подложки
+    const selBasemap = document.getElementById('select-basemap');
+    if (selBasemap) {{
+      selBasemap.addEventListener('change', (e) => {{
+        switchBasemap(e.target.value);
+      }});
     }}
-  }});
 
-  // Фильтр этажности
-  const floorSlider = document.getElementById('slider-floor-min');
-  const floorVal = document.getElementById('val-floor-min');
-  floorSlider.addEventListener('input', (e) => {{
-    const minF = parseInt(e.target.value, 10);
-    floorVal.textContent = minF;
-    if (map.getLayer('buildings-3d')) {{
-      map.setFilter('buildings-3d', ['>=', ['to-number', ['get', 'floors'], 1], minF]);
-    }}
-  }});
-
-  // Чекбоксы слоев
-  function setupToggle(checkboxId, layerIds) {{
-    document.getElementById(checkboxId).addEventListener('change', (e) => {{
-      const vis = e.target.checked ? 'visible' : 'none';
-      layerIds.forEach(id => {{
-        if (map.getLayer(id)) {{
-          map.setLayoutProperty(id, 'visibility', vis);
+    // Смена палитры
+    const selColor = document.getElementById('select-color-mode');
+    if (selColor) {{
+      selColor.addEventListener('change', (e) => {{
+        const mode = e.target.value;
+        updateLegend(mode);
+        if (map && map.getLayer('buildings-3d')) {{
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-color', COLOR_EXPRESSIONS[mode]);
         }}
       }});
+    }}
+
+    // Фильтр этажности
+    const floorSlider = document.getElementById('slider-floor-min');
+    const floorVal = document.getElementById('val-floor-min');
+    if (floorSlider && floorVal) {{
+      floorSlider.addEventListener('input', (e) => {{
+        const minF = parseInt(e.target.value, 10);
+        floorVal.textContent = minF;
+        if (map && map.getLayer('buildings-3d')) {{
+          map.setFilter('buildings-3d', ['>=', ['to-number', ['get', 'floors'], 1], minF]);
+        }}
+      }});
+    }}
+
+    // Чекбоксы слоев
+    function setupToggle(checkboxId, layerIds) {{
+      const cb = document.getElementById(checkboxId);
+      if (!cb) return;
+      cb.addEventListener('change', (e) => {{
+        const vis = e.target.checked ? 'visible' : 'none';
+        layerIds.forEach(id => {{
+          if (map && map.getLayer(id)) {{
+            map.setLayoutProperty(id, 'visibility', vis);
+          }}
+        }});
+      }});
+    }}
+    setupToggle('toggle-buildings', ['buildings-3d']);
+    setupToggle('toggle-boundary', ['boundary-line', 'boundary-fill']);
+    setupToggle('toggle-buildable', ['buildable-line', 'buildable-fill']);
+    setupToggle('toggle-redlines', ['redlines-line']);
+
+    // Popup карточки при клике
+    const popup = new maplibregl.Popup({{
+      closeButton: true,
+      closeOnClick: true,
+      maxWidth: '310px'
+    }});
+
+    if (map) {{
+      map.on('click', 'buildings-3d', (e) => {{
+        if (!e.features.length) return;
+        const p = e.features[0].properties;
+
+        const content = `
+          <div class="popup-title">${{p.full_name}}</div>
+          <div class="popup-row"><span class="popup-label">Тип секции:</span><span class="popup-val">${{p.category_name}}</span></div>
+          <div class="popup-row"><span class="popup-label">Этажность:</span><span class="popup-val">${{p.floors}} эт. (h = ${{p.height}} м)</span></div>
+          <div class="popup-row"><span class="popup-label">Высота типового этажа:</span><span class="popup-val">${{p.floor_height}} м</span></div>
+          <div class="popup-row"><span class="popup-label">Площадь пятна:</span><span class="popup-val">${{p.footprint_area}} м²</span></div>
+          <div class="popup-row"><span class="popup-label">Общая площадь (GFA):</span><span class="popup-val">${{p.gfa}} м²</span></div>
+          <div class="popup-row"><span class="popup-label">Жилая площадь:</span><span class="popup-val">${{p.living_area}} м²</span></div>
+          <div class="popup-row"><span class="popup-label">Квартир в секции:</span><span class="popup-val">${{p.apartments}} шт.</span></div>
+          <div class="popup-row"><span class="popup-label">1-й этаж коммерция:</span><span class="popup-val">${{p.has_commercial ? 'Да' : 'Нет'}}</span></div>
+          <div style="margin-top:6px;padding-top:4px;border-top:1px dashed #cbd5e1;font-size:11px;color:#64748b;">
+            <b>${{p.building_name}}</b>: этажность ${{p.building_floors}} эт. (${{p.building_height}} м), ${{p.building_sections}} секц.
+          </div>
+        `;
+
+        popup.setLngLat(e.lngLat).setHTML(content).addTo(map);
+
+        if (window.parent && window.parent !== window) {{
+          try {{
+            window.parent.postMessage({{ type: 'section_click', section_id: p.id || p.section_id }}, '*');
+          }} catch (_) {{}}
+        }}
+      }});
+
+      map.on('mouseenter', 'buildings-3d', () => {{
+        map.getCanvas().style.cursor = 'pointer';
+      }});
+      map.on('mouseleave', 'buildings-3d', () => {{
+        map.getCanvas().style.cursor = '';
+      }});
+    }}
+  }}
+
+  function updateViewerData(newData) {{
+    if (!newData) return;
+    DATA = newData;
+    window.DATA = newData;
+    siteBounds = computeBounds([DATA.boundary, DATA.buildings]) || [[30.33, 59.93], [30.34, 59.94]];
+
+    if (!map) {{
+      initMapIfReady();
+    }} else {{
+      if (map.getSource('boundary') && DATA.boundary) {{
+        map.getSource('boundary').setData(DATA.boundary);
+      }}
+      if (map.getSource('buildable') && DATA.buildable) {{
+        map.getSource('buildable').setData(DATA.buildable);
+      }}
+      if (map.getSource('red_lines') && DATA.red_lines) {{
+        map.getSource('red_lines').setData(DATA.red_lines);
+      }}
+      if (map.getSource('roads') && DATA.roads) {{
+        map.getSource('roads').setData(DATA.roads);
+      }}
+      if (map.getSource('buildings') && DATA.buildings) {{
+        map.getSource('buildings').setData(DATA.buildings);
+      }}
+      setTimeout(() => fitToData(true), 60);
+    }}
+  }}
+
+  // Единый слушатель сообщений от родительского окна
+  window.addEventListener('message', function(e) {{
+    if (!e.data) return;
+    if (e.data.type === 'loadData' && e.data.data) {{
+      updateViewerData(e.data.data);
+    }} else if (e.data.type === 'activate' || e.data.type === 'resize') {{
+      if (!map) {{
+        initMapIfReady();
+      }} else {{
+        map.resize();
+        setTimeout(function() {{ map.resize(); fitToData(false); }}, 50);
+        setTimeout(function() {{ map.resize(); fitToData(false); }}, 250);
+      }}
+    }}
+  }});
+
+  // 1. Попытка немедленной инициализации карты (если контейнер уже имеет размер)
+  if (!initMapIfReady()) {{
+    // 2. ResizeObserver отслеживает появление контейнера (снятие display: none)
+    if (window.ResizeObserver) {{
+      let roTimer = null;
+      const ro = new ResizeObserver((entries) => {{
+        for (const entry of entries) {{
+          if (entry.contentRect.width > 50 && entry.contentRect.height > 50) {{
+            if (!map) {{
+              initMapIfReady();
+            }} else {{
+              map.resize();
+              clearTimeout(roTimer);
+              roTimer = setTimeout(() => fitToData(false), 80);
+            }}
+          }}
+        }}
+      }});
+      const mapEl = document.getElementById('map');
+      if (mapEl) ro.observe(mapEl);
+    }}
+
+    // 3. Ожидание через requestAnimationFrame (страховка)
+    function waitForContainer() {{
+      if (!initMapIfReady()) {{
+        requestAnimationFrame(waitForContainer);
+      }}
+    }}
+    requestAnimationFrame(waitForContainer);
+  }} else {{
+    window.addEventListener('resize', () => {{
+      if (map) map.resize();
     }});
   }}
-  setupToggle('toggle-buildings', ['buildings-3d']);
-  setupToggle('toggle-boundary', ['boundary-line', 'boundary-fill']);
-  setupToggle('toggle-buildable', ['buildable-line', 'buildable-fill']);
-  setupToggle('toggle-redlines', ['redlines-line']);
 
-  // Popup карточки при клике
-  const popup = new maplibregl.Popup({{
-    closeButton: true,
-    closeOnClick: true,
-    maxWidth: '310px'
-  }});
-
-  map.on('click', 'buildings-3d', (e) => {{
-    if (!e.features.length) return;
-    const p = e.features[0].properties;
-
-    const content = `
-      <div class="popup-title">${{p.full_name}}</div>
-      <div class="popup-row"><span class="popup-label">Тип секции:</span><span class="popup-val">${{p.category_name}}</span></div>
-      <div class="popup-row"><span class="popup-label">Этажность:</span><span class="popup-val">${{p.floors}} эт. (h = ${{p.height}} м)</span></div>
-      <div class="popup-row"><span class="popup-label">Высота типового этажа:</span><span class="popup-val">${{p.floor_height}} м</span></div>
-      <div class="popup-row"><span class="popup-label">Площадь пятна:</span><span class="popup-val">${{p.footprint_area}} м²</span></div>
-      <div class="popup-row"><span class="popup-label">Общая площадь (GFA):</span><span class="popup-val">${{p.gfa}} м²</span></div>
-      <div class="popup-row"><span class="popup-label">Жилая площадь:</span><span class="popup-val">${{p.living_area}} м²</span></div>
-      <div class="popup-row"><span class="popup-label">Квартир в секции:</span><span class="popup-val">${{p.apartments}} шт.</span></div>
-      <div class="popup-row"><span class="popup-label">1-й этаж коммерция:</span><span class="popup-val">${{p.has_commercial ? 'Да' : 'Нет'}}</span></div>
-      <div style="margin-top:6px;padding-top:4px;border-top:1px dashed #cbd5e1;font-size:11px;color:#64748b;">
-        <b>${{p.building_name}}</b>: этажность ${{p.building_floors}} эт. (${{p.building_height}} м), ${{p.building_sections}} секц.
-      </div>
-    `;
-
-    popup.setLngLat(e.lngLat).setHTML(content).addTo(map);
-  }});
-
-  map.on('mouseenter', 'buildings-3d', () => {{
-    map.getCanvas().style.cursor = 'pointer';
-  }});
-  map.on('mouseleave', 'buildings-3d', () => {{
-    map.getCanvas().style.cursor = '';
-  }});
+  // Оповещаем родительский дашборд о готовности фрейма к приёму данных
+  try {{
+    if (window.parent && window.parent !== window) {{
+      window.parent.postMessage({{ type: 'viewer3dReady' }}, '*');
+    }}
+  }} catch(_) {{}}
 </script>
 </body>
 </html>"""

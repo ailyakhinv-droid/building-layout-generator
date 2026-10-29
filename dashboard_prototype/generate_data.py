@@ -32,7 +32,7 @@ from src.core.tep_calculator import calculate_tep, check_normatives
 from src.core.regional_norms import load_regional_norms, get_regional_norm
 from src.core.territory_balance import calculate_territory_balance
 from src.library.section_library import SectionLibrary
-from src.visualization.viewer_3d import generate_3d_viewer_html
+from src.visualization.viewer_3d import build_3d_geojson_data, generate_3d_viewer_html
 from src.visualization.map_view import generate_leaflet_map_html
 
 
@@ -215,8 +215,10 @@ def generate_scenario_data(cad_query: str, typology: str, target_floors: int, sc
         leaflet_html = f"<!-- Leaflet error: {e} -->"
 
     try:
+        viewer_3d_data = build_3d_geojson_data(site, buildings, tep)
         viewer_3d_html = generate_3d_viewer_html(site, buildings, tep, height="640px", default_basemap="light", standalone=False)
     except Exception as e:
+        viewer_3d_data = None
         viewer_3d_html = f"<!-- 3D Viewer error: {e} -->"
 
     geo_lat, geo_lon = site.geo_center if site.geo_center else (0.0, 0.0)
@@ -287,6 +289,7 @@ def generate_scenario_data(cad_query: str, typology: str, target_floors: int, sc
         "sections": sections_data,
         "leaflet_html": leaflet_html,
         "viewer_3d_html": viewer_3d_html,
+        "viewer_3d_data": viewer_3d_data,
     }
 
 

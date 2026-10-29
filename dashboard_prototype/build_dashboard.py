@@ -662,6 +662,7 @@ def build():
     .svg-buildable-area {{ fill: rgba(83, 141, 178, 0.05); stroke: rgba(83, 141, 178, 0.4); stroke-width: 1; }}
     .svg-red-line {{ fill: none; stroke: #ef4444; stroke-width: 2.2; }}
     .svg-road-corridor {{ fill: #334155; stroke: #64748b; stroke-width: 1.2; opacity: 0.95; }}
+    .svg-road-buffer {{ fill: rgba(148, 163, 184, 0.22); stroke: rgba(100, 116, 139, 0.45); stroke-width: 1.0; stroke-dasharray: 4 3; }}
     .svg-road-centerline {{ fill: none; stroke: #ffffff; stroke-width: 2.2; stroke-dasharray: 6 5; opacity: 0.9; }}
     .svg-subblock-bound {{ fill: rgba(37, 99, 235, 0.03); stroke: #3b82f6; stroke-width: 1.4; stroke-dasharray: 4 3; }}
     .svg-road-preview {{ stroke: #2563eb; stroke-width: 3.5; stroke-dasharray: 6 4; fill: none; }}
@@ -1074,13 +1075,31 @@ def build():
             </select>
           </div>
 
-          <div class="control-row" id="row-road-width">
+          <div class="control-row" id="row-road-pos" style="display:none;">
+            <div style="display:flex; justify-content:space-between;">
+              <label class="control-label" for="cfg-road-pos">Положение дороги</label>
+              <span id="badge-road-pos" style="font-size:11px; font-weight:600; color:#2563eb;">50%</span>
+            </div>
+            <input type="range" class="slider-input" id="cfg-road-pos" min="20" max="80" step="5" value="50" />
+            <div class="control-hint">Смещение оси улицы поперек или вдоль участка</div>
+          </div>
+
+          <div class="control-row" id="row-road-width" style="display:none;">
             <div style="display:flex; justify-content:space-between;">
               <label class="control-label" for="cfg-road-width">Ширина улицы</label>
               <span id="badge-road-width" style="font-size:11px; font-weight:600; color:#2563eb;">16 м</span>
             </div>
             <input type="range" class="slider-input" id="cfg-road-width" min="10" max="24" step="2" value="16" />
-            <div class="control-hint">Полоса отвода (проезжая часть + тротуары)</div>
+            <div class="control-hint">Ширина проезжей части / полосы отвода</div>
+          </div>
+
+          <div class="control-row" id="row-road-setback" style="display:none;">
+            <div style="display:flex; justify-content:space-between;">
+              <label class="control-label" for="cfg-road-setback">Отступ зданий от дороги</label>
+              <span id="badge-road-setback" style="font-size:11px; font-weight:600; color:#2563eb;">4 м</span>
+            </div>
+            <input type="range" class="slider-input" id="cfg-road-setback" min="2" max="10" step="1" value="4" />
+            <div class="control-hint">СП 42.13330: буфер / красная линия до фасадов (3–6 м)</div>
           </div>
 
           <div style="display:flex; gap:6px; margin-top:2px;">
@@ -1088,7 +1107,11 @@ def build():
             <button class="btn" id="btn-reset-roads" style="font-size:11.5px; padding:6px 10px;" title="Сбросить нарезку">Сброс</button>
           </div>
           <div id="draw-road-status" style="display:none; font-size:11px; color:#1d4ed8; background:#eff6ff; border:1px solid #bfdbfe; padding:6px 8px; border-radius:4px; line-height:1.4;">
-            🎯 <strong>Режим черчения:</strong> кликните начальную и конечную точку дороги поперек участка на 2D генплане.
+            🎯 <strong>Режим черчения:</strong> кликните начальную точку, затем конечную точку дороги поперек участка (Esc для отмены).
+          </div>
+          <div id="box-custom-roads" style="display:none; align-items:center; justify-content:space-between; font-size:11px; background:#eff6ff; border:1px solid #bfdbfe; padding:5px 8px; border-radius:4px;">
+            <span id="badge-custom-roads-count" style="color:#1e40af; font-weight:600;">Нарисовано дорог: 0</span>
+            <button class="btn" id="btn-clear-custom-roads" style="padding:2px 6px; font-size:10.5px; color:#ef4444; border:1px solid #fca5a5; background:#fff;" title="Удалить нарисованные дороги">Очистить</button>
           </div>
         </div>
 
@@ -1494,7 +1517,7 @@ def build():
           </div>
 
           <div id="view-container-3d" style="display:none; height:640px;">
-            <iframe id="iframe-3d" style="width:100%; height:100%; border:0;" title="3D Модель"></iframe>
+            <iframe id="iframe-3d" src="viewer_3d.html" style="width:100%; height:100%; border:0;" title="3D Модель"></iframe>
           </div>
         </div>
 
@@ -1955,18 +1978,42 @@ def build():
 
       // Дорожная сеть UI
       const cfgRoadPreset = document.getElementById("cfg-road-preset");
+      const rowRoadPos = document.getElementById("row-road-pos");
+      const cfgRoadPos = document.getElementById("cfg-road-pos");
+      const badgeRoadPos = document.getElementById("badge-road-pos");
+      const rowRoadWidth = document.getElementById("row-road-width");
       const cfgRoadWidth = document.getElementById("cfg-road-width");
       const badgeRoadWidth = document.getElementById("badge-road-width");
+      const rowRoadSetback = document.getElementById("row-road-setback");
+      const cfgRoadSetback = document.getElementById("cfg-road-setback");
+      const badgeRoadSetback = document.getElementById("badge-road-setback");
       const badgeRoadBlocks = document.getElementById("badge-road-blocks");
       const btnDrawRoad = document.getElementById("btn-draw-road");
       const btnDrawRoadSide = document.getElementById("btn-draw-road-side");
       const btnResetRoads = document.getElementById("btn-reset-roads");
       const drawRoadStatus = document.getElementById("draw-road-status");
+      const boxCustomRoads = document.getElementById("box-custom-roads");
+      const badgeCustomRoadsCount = document.getElementById("badge-custom-roads-count");
+      const btnClearCustomRoads = document.getElementById("btn-clear-custom-roads");
 
       let currentRoadPreset = "none";
       let customRoadLines = [];
       let isDrawingRoad = false;
       let drawRoadStartPt = null;
+
+      function updateRoadControlsVisibility() {{
+        const hasRoads = currentRoadPreset !== "none" || customRoadLines.length > 0;
+        if (rowRoadWidth) rowRoadWidth.style.display = hasRoads ? "flex" : "none";
+        if (rowRoadSetback) rowRoadSetback.style.display = hasRoads ? "flex" : "none";
+        const hasPresetPos = ["longitudinal", "transverse", "cross_2x2"].includes(currentRoadPreset);
+        if (rowRoadPos) rowRoadPos.style.display = hasPresetPos ? "flex" : "none";
+        if (boxCustomRoads) {{
+          boxCustomRoads.style.display = customRoadLines.length > 0 ? "flex" : "none";
+          if (badgeCustomRoadsCount) {{
+            badgeCustomRoadsCount.textContent = `Нарисовано дорог: ${{customRoadLines.length}}`;
+          }}
+        }}
+      }}
 
       // Инспектор
       const inspectorEmpty = document.getElementById("inspector-empty");
@@ -2670,11 +2717,17 @@ def build():
         if (tab === "3d") {{
           const iframe3d = view3d.querySelector("iframe");
           if (iframe3d) {{
-            const targetHtml = iframe3d.dataset.pendingSrcdoc || currentScenario.viewer_3d_html;
-            if (targetHtml && (!iframe3d.srcdoc || iframe3d.srcdoc !== targetHtml)) {{
-              iframe3d.srcdoc = targetHtml;
-              delete iframe3d.dataset.pendingSrcdoc;
-            }}
+            setTimeout(function() {{
+              try {{
+                if (iframe3d.contentWindow) {{
+                  iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
+                  iframe3d.contentWindow.dispatchEvent(new Event("resize"));
+                  if (currentScenario && currentScenario.viewer_3d_data) {{
+                    iframe3d.contentWindow.postMessage({{ type: "loadData", data: currentScenario.viewer_3d_data }}, "*");
+                  }}
+                }}
+              }} catch (_) {{}}
+            }}, 100);
             setTimeout(function() {{
               try {{
                 if (iframe3d.contentWindow) {{
@@ -2682,15 +2735,7 @@ def build():
                   iframe3d.contentWindow.dispatchEvent(new Event("resize"));
                 }}
               }} catch (_) {{}}
-            }}, 150);
-            setTimeout(function() {{
-              try {{
-                if (iframe3d.contentWindow) {{
-                  iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
-                  iframe3d.contentWindow.dispatchEvent(new Event("resize"));
-                }}
-              }} catch (_) {{}}
-            }}, 600);
+            }}, 400);
           }}
         }}
       }}
@@ -2754,6 +2799,8 @@ def build():
           perimeter_layout_style: cfgPeriStyle ? cfgPeriStyle.value : "U_SHAPE",
           road_preset: currentRoadPreset,
           road_width: cfgRoadWidth ? (parseFloat(cfgRoadWidth.value) || 16.0) : 16.0,
+          road_setback: cfgRoadSetback ? (parseFloat(cfgRoadSetback.value) || 4.0) : 4.0,
+          road_pos: cfgRoadPos ? (parseFloat(cfgRoadPos.value) / 100.0) : 0.5,
           custom_roads: customRoadLines
         }};
 
@@ -3341,6 +3388,12 @@ def build():
         const roadsData = s.roads || {{}};
         if (svgRoadsGroup) {{
           svgRoadsGroup.innerHTML = "";
+          if (roadsData.buffer_path) {{
+            const bp = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            bp.setAttribute("d", roadsData.buffer_path);
+            bp.setAttribute("class", "svg-road-buffer");
+            svgRoadsGroup.appendChild(bp);
+          }}
           if (roadsData.corridor_path) {{
             const rp = document.createElementNS("http://www.w3.org/2000/svg", "path");
             rp.setAttribute("d", roadsData.corridor_path);
@@ -3369,6 +3422,8 @@ def build():
           const count = roadsData.sub_blocks_count || 1;
           badgeRoadBlocks.textContent = count === 1 ? "1 квартал" : (count < 5 ? `${{count}} квартала` : `${{count}} кварталов`);
         }}
+
+        updateRoadControlsVisibility();
 
         svgSectionsGroup.innerHTML = "";
         (s.sections || []).forEach(sec => {{
@@ -3415,24 +3470,11 @@ def build():
             iframeOsm.srcdoc = s.leaflet_html;
           }}
         }}
-        if (s.viewer_3d_html) {{
-          const iframe3d = view3d.querySelector("iframe");
-          if (iframe3d) {{
-            if (activeView === "3d") {{
-              if (iframe3d.srcdoc !== s.viewer_3d_html) {{
-                iframe3d.srcdoc = s.viewer_3d_html;
-              }}
-              setTimeout(function() {{
-                try {{
-                  if (iframe3d.contentWindow) {{
-                    iframe3d.contentWindow.postMessage({{ type: "activate" }}, "*");
-                  }}
-                }} catch (_) {{}}
-              }}, 150);
-            }} else {{
-              iframe3d.dataset.pendingSrcdoc = s.viewer_3d_html;
-            }}
-          }}
+        const iframe3d = view3d.querySelector("iframe");
+        if (iframe3d && iframe3d.contentWindow && s.viewer_3d_data) {{
+          try {{
+            iframe3d.contentWindow.postMessage({{ type: "loadData", data: s.viewer_3d_data }}, "*");
+          }} catch (_) {{}}
         }}
       }}
 
@@ -3692,8 +3734,13 @@ def build():
           btnDrawRoad.style.background = "#2563eb";
           btnDrawRoad.style.color = "#ffffff";
         }}
+        if (btnDrawRoadSide) {{
+          btnDrawRoadSide.style.background = "#2563eb";
+          btnDrawRoadSide.style.color = "#ffffff";
+        }}
         if (svgRoot) svgRoot.style.cursor = "crosshair";
-        showToast("🎯 Кликните начальную и конечную точку дороги на 2D генплане");
+        if (svgSectionsGroup) svgSectionsGroup.style.pointerEvents = "none";
+        showToast("✏️ Кликните точку начала дороги на плане (Esc для отмены)");
       }}
 
       function stopRoadDrawing() {{
@@ -3704,9 +3751,21 @@ def build():
           btnDrawRoad.style.background = "";
           btnDrawRoad.style.color = "";
         }}
+        if (btnDrawRoadSide) {{
+          btnDrawRoadSide.style.background = "";
+          btnDrawRoadSide.style.color = "";
+        }}
         if (svgRoot) svgRoot.style.cursor = "";
         if (svgRoadDrawPreview) svgRoadDrawPreview.innerHTML = "";
+        if (svgSectionsGroup) svgSectionsGroup.style.pointerEvents = "";
       }}
+
+      window.addEventListener("keydown", e => {{
+        if (e.key === "Escape" && isDrawingRoad) {{
+          stopRoadDrawing();
+          showToast("Черчение дороги отменено");
+        }}
+      }});
 
       if (btnDrawRoad) {{
         btnDrawRoad.addEventListener("click", () => {{
@@ -3720,7 +3779,11 @@ def build():
 
       if (btnDrawRoadSide) {{
         btnDrawRoadSide.addEventListener("click", () => {{
-          startRoadDrawing();
+          if (isDrawingRoad) {{
+            stopRoadDrawing();
+          }} else {{
+            startRoadDrawing();
+          }}
         }});
       }}
 
@@ -3730,8 +3793,37 @@ def build():
           currentRoadPreset = "none";
           customRoadLines = [];
           if (cfgRoadPreset) cfgRoadPreset.value = "none";
+          if (cfgRoadPos) {{
+            cfgRoadPos.value = "50";
+            if (badgeRoadPos) badgeRoadPos.textContent = "50%";
+          }}
+          updateRoadControlsVisibility();
           showToast("Сброс нарезки дорогами");
           await lockSiteAndGenerate();
+        }});
+      }}
+
+      if (btnClearCustomRoads) {{
+        btnClearCustomRoads.addEventListener("click", async () => {{
+          customRoadLines = [];
+          if (currentRoadPreset === "custom") {{
+            currentRoadPreset = "none";
+            if (cfgRoadPreset) cfgRoadPreset.value = "none";
+          }}
+          updateRoadControlsVisibility();
+          showToast("Нарисованные дороги удалены");
+          await lockSiteAndGenerate();
+        }});
+      }}
+
+      if (cfgRoadPos && badgeRoadPos) {{
+        cfgRoadPos.addEventListener("input", () => {{
+          badgeRoadPos.textContent = `${{cfgRoadPos.value}}%`;
+        }});
+        cfgRoadPos.addEventListener("change", async () => {{
+          if (["longitudinal", "transverse", "cross_2x2"].includes(currentRoadPreset)) {{
+            await lockSiteAndGenerate();
+          }}
         }});
       }}
 
@@ -3746,12 +3838,24 @@ def build():
         }});
       }}
 
+      if (cfgRoadSetback && badgeRoadSetback) {{
+        cfgRoadSetback.addEventListener("input", () => {{
+          badgeRoadSetback.textContent = `${{cfgRoadSetback.value}} м`;
+        }});
+        cfgRoadSetback.addEventListener("change", async () => {{
+          if (currentRoadPreset !== "none" || customRoadLines.length > 0) {{
+            await lockSiteAndGenerate();
+          }}
+        }});
+      }}
+
       if (cfgRoadPreset) {{
         cfgRoadPreset.addEventListener("change", async () => {{
           currentRoadPreset = cfgRoadPreset.value;
           if (currentRoadPreset !== "custom") {{
             customRoadLines = [];
           }}
+          updateRoadControlsVisibility();
           if (currentRoadPreset === "custom") {{
             startRoadDrawing();
           }} else {{
@@ -3774,7 +3878,8 @@ def build():
             drawRoadStartPt = pt;
             if (svgRoadDrawPreview) {{
               svgRoadDrawPreview.innerHTML = `
-                <circle cx="${{pt.svgX}}" cy="${{pt.svgY}}" r="5" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
+                <circle cx="${{pt.svgX}}" cy="${{pt.svgY}}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
+                <text x="${{pt.svgX + 10}}" y="${{pt.svgY - 10}}" fill="#1e40af" font-size="11" font-weight="700">Начало</text>
               `;
             }}
             showToast("✓ Начало дороги зафиксировано! Теперь кликните конец дороги.");
@@ -3787,6 +3892,7 @@ def build():
             currentRoadPreset = "custom";
             if (cfgRoadPreset) cfgRoadPreset.value = "custom";
             stopRoadDrawing();
+            updateRoadControlsVisibility();
             showToast("🛣️ Дорога построена! Нарезаем участок и расставляем корпуса...");
             await lockSiteAndGenerate();
           }}
@@ -3805,10 +3911,12 @@ def build():
       svgRoot.addEventListener("pointermove", e => {{
         if (isDrawingRoad && drawRoadStartPt && svgRoadDrawPreview) {{
           const cur = convertScreenToSiteCoords(e);
+          const lenM = Math.round(Math.hypot(cur.siteX - drawRoadStartPt.siteX, cur.siteY - drawRoadStartPt.siteY));
           svgRoadDrawPreview.innerHTML = `
-            <circle cx="${{drawRoadStartPt.svgX}}" cy="${{drawRoadStartPt.svgY}}" r="5" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
+            <circle cx="${{drawRoadStartPt.svgX}}" cy="${{drawRoadStartPt.svgY}}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
             <line x1="${{drawRoadStartPt.svgX}}" y1="${{drawRoadStartPt.svgY}}" x2="${{cur.svgX}}" y2="${{cur.svgY}}" class="svg-road-preview" />
-            <circle cx="${{cur.svgX}}" cy="${{cur.svgY}}" r="4" fill="#60a5fa" stroke="#ffffff" stroke-width="1.5" />
+            <circle cx="${{cur.svgX}}" cy="${{cur.svgY}}" r="5" fill="#60a5fa" stroke="#ffffff" stroke-width="2" />
+            <text x="${{(drawRoadStartPt.svgX + cur.svgX) / 2}}" y="${{(drawRoadStartPt.svgY + cur.svgY) / 2 - 10}}" fill="#1e40af" font-size="12" font-weight="700" text-anchor="middle" stroke="#ffffff" stroke-width="3" paint-order="stroke">${{lenM}} м</text>
           `;
           return;
         }}
@@ -3917,6 +4025,16 @@ def build():
         if (btnGeo) btnGeo.href = API_BASE + "/api/export/geojson";
       }}
 
+      // Приём сигнала готовности от 3D-вьюера
+      window.addEventListener("message", function(e) {{
+        if (e.data && e.data.type === "viewer3dReady") {{
+          const iframe3d = document.getElementById("iframe-3d");
+          if (iframe3d && iframe3d.contentWindow && currentScenario && currentScenario.viewer_3d_data) {{
+            iframe3d.contentWindow.postMessage({{ type: "loadData", data: currentScenario.viewer_3d_data }}, "*");
+          }}
+        }}
+      }});
+
       // Инициализация
       renderPrefSectionChips();
       renderCatalogCards();
@@ -3935,7 +4053,12 @@ def build():
     with open(OUT_HTML, "w", encoding="utf-8") as f:
         f.write(html)
 
-    print(f"Дашборд успешно пересобран: {OUT_HTML} ({len(html)} символов)")
+    OUT_3D_HTML = DIR / "viewer_3d.html"
+    if scenarios and scenarios[0].get("viewer_3d_html"):
+        with open(OUT_3D_HTML, "w", encoding="utf-8") as f:
+            f.write(scenarios[0]["viewer_3d_html"])
+
+    print(f"Дашборд успешно пересобран: {OUT_HTML} ({len(html)} символов), viewer_3d.html сохранён")
 
 
 if __name__ == "__main__":
