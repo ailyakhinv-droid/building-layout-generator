@@ -40,6 +40,7 @@ from src.core.cadastre import (
     create_site_from_coordinate_table,
     parse_coordinate_table,
 )
+from src.core.gpzu_parser import parse_gpzu_file
 from src.core.site_parser import create_rectangular_site
 from src.core.buildable_area import compute_buildable_area
 from src.core.placement import PlacementConfig, PlacementEngine
@@ -1506,3 +1507,12 @@ def parse_gpzu_table(
         }
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+
+def process_gpzu_upload(
+    file_bytes: bytes,
+    filename: str,
+    msk_zone: str | None = None,
+) -> dict[str, Any]:
+    """Разобрать загруженный файл ГПЗУ (.pdf, .xlsx, .docx, .txt) и извлечь координаты, ЗОУИТ и отступы."""
+    return parse_gpzu_file(file_bytes, filename, msk_zone_override=msk_zone)

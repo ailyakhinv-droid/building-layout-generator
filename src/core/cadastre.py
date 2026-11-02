@@ -929,6 +929,10 @@ def parse_coordinate_table(text: str) -> list[tuple[float, float]]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
+        # Исключаем строки описаний, примечаний и названий разделов (содержащие 2 и более слов текста)
+        words = re.findall(r"[а-яА-Яa-zA-Z]{2,}", line)
+        if len(words) >= 2:
+            continue
         # Заменяем десятичные запятые в числах (например 337979,12 -> 337979.12)
         line_norm = re.sub(r"(\d+),(\d+)", r"\1.\2", line)
         parts = re.split(r"[,;\t|\s]+", line_norm)

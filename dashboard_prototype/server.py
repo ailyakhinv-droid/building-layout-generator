@@ -37,6 +37,7 @@ from dashboard_prototype.generator_service import (
     export_file_report,
     lookup_pkk_parcel,
     parse_gpzu_table,
+    process_gpzu_upload,
 )
 
 PORT = 8050
@@ -249,6 +250,38 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                     exp_c = None
                 cad_num = data.get("cadastral_number")
                 res = parse_gpzu_table(text, msk_zone=msk_zone, expected_center=exp_c, cad_num=cad_num)
+                response_bytes = json.dumps(res, ensure_ascii=False).encode("utf-8")
+
+                self.send_response(200 if res.get("success") else 400)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(response_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(response_bytes)
+            except Exception as e:
+                err_bytes = json.dumps({"success": False, "error": str(e)}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(err_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(err_bytes)
+            return
+
+        # 6. Загрузка и парсинг файла ГПЗУ (.pdf, .xlsx, .docx, .txt)
+        elif parsed.path == "/api/upload-gpzu":
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length).decode("utf-8")
+            try:
+                data = json.loads(post_data) if post_data else {}
+                raw_b64 = data.get("file_base64", "")
+                if "," in raw_b64 and raw_b64.startswith("data:"):
+                    raw_b64 = raw_b64.split(",", 1)[1]
+                filename = data.get("filename", "gpzu_document.pdf")
+                msk_zone = data.get("msk_zone")
+                import base64
+                file_bytes = base64.b64decode(raw_b64)
+                res = process_gpzu_upload(file_bytes, filename, msk_zone=msk_zone)
                 response_bytes = json.dumps(res, ensure_ascii=False).encode("utf-8")
 
                 self.send_response(200 if res.get("success") else 400)

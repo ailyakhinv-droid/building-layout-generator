@@ -250,6 +250,22 @@ def generate_leaflet_map_html(
     </div>
 """ if interactive_transform else ""
 
+    digitizer_hud_block = """
+    <!-- Плавающий HUD оцифровки границ участка по точкам (Вариант 1) -->
+    <div id="digitizerHud" class="transform-hud" style="display:none; top: 12px; bottom: auto;">
+        <div class="hud-inner" style="background: rgba(15, 23, 42, 0.94); border: 1px solid rgba(56, 189, 248, 0.5); box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+            <div class="hud-info" id="digitizerInfo">
+                <span>📍 Кликните по углам участка на карте</span> &bull; <b>Точек: 0</b>
+            </div>
+            <div class="hud-actions" style="display:flex; gap:6px;">
+                <button type="button" class="hud-btn" id="btnFinishDigitize" style="background:#0284c7; color:#fff;" onclick="finishContourDigitizer()" disabled>✓ Построить ЗУ</button>
+                <button type="button" class="hud-btn" style="background:rgba(255,255,255,0.18); color:#fff;" onclick="undoDigitizerPoint()">↺ Шаг назад</button>
+                <button type="button" class="hud-btn" style="background:rgba(239,68,68,0.25); color:#fca5a5; border:1px solid rgba(239,68,68,0.4);" onclick="cancelContourDigitizer()">✕ Отмена</button>
+            </div>
+        </div>
+    </div>
+"""
+
     is_interactive_str = "true" if interactive_transform else "false"
 
     html_code = f"""<!DOCTYPE html>
@@ -413,6 +429,7 @@ def generate_leaflet_map_html(
     <div id="map"></div>
 
     {hud_block}
+    {digitizer_hud_block}
 
     <script>
         // Базовые картографические подложки
@@ -434,6 +451,12 @@ def generate_leaflet_map_html(
         var esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{{z}}/{{y}}/{{x}}', {{
             maxZoom: 19,
             attribution: 'Tiles &copy; Esri &mdash; World Imagery'
+        }});
+
+        var pkkCadastre = L.tileLayer('https://pkk.rosreestr.ru/arcgis/rest/services/PKK6/Cadastre/MapServer/export?dpi=96&transparent=true&format=png32&bbox={{bbox}}&bboxSR=3857&imageSR=3857&size=256%2C256&f=image', {{
+            maxZoom: 20,
+            opacity: 0.85,
+            attribution: 'Росреестр ПКК'
         }});
 
         var map = L.map('map', {{
@@ -617,6 +640,134 @@ def generate_leaflet_map_html(
             }});
         }}
 
+        // ─── РЕЖИМ ОЦИФРОВКИ КОНТУРА ПО КАРТЕ (ВАРИАНТ 1) ───
+        var _isDigitizingContour = false;
+        var _digitizedPoints = [];
+        var _digitizerMarkers = [];
+        var _digitizerPolyline = null;
+        var _digitizerPolygon = null;
+        var digitizerHud = document.getElementById("digitizerHud");
+        var digitizerInfo = document.getElementById("digitizerInfo");
+        var btnFinishDigitize = document.getElementById("btnFinishDigitize");
+
+        function calcGeodesicArea(latlngs) {{
+            if (latlngs.length < 3) return 0;
+            var R = 6378137;
+            var area = 0;
+            var len = latlngs.length;
+            for (var i = 0; i < len; i++) {{
+                var p1 = latlngs[i];
+                var p2 = latlngs[(i + 1) % len];
+                var lat1 = p1.lat * Math.PI / 180;
+                var lat2 = p2.lat * Math.PI / 180;
+                var lon1 = p1.lng * Math.PI / 180;
+                var lon2 = p2.lng * Math.PI / 180;
+                area += (lon2 - lon1) * (2 + Math.sin(lat1) + Math.sin(lat2));
+            }}
+            return Math.abs(area * R * R / 2.0);
+        }}
+
+        window.startContourDigitizer = function() {{
+            _isDigitizingContour = true;
+            _digitizedPoints = [];
+            clearDigitizerDrawings();
+            map.getContainer().style.cursor = 'crosshair';
+            if (digitizerHud) digitizerHud.style.display = 'block';
+            updateDigitizerUI();
+        }};
+
+        window.cancelContourDigitizer = function() {{
+            _isDigitizingContour = false;
+            map.getContainer().style.cursor = '';
+            clearDigitizerDrawings();
+            if (digitizerHud) digitizerHud.style.display = 'none';
+        }};
+
+        function clearDigitizerDrawings() {{
+            _digitizerMarkers.forEach(function(m) {{ map.removeLayer(m); }});
+            _digitizerMarkers = [];
+            if (_digitizerPolyline) {{ map.removeLayer(_digitizerPolyline); _digitizerPolyline = null; }}
+            if (_digitizerPolygon) {{ map.removeLayer(_digitizerPolygon); _digitizerPolygon = null; }}
+        }}
+
+        function updateDigitizerUI() {{
+            var count = _digitizedPoints.length;
+            var areaM2 = calcGeodesicArea(_digitizedPoints);
+            var areaHa = (areaM2 / 10000).toFixed(2);
+            var areaStr = count >= 3 ? (Math.round(areaM2).toLocaleString() + ' м² (' + areaHa + ' га)') : '—';
+            if (digitizerInfo) {{
+                digitizerInfo.innerHTML = '<span>📍 Кликните по углам участка на карте</span> &bull; <b>Точек: ' + count + '</b> &bull; Площадь: <b>' + areaStr + '</b>';
+            }}
+            if (btnFinishDigitize) {{
+                btnFinishDigitize.disabled = count < 3;
+                btnFinishDigitize.style.opacity = count < 3 ? '0.5' : '1';
+            }}
+        }}
+
+        window.finishContourDigitizer = function() {{
+            if (_digitizedPoints.length < 3) return;
+            var pts = _digitizedPoints.map(function(ll) {{
+                return [Number(ll.lat.toFixed(6)), Number(ll.lng.toFixed(6))];
+            }});
+            window.parent.postMessage({{
+                type: 'contourDigitized',
+                points: pts
+            }}, '*');
+            cancelContourDigitizer();
+        }};
+
+        window.undoDigitizerPoint = function() {{
+            if (_digitizedPoints.length === 0) return;
+            _digitizedPoints.pop();
+            var lastMarker = _digitizerMarkers.pop();
+            if (lastMarker) map.removeLayer(lastMarker);
+            redrawDigitizerShape();
+            updateDigitizerUI();
+        }};
+
+        function redrawDigitizerShape() {{
+            if (_digitizerPolyline) map.removeLayer(_digitizerPolyline);
+            if (_digitizerPolygon) map.removeLayer(_digitizerPolygon);
+            if (_digitizedPoints.length >= 2) {{
+                _digitizerPolyline = L.polyline(_digitizedPoints, {{
+                    color: '#0284c7',
+                    weight: 3.5,
+                    dashArray: '6, 6'
+                }}).addTo(map);
+            }}
+            if (_digitizedPoints.length >= 3) {{
+                _digitizerPolygon = L.polygon(_digitizedPoints, {{
+                    color: '#0284c7',
+                    weight: 3.5,
+                    fillColor: '#38bdf8',
+                    fillOpacity: 0.25
+                }}).addTo(map);
+            }}
+        }}
+
+        // Кнопка вызова оцифровки прямо на карте в верхнем левом углу
+        var digitizeControl = L.control({{ position: 'topleft' }});
+        digitizeControl.onAdd = function(map) {{
+            var btn = L.DomUtil.create('button', 'hud-btn');
+            btn.style.marginTop = '6px';
+            btn.style.background = '#0284c7';
+            btn.style.color = '#fff';
+            btn.style.boxShadow = '0 2px 6px rgba(0,0,0,0.3)';
+            btn.style.cursor = 'pointer';
+            btn.innerHTML = '✏️ Оцифровать ЗУ';
+            btn.title = 'Кликать по углам участка на карте для построения контура';
+            btn.onclick = function(e) {{
+                L.DomEvent.stopPropagation(e);
+                if (_isDigitizingContour) {{
+                    cancelContourDigitizer();
+                }} else {{
+                    startContourDigitizer();
+                }}
+            }};
+            return btn;
+        }};
+        digitizeControl.addTo(map);
+
         // Режим клика по карте для точной интерактивной посадки участка
         var _isPickingMapPoint = false;
         window.addEventListener('message', function(ev) {{
@@ -627,10 +778,33 @@ def generate_leaflet_map_html(
             }} else if (ev.data.type === 'cancelPickPoint') {{
                 _isPickingMapPoint = false;
                 map.getContainer().style.cursor = '';
+            }} else if (ev.data.type === 'startDigitizeContour') {{
+                startContourDigitizer();
+            }} else if (ev.data.type === 'cancelDigitizeContour') {{
+                cancelContourDigitizer();
             }}
         }});
 
         map.on('click', function(e) {{
+            if (_isDigitizingContour) {{
+                var latlng = e.latlng;
+                _digitizedPoints.push(latlng);
+                var num = _digitizedPoints.length;
+
+                var icon = L.divIcon({{
+                    className: 'digitizer-pin-icon',
+                    html: '<div style="background:#0284c7; color:#fff; width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:11px; border:2px solid #fff; box-shadow:0 2px 6px rgba(0,0,0,0.4);">' + num + '</div>',
+                    iconSize: [22, 22],
+                    iconAnchor: [11, 11]
+                }});
+                var marker = L.marker(latlng, {{ icon: icon }}).addTo(map);
+                _digitizerMarkers.push(marker);
+
+                redrawDigitizerShape();
+                updateDigitizerUI();
+                return;
+            }}
+
             if (_isPickingMapPoint) {{
                 _isPickingMapPoint = false;
                 map.getContainer().style.cursor = '';
@@ -639,11 +813,16 @@ def generate_leaflet_map_html(
                     lat: Number(e.latlng.lat.toFixed(6)),
                     lon: Number(e.latlng.lng.toFixed(6))
                 }}, '*');
+                return;
             }}
         }});
 
         // Информационный попап по клику на контур (только если не было перетаскивания)
         boundaryPolygon.on('click', function(e) {{
+            if (_isDigitizingContour) {{
+                map.fire('click', e);
+                return;
+            }}
             if (_isPickingMapPoint) {{
                 _isPickingMapPoint = false;
                 map.getContainer().style.cursor = '';
@@ -936,6 +1115,7 @@ def generate_leaflet_map_html(
         }};
 
         var overlayMaps = {{
+            "🏛️ Публичная кадастровая карта (ПКК)": pkkCadastre,
             "📐 Граница участка (перемещение/поворот)": boundaryPolygon,
             "🏢 Корпуса застройки (контуры)": buildingsLayer,
             "🧱 Секции корпусов (планировка)": sectionsLayer

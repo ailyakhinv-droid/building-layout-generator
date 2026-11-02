@@ -882,8 +882,11 @@ def build():
             <label class="control-label" for="cfg-cad-input">Кадастровый номер, адрес или координаты</label>
             <div style="display:flex; gap:6px;">
               <input type="text" class="input-text" id="cfg-cad-input" value="72:23:0222001:16187" placeholder="72:23:0222001:16187 или 'Тюмень'" style="flex:1;" />
-              <button class="btn-toggle-sidebar" id="btn-fetch-pkk" type="button" title="Загрузить официальные границы напрямую из Публичной кадастровой карты Росреестра / НСПД" style="white-space:nowrap; padding:6px 10px; font-size:12px;">
-                🌐 Загрузить с ПКК
+              <button class="btn-toggle-sidebar" id="btn-fetch-pkk" type="button" title="Загрузить официальные границы напрямую из Публичной кадастровой карты Росреестра / НСПД" style="white-space:nowrap; padding:6px 8px; font-size:11px;">
+                🌐 ПКК
+              </button>
+              <button class="btn-toggle-sidebar" id="btn-digitize-map" type="button" title="Интерактивно проставить точки границ прямо на карте кликами (Вариант 1)" style="white-space:nowrap; padding:6px 8px; font-size:11px;">
+                ✏️ По точкам
               </button>
             </div>
             <div id="pkk-status-badge" style="font-size:11px; margin-top:3px; display:none; line-height:1.3;"></div>
@@ -891,10 +894,19 @@ def build():
 
           <!-- Аккордеон ввода каталога координат из ГПЗУ / ЕГРН -->
           <details class="expander" id="gpzu-coords-expander">
-            <summary>📋 Вставить каталог координат из ГПЗУ / ЕГРН (X, Y)</summary>
+            <summary>📋 Загрузить ГПЗУ / каталог координат (PDF, Excel, X, Y)</summary>
             <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+              <!-- Дропзона загрузки файла ГПЗУ -->
+              <div class="file-dropzone" id="dropzone-gpzu" style="cursor:pointer;">
+                <span class="file-dropzone-text" id="gpzu-drop-text">📄 Перетащите или выберите файл ГПЗУ (.pdf, .xlsx, .docx, .txt)</span>
+                <span class="file-dropzone-hint">Автоматически забирает координаты, площадь и зоны ограничений (ЗОУИТ)</span>
+              </div>
+              <input type="file" id="file-gpzu-input" accept=".pdf,.xlsx,.xls,.docx,.txt,.csv" style="display:none;" />
+              <div id="gpzu-file-badge" style="display:none; font-size:11px; padding:4px 8px; border-radius:4px; background:var(--muted); border:1px solid var(--border);"></div>
+              <div id="gpzu-zouit-container" style="display:none; flex-direction:column; gap:4px; margin-top:2px;"></div>
+
               <div class="control-hint" style="line-height:1.4;">
-                Вставьте каталог поворотных точек из ГПЗУ или выписки ЕГРН (координаты X, Y в метрах МСК или градусах WGS-84):
+                Или вставьте каталог поворотных точек вручную (X, Y в метрах МСК или градусах WGS-84):
               </div>
               <textarea id="cfg-gpzu-coords" class="input-text" rows="5" style="font-family:monospace; font-size:11px; resize:vertical;" placeholder="1  337979.12  1475315.11&#10;2  338015.68  1475301.40&#10;3  337968.30  1475176.38&#10;4  337938.10  1475096.70&#10;..."></textarea>
               <div style="display:flex; gap:6px;">
@@ -1895,7 +1907,12 @@ def build():
       const cfgParcelPresets = document.getElementById("cfg-parcel-presets");
       const cfgCadInput = document.getElementById("cfg-cad-input");
       const btnFetchPkk = document.getElementById("btn-fetch-pkk");
+      const btnDigitizeMap = document.getElementById("btn-digitize-map");
       const pkkStatusBadge = document.getElementById("pkk-status-badge");
+      const dropzoneGpzu = document.getElementById("dropzone-gpzu");
+      const fileGpzuInput = document.getElementById("file-gpzu-input");
+      const gpzuFileBadge = document.getElementById("gpzu-file-badge");
+      const gpzuZouitContainer = document.getElementById("gpzu-zouit-container");
       const cfgGpzuCoords = document.getElementById("cfg-gpzu-coords");
       const btnApplyGpzu = document.getElementById("btn-apply-gpzu");
       const btnClearGpzu = document.getElementById("btn-clear-gpzu");
@@ -2780,9 +2797,143 @@ def build():
           cfgGpzuCoords.value = "";
           activeGpzuCoordinates = "";
           gpzuStatusBadge.style.display = "none";
+          if (gpzuFileBadge) gpzuFileBadge.style.display = "none";
+          if (gpzuZouitContainer) {{
+            gpzuZouitContainer.style.display = "none";
+            gpzuZouitContainer.innerHTML = "";
+          }}
           showToast("Контур ГПЗУ очищен");
           loadSitePreview(true);
         }});
+      }}
+
+      // Кнопка запуска интерактивной оцифровки по карте (Вариант 1)
+      if (btnDigitizeMap) {{
+        btnDigitizeMap.addEventListener("click", () => {{
+          setMainTab("osm");
+          const iframeOsm = viewOsm.querySelector("iframe");
+          if (iframeOsm && iframeOsm.contentWindow) {{
+            iframeOsm.contentWindow.postMessage({{ type: "startDigitizeContour" }}, "*");
+          }}
+          showToast("✏️ Кликайте по углам участка на карте для простановки точек");
+        }});
+      }}
+
+      // Загрузка файла ГПЗУ (.pdf, .xlsx, .docx, .txt) (Вариант 2)
+      if (dropzoneGpzu && fileGpzuInput) {{
+        dropzoneGpzu.addEventListener("click", () => fileGpzuInput.click());
+        dropzoneGpzu.addEventListener("dragover", e => {{
+          e.preventDefault();
+          dropzoneGpzu.style.borderColor = "var(--accent)";
+          dropzoneGpzu.style.background = "var(--muted)";
+        }});
+        dropzoneGpzu.addEventListener("dragleave", () => {{
+          dropzoneGpzu.style.borderColor = "";
+          dropzoneGpzu.style.background = "";
+        }});
+        dropzoneGpzu.addEventListener("drop", e => {{
+          e.preventDefault();
+          dropzoneGpzu.style.borderColor = "";
+          dropzoneGpzu.style.background = "";
+          if (e.dataTransfer.files && e.dataTransfer.files[0]) {{
+            handleGpzuFile(e.dataTransfer.files[0]);
+          }}
+        }});
+        fileGpzuInput.addEventListener("change", e => {{
+          if (e.target.files && e.target.files[0]) {{
+            handleGpzuFile(e.target.files[0]);
+          }}
+        }});
+      }}
+
+      async function handleGpzuFile(file) {{
+        if (!file) return;
+        if (gpzuFileBadge) {{
+          gpzuFileBadge.style.display = "block";
+          gpzuFileBadge.textContent = `⏳ Обработка ${{file.name}}...`;
+        }}
+        if (gpzuZouitContainer) {{
+          gpzuZouitContainer.style.display = "none";
+          gpzuZouitContainer.innerHTML = "";
+        }}
+
+        const reader = new FileReader();
+        reader.onload = async () => {{
+          try {{
+            const base64Data = reader.result;
+            const requestedMsk = (cfgCadMskZone && cfgCadMskZone.value) || null;
+            const resp = await fetch("/api/upload-gpzu", {{
+              method: "POST",
+              headers: {{ "Content-Type": "application/json" }},
+              body: JSON.stringify({{
+                file_base64: base64Data,
+                filename: file.name,
+                msk_zone: requestedMsk
+              }})
+            }});
+            const data = await resp.json();
+            if (data.success) {{
+              activeGpzuCoordinates = data.coordinates_text;
+              if (cfgGpzuCoords) cfgGpzuCoords.value = data.coordinates_text;
+              if (data.cadastral_number && cfgCadInput) {{
+                cfgCadInput.value = data.cadastral_number;
+              }}
+              if (data.area_sqm && cfgAreaInput) {{
+                cfgAreaInput.value = Math.round(data.area_sqm);
+              }}
+              if (gpzuFileBadge) {{
+                gpzuFileBadge.innerHTML = `📄 <b>${{file.name}}</b>: найдено точек: <b>${{data.points_count}}</b>, площадь: <b>${{Math.round(data.area_sqm).toLocaleString()}} м²</b> (${{data.coordinate_system}})`;
+              }}
+
+              // Отображение ограничений и ЗОУИТ
+              if (data.zouit && data.zouit.length > 0 && gpzuZouitContainer) {{
+                gpzuZouitContainer.style.display = "flex";
+                let html = '<div style="font-size:11px; font-weight:700; color:var(--text); margin-top:4px;">🛡️ Зоны с особыми условиями (ЗОУИТ):</div>';
+                data.zouit.forEach(z => {{
+                  html += `<div style="font-size:11px; padding:3px 6px; border-radius:4px; background:rgba(245, 158, 11, 0.12); border-left:3px solid #f59e0b; color:var(--text);">
+                    <b>${{z.name}}</b><br><span style="color:var(--secondary); font-size:10px;">${{z.snippet}}</span>
+                  </div>`;
+                }});
+                gpzuZouitContainer.innerHTML = html;
+              }}
+
+              // Применение отступов из ГПЗУ при наличии
+              if (data.setbacks) {{
+                if (data.setbacks.boundary_setback && cfgBoundarySetback) {{
+                  cfgBoundarySetback.value = data.setbacks.boundary_setback;
+                  if (badgeBoundarySetback) badgeBoundarySetback.textContent = `${{data.setbacks.boundary_setback}} м`;
+                }}
+                if (data.setbacks.red_line_setback && cfgRedlineSetback) {{
+                  cfgRedlineSetback.value = data.setbacks.red_line_setback;
+                  if (badgeRedlineSetback) badgeRedlineSetback.textContent = `${{data.setbacks.red_line_setback}} м`;
+                }}
+              }}
+
+              if (gpzuStatusBadge) {{
+                gpzuStatusBadge.style.display = "block";
+                gpzuStatusBadge.style.color = "#10b981";
+                gpzuStatusBadge.textContent = `✓ Контур из ГПЗУ применён: ${{data.points_count}} точек, ${{Math.round(data.area_sqm).toLocaleString()}} м²`;
+              }}
+              userHasMovedSite = false;
+              currentSiteLat = null;
+              currentSiteLon = null;
+              isSiteLocked = false;
+              showToast(`✓ Файл ГПЗУ обработан: ${{data.points_count}} точек, ${{Math.round(data.area_sqm).toLocaleString()}} м²`);
+              loadSitePreview(true);
+            }} else {{
+              if (gpzuFileBadge) {{
+                gpzuFileBadge.innerHTML = `<span style="color:#ef4444;">❌ ${{data.error || "Не удалось извлечь координаты"}}</span>`;
+              }}
+              showToast("❌ Ошибка парсинга файла ГПЗУ");
+            }}
+          }} catch (err) {{
+            if (gpzuFileBadge) {{
+              gpzuFileBadge.innerHTML = `<span style="color:#ef4444;">❌ Ошибка: ${{err.message}}</span>`;
+            }}
+            showToast("❌ Ошибка загрузки файла ГПЗУ");
+          }}
+        }};
+        reader.readAsDataURL(file);
       }}
 
       // Изменение кадастрового номера / региона в режиме 2
@@ -3270,6 +3421,26 @@ def build():
       }});
       // Прослушивание сообщений от интерактивной карты Leaflet
       window.addEventListener("message", function(e) {{
+        if (e.data && e.data.type === "contourDigitized" && e.data.points && e.data.points.length >= 3) {{
+          const pts = e.data.points;
+          let txt = pts.map((p, idx) => `${{idx + 1}}\t${{p[0].toFixed(6)}}\t${{p[1].toFixed(6)}}`).join("\n");
+          if (cfgGpzuCoords) cfgGpzuCoords.value = txt;
+          activeGpzuCoordinates = txt;
+          if (pkkStatusBadge) pkkStatusBadge.style.display = "none";
+          if (gpzuStatusBadge) {{
+            gpzuStatusBadge.style.display = "block";
+            gpzuStatusBadge.style.color = "#10b981";
+            gpzuStatusBadge.textContent = `✓ Контур оцифрован по карте: ${{pts.length}} точек`;
+          }}
+          userHasMovedSite = false;
+          currentSiteLat = null;
+          currentSiteLon = null;
+          isSiteLocked = false;
+          showToast(`✓ Контур участка оцифрован по карте: ${{pts.length}} точек!`);
+          loadSitePreview(true);
+          return;
+        }}
+
         if (e.data && e.data.type === "mapPointPicked") {{
           const pLat = Number(e.data.lat);
           const pLon = Number(e.data.lon);
