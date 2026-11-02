@@ -999,9 +999,8 @@ def generate_3d_viewer_html(
         type: 'line',
         source: 'boundary',
         paint: {{
-          'line-color': '#0f172a',
-          'line-width': 3.2,
-          'line-dasharray': [3, 1.5]
+          'line-color': '#0369a1',
+          'line-width': 3.5
         }}
       }}, beforeVectorId);
     }}
@@ -1025,8 +1024,7 @@ def generate_3d_viewer_html(
         source: 'buildable',
         paint: {{
           'line-color': '#16a34a',
-          'line-width': 1.8,
-          'line-dasharray': [2, 1]
+          'line-width': 2.0
         }}
       }}, beforeVectorId);
     }}

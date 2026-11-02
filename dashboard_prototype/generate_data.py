@@ -297,11 +297,11 @@ def main():
     print("Генерация данных сценариев для дашборда...")
     scenarios = []
 
-    # 1. Самара (Квартальная)
+    # 1. Тюмень (Квартальная / ЖК Акватория) — Основной демо-сценарий
     try:
-        s1 = generate_scenario_data("63:01:0709002:2320", "AUTO", 14, "samara_auto", "Самара (4.2 га) · Квартальная застройка")
+        s1 = generate_scenario_data("72:23:0222001:16187", "AUTO", 14, "tyumen_auto", "Тюмень (4.4 га) · Квартальная застройка (ЖК Акватория)")
         scenarios.append(s1)
-        print("✓ Сценарий 1 (Самара Квартал) готов")
+        print("✓ Сценарий 1 (Тюмень Квартал) готов")
     except Exception as e:
         print("Ошибка сценария 1:", e)
 
@@ -313,13 +313,21 @@ def main():
     except Exception as e:
         print("Ошибка сценария 2:", e)
 
-    # 3. Самара (П-образные дворы)
+    # 3. Тюмень (П-образные дворы)
     try:
-        s3 = generate_scenario_data("63:01:0709002:2320", "U_SHAPE", 12, "samara_u_shape", "Самара (4.2 га) · П-образные дворы")
+        s3 = generate_scenario_data("72:23:0222001:16187", "U_SHAPE", 12, "tyumen_u_shape", "Тюмень (4.4 га) · П-образные дворы (ЖК Акватория)")
         scenarios.append(s3)
-        print("✓ Сценарий 3 (Самара U-Shape) готов")
+        print("✓ Сценарий 3 (Тюмень U-Shape) готов")
     except Exception as e:
         print("Ошибка сценария 3:", e)
+
+    # 4. Самара (Резервный сценарий)
+    try:
+        s4 = generate_scenario_data("63:01:0709002:2320", "AUTO", 12, "samara_auto", "Самара (4.2 га) · Квартальная застройка")
+        scenarios.append(s4)
+        print("✓ Сценарий 4 (Самара) готов")
+    except Exception as e:
+        print("Ошибка сценария 4:", e)
 
     out_json = PROJECT_ROOT / "dashboard_prototype" / "data.json"
     with open(out_json, "w", encoding="utf-8") as f:

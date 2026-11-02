@@ -225,9 +225,17 @@ class PerimeterPlacementEngine:
                     curr_y2 -= s.width
                 sections.append(PlacedSection(end_sec, maxx - end_sec.depth/2, curr_y2 - we/2, 90.0, fl_low if cascade_floors else fl_high, floor_height=floor_height, ground_floor_height=ground_floor_height))
             else:
-                # Северная и Южная пластины
+                # Северная и Южная пластины (направление оси 0.0)
+                # Если угол оси блока к горизонтали < 25°, меридиональные секции на северном/южном
+                # фронте запрещены нормами инсоляции (северный фасад в тени). Используем широтные секции.
+                from src.core.placement import MIN_MERIDIAN_INSOLATION_ANGLE_DEG, angle_to_horizontal
                 space_x = len_x - 2 * we
-                mids_x = self._find_best_combo(middle_pool, space_x)
+                if angle_to_horizontal(angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+                    lat_pool = [s for s in (middle_pool + end_pool) if not getattr(s, "is_meridian", False)]
+                    pool_x = lat_pool if lat_pool else end_pool
+                else:
+                    pool_x = middle_pool
+                mids_x = self._find_best_combo(pool_x, space_x)
                 
                 # Северная (высокая)
                 curr_x = minx
@@ -253,9 +261,16 @@ class PerimeterPlacementEngine:
         elif layout_mode == "CLOSED":
             # Полноценный 4-сторонний замкнутый периметральный урбан-блок
             # 4 угла: NW (0°), NE (0°, flipped), SE (180°), SW (180°, flipped)
+            from src.core.placement import MIN_MERIDIAN_INSOLATION_ANGLE_DEG, angle_to_horizontal
             space_x = len_x - 2 * wc
             space_y = len_y - 2 * dc
-            mid_x_n = self._find_best_combo(middle_pool, space_x) if space_x >= 20.0 else []
+            if angle_to_horizontal(angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+                lat_pool = [s for s in (middle_pool + end_pool) if not getattr(s, "is_meridian", False)]
+                pool_closed_x = lat_pool if lat_pool else end_pool
+            else:
+                pool_closed_x = middle_pool
+
+            mid_x_n = self._find_best_combo(pool_closed_x, space_x) if space_x >= 20.0 else []
             mid_y = self._find_best_combo(middle_pool, space_y) if space_y >= 20.0 else []
 
             north_total_w = 2 * wc + sum(s.width for s in mid_x_n)
@@ -337,7 +352,7 @@ class PerimeterPlacementEngine:
 
             # 6. Южный фронт
             space_south = (x_right_outer - wc) - (x_start + wc)
-            mid_x_s = self._find_best_combo(middle_pool, space_south) if space_south >= 20.0 else []
+            mid_x_s = self._find_best_combo(pool_closed_x, space_south) if space_south >= 20.0 else []
             curr_xs = x_start + wc
             for sec in mid_x_s:
                 sections.append(

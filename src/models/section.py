@@ -86,6 +86,29 @@ class SectionType:
         return total
 
     @property
+    def is_meridian(self) -> bool:
+        """Является ли секция меридиональной.
+
+        Меридиональные секции имеют двухстороннюю ориентацию квартир (восток-запад)
+        и по нормам инсоляции (СанПиН 1.2.3685-21, СП 42.13330) не могут размещаться
+        строго горизонтально (восток-запад). Угол их продольной оси к горизонтали
+        должен составлять не менее 25-30°, чтобы обеспечить инсоляцию северного фасада
+        не менее 1.5-2 ч.
+        """
+        name_l = (self.name or "").lower()
+        code_l = (self.section_code or "").lower()
+        id_l = (self.id or "").lower()
+        return "меридиан" in name_l or "meridian" in name_l or code_l.startswith("м") or id_l.startswith("mid_m")
+
+    @property
+    def is_latitudinal(self) -> bool:
+        """Является ли секция широтной (ориентация восток-запад допустима)."""
+        name_l = (self.name or "").lower()
+        code_l = (self.section_code or "").lower()
+        id_l = (self.id or "").lower()
+        return "широтн" in name_l or "latitud" in name_l or code_l.startswith("ш") or id_l.startswith("end_sh")
+
+    @property
     def total_apts_per_floor(self) -> int:
         """Общее количество квартир на одном этаже."""
         return sum(self.apartments_per_floor.values())

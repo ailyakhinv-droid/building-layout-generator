@@ -52,6 +52,27 @@ if not hasattr(Building, "gfa"):
     Building.gfa = property(lambda self: self.total_gfa if self.sections else 0.0)
 
 
+# ─── Нормативы инсоляции меридиональных секций (СанПиН 1.2.3685-21, СП 42.13330) ────
+# Меридиональные секции имеют двухстороннюю ориентацию квартир (восток-запад)
+# и не могут ориентироваться строго по оси Восток-Запад (горизонтально),
+# иначе их северный фасад никогда не получает нормативные 1.5-2 часа инсоляции.
+# Минимальный предельный угол к горизонтали составляет 25°, рекомендуемый оптимум 28-30°.
+MIN_MERIDIAN_INSOLATION_ANGLE_DEG: float = 25.0
+RECOMMENDED_MERIDIAN_ANGLE_DEG: float = 28.0
+
+
+def angle_to_horizontal(angle_deg: float) -> float:
+    """Вычислить угол наклона оси к горизонтали (оси Восток-Запад) в градусах [0, 90].
+
+    0° = строго горизонтально (ось восток-запад, северный фасад в тени).
+    90° = строго вертикально (меридионально, фасад на восток-запад).
+    """
+    a = abs(angle_deg) % 180.0
+    if a > 90.0:
+        a = 180.0 - a
+    return a
+
+
 @dataclass
 class PlacementConfig:
     """Параметры для алгоритма расстановки.
@@ -308,7 +329,18 @@ class PlacementEngine:
         if placement_config.placement_angle is not None:
             primary_angle = placement_config.placement_angle
         else:
-            primary_angle, _ = get_primary_axes(buildable)
+            primary_angle, perp_angle = get_primary_axes(buildable)
+            # Ограничение инсоляции: меридиональные секции нельзя размещать горизонтально (СанПиН 1.2.3685-21).
+            # Предельный угол к горизонтали должен быть не менее 25-30°, чтобы инсолировать северный фасад.
+            ah = angle_to_horizontal(primary_angle)
+            if ah < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+                if placement_config.typology.upper() == "LINEAR":
+                    if angle_to_horizontal(perp_angle) >= MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+                        primary_angle = perp_angle
+                    else:
+                        primary_angle = RECOMMENDED_MERIDIAN_ANGLE_DEG
+                else:
+                    primary_angle = RECOMMENDED_MERIDIAN_ANGLE_DEG
 
         # 2. Выбор секций
         sections = self._select_sections(placement_config)
@@ -620,6 +652,7 @@ class PlacementEngine:
         num_wing_right: int,
         cascade_floors: bool = True,
         min_wing_floors: int = 8,
+        building_angle: float = 0.0,
     ) -> list[PlacedSection]:
         """П-образный корпус со двором, центрированный в (0, 0), без наложений секций."""
         sections: list[PlacedSection] = []
@@ -636,10 +669,19 @@ class PlacementEngine:
         wc_r, dc_r = sec_cor_r.width, sec_cor_r.depth
 
         # 1. Заднее крыло (основание скобы, северная часть)
-        # Основной объем здания держит целевую этажность floors
+        # Проверяем ориентацию основания: если его угол к горизонтали < 25°,
+        # меридиональные секции запрещены по нормам инсоляции (северный фасад в тени).
+        # В таком случае для основания скобы выбираем широтные секции из библиотеки.
+        back_is_near_horizontal = angle_to_horizontal(building_angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG
+        if back_is_near_horizontal:
+            latitudinal_mid = [s for s in (mid_candidates + end_candidates) if not getattr(s, "is_meridian", False)]
+            candidates_back = latitudinal_mid if latitudinal_mid else end_candidates
+        else:
+            candidates_back = mid_candidates
+
         back_secs = []
         for i in range(num_back):
-            sec_i = self._find_best_section(mid_candidates, floors) or middle
+            sec_i = self._find_best_section(candidates_back, floors) or (candidates_back[0] if candidates_back else middle)
             fl_i = self._clamp_floors(sec_i, floors)
             back_secs.append((sec_i, fl_i))
 
@@ -751,6 +793,7 @@ class PlacementEngine:
         num_mid_y: int,
         cascade_floors: bool = True,
         min_wing_floors: int = 8,
+        building_angle: float = 0.0,
     ) -> list[PlacedSection]:
         """Г-образный корпус, центрированный в (0, 0), без наложений секций."""
         sections: list[PlacedSection] = []
@@ -766,9 +809,18 @@ class PlacementEngine:
         sections.append(PlacedSection(corner, xc, yc, 0.0, fl_cor, is_flipped=True))
 
         # 1. Горизонтальное крыло влево (-X) — держит целевую этажность floors
+        # Если угол горизонтального крыла близок к горизонтали (< 25°), меридиональные секции
+        # запрещены по нормам инсоляции (северный фасад в тени). Используем широтные секции.
+        wing_x_near_horizontal = angle_to_horizontal(building_angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG
+        if wing_x_near_horizontal:
+            latitudinal_mid = [s for s in (mid_candidates + end_candidates) if not getattr(s, "is_meridian", False)]
+            candidates_x = latitudinal_mid if latitudinal_mid else end_candidates
+        else:
+            candidates_x = mid_candidates
+
         x_curr = -wc
         for i in range(num_mid_x):
-            sec_x = self._find_best_section(mid_candidates, floors) or middle
+            sec_x = self._find_best_section(candidates_x, floors) or (candidates_x[0] if candidates_x else middle)
             fl_xi = self._clamp_floors(sec_x, floors)
             wm_x, dm_x = sec_x.width, sec_x.depth
             xm = x_curr - wm_x / 2.0
@@ -1356,6 +1408,7 @@ class PlacementEngine:
                 num_wing_left, num_wing_right,
                 cascade_floors=cascade_floors,
                 min_wing_floors=min_wing_floors,
+                building_angle=angle,
             )
             placed_secs = self._transform_sections(local_secs, cx, cy, angle)
             return Building(sections=placed_secs, typology="U_SHAPE")
@@ -1382,6 +1435,7 @@ class PlacementEngine:
                 middle, corner, end, floors, num_mid_x, num_mid_y,
                 cascade_floors=cascade_floors,
                 min_wing_floors=min_wing_floors,
+                building_angle=angle,
             )
             placed_secs = self._transform_sections(local_secs, cx, cy, angle)
             return Building(sections=placed_secs, typology="L_SHAPE")
@@ -1483,6 +1537,14 @@ class PlacementEngine:
 
         # Кандидаты в рядовые секции: сначала активный пул, затем библиотека
         pref_pool = getattr(self, "_middle_pool", [middle])
+        # Ограничение инсоляции: если угол линии близок к горизонтали (< 25°),
+        # меридиональные секции нельзя размещать вдоль нее (северный фасад в тени).
+        # В таком случае отбираем широтные секции из пула.
+        if angle_to_horizontal(angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+            lat_pool = [s for s in (pref_pool + getattr(self, "_end_pool", [])) if not getattr(s, "is_meridian", False)]
+            if lat_pool:
+                pref_pool = lat_pool
+                middle = lat_pool[0]
         lead_sec = preferred_lead
         if lead_sec is None:
             lead_sec = (
@@ -1569,6 +1631,14 @@ class PlacementEngine:
         passage_gap = float(self.config.get("passage_gap_min", 18.0))
 
         pref_pool = getattr(self, "_middle_pool", [middle])
+        # Ограничение инсоляции: если угол линии близок к горизонтали (< 25°),
+        # меридиональные секции нельзя размещать вдоль нее (северный фасад в тени).
+        # В таком случае отбираем широтные секции из пула.
+        if angle_to_horizontal(angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+            lat_pool = [s for s in (pref_pool + getattr(self, "_end_pool", [])) if not getattr(s, "is_meridian", False)]
+            if lat_pool:
+                pref_pool = lat_pool
+                middle = lat_pool[0]
         pool_len = len(pref_pool) if pref_pool else 1
 
         # Если линия короче допустимой длины одного дома, ставим один дом
@@ -1991,6 +2061,14 @@ class PlacementEngine:
         placement_config: PlacementConfig | None = None,
     ) -> bool:
         """Проверить нормативные противопожарные и инсоляционные расстояния, а также лимит BCR."""
+        # 0. Ограничение инсоляции для меридиональных секций (СанПиН 1.2.3685-21)
+        # Предельный угол продольной оси меридиональной секции к горизонтали (оси Восток-Запад)
+        # должен быть не менее 25°, чтобы северный фасад получал нормативную инсоляцию (1.5-2 ч).
+        for sec in new_building.sections:
+            if getattr(sec.section_type, "is_meridian", False):
+                if angle_to_horizontal(sec.angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+                    return False
+
         if placement_config is not None:
             if len(new_building.sections) > placement_config.max_sections_per_building:
                 return False

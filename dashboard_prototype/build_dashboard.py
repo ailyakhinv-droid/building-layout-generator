@@ -811,11 +811,11 @@ def build():
       <div>
         <h1 class="app-title">Генератор застройки · ТЭП</h1>
         <div class="app-status-strip" id="site-status-strip">
-          <span id="site-cad-label">📍 63:01:0709002:2320</span>
+          <span id="site-cad-label">📍 72:23:0222001:16187</span>
           <span>·</span>
-          <span id="site-region-label">Самара, Кировский р-н (4.25 га)</span>
+          <span id="site-region-label">Тюмень, р-н ЖК «Акватория» (4.44 га)</span>
           <span>·</span>
-          <span id="site-coords-label">WGS-84: [53.25020, 50.31840]</span>
+          <span id="site-coords-label">WGS-84: [57.16107, 65.67408]</span>
           <span>·</span>
           <a href="#" id="link-yandex" target="_blank" rel="noopener">🌐 Яндекс.Карты ↗</a>
           <span>·</span>
@@ -868,8 +868,8 @@ def build():
           <div class="control-row">
             <label class="control-label" for="cfg-parcel-presets">Каталог участков (пресеты РФ)</label>
             <select class="select-custom" id="cfg-parcel-presets" style="width:100%;">
+              <option value="72:23:0222001:16187" selected>Тюмень, ЖК «Акватория» (4.4 га)</option>
               <option value="63:01:0709002:2320">Самара, Зубчаниновка (4.2 га)</option>
-              <option value="72:23:0222001:16187">Тюмень, Алебашево (4.4 га)</option>
               <option value="77:17:0120316:1024">Москва, Коммунарка (3.6 га)</option>
               <option value="78:34:0004286:115">Санкт-Петербург, Приморский (3.4 га)</option>
               <option value="23:43:0106012:450">Краснодар, Зап. обход (4.3 га)</option>
@@ -880,7 +880,7 @@ def build():
 
           <div class="control-row">
             <label class="control-label" for="cfg-cad-input">Кадастровый номер, адрес или координаты</label>
-            <input type="text" class="input-text" id="cfg-cad-input" value="63:01:0709002:2320" placeholder="72:23:0222001:16187 или 'Тюмень'" />
+            <input type="text" class="input-text" id="cfg-cad-input" value="72:23:0222001:16187" placeholder="72:23:0222001:16187 или 'Тюмень'" />
           </div>
 
           <!-- Аккордеон тонких настроек координат и площади -->
@@ -889,7 +889,7 @@ def build():
             <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
               <div class="control-row">
                 <label class="control-label" for="cfg-area-input">Площадь участка, м²</label>
-                <input type="number" class="input-text" id="cfg-area-input" value="42500" step="500" min="5000" />
+                <input type="number" class="input-text" id="cfg-area-input" value="44381" step="500" min="5000" />
               </div>
 
               <div class="sub-col-2">
@@ -2912,7 +2912,7 @@ def build():
         }}
 
         if (siteMode === "cadastre") {{
-          base.cad_query = cfgCadInput.value.trim() || "63:01:0709002:2320";
+          base.cad_query = cfgCadInput.value.trim() || "72:23:0222001:16187";
           base.custom_area = parseFloat(cfgAreaInput.value) || 32000;
           base.enable_red_line = cfgRedlineToggle.checked;
           if (uploadedCadBase64) {{

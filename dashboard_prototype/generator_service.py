@@ -410,7 +410,7 @@ def _create_site_from_params(
     elif site_mode == "concept":
         c_w = float(params.get("concept_width") or 200.0)
         c_d = float(params.get("concept_depth") or 150.0)
-        reg_name, dist_name, resolved_norm_id, c_lat, c_lon = smart_resolve_location("63:01:0709002:2320")
+        reg_name, dist_name, resolved_norm_id, c_lat, c_lon = smart_resolve_location("72:23:0222001:16187")
         use_lat = override_lat if override_lat != 0.0 else c_lat
         use_lon = override_lon if override_lon != 0.0 else c_lon
         norm_id = resolved_norm_id or "russia_sp42"
@@ -435,7 +435,7 @@ def _create_site_from_params(
     # РЕЖИМ: ПО КАДАСТРОВОМУ НОМЕРУ / АДРЕСУ РОСРЕЕСТРА
     # =========================================================================
     else:
-        cad_query = (params.get("cad_query") or "63:01:0709002:2320").strip()
+        cad_query = (params.get("cad_query") or "72:23:0222001:16187").strip()
         custom_area = float(params.get("custom_area") or 32000)
         enable_red_line = bool(params.get("enable_red_line", False))
 
