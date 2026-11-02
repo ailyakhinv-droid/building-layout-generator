@@ -2174,7 +2174,10 @@ def build():
 
       async function checkBackendHealth() {{
         try {{
-          const resp = await fetch(API_BASE + "/api/health");
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 2500);
+          const resp = await fetch(API_BASE + "/api/health", {{ signal: controller.signal }});
+          clearTimeout(timer);
           if (resp.ok) {{
             updateBackendBadge(true);
             return true;
@@ -3423,7 +3426,7 @@ def build():
       window.addEventListener("message", function(e) {{
         if (e.data && e.data.type === "contourDigitized" && e.data.points && e.data.points.length >= 3) {{
           const pts = e.data.points;
-          let txt = pts.map((p, idx) => `${{idx + 1}}\t${{p[0].toFixed(6)}}\t${{p[1].toFixed(6)}}`).join("\n");
+          let txt = pts.map((p, idx) => `${{idx + 1}}\\t${{p[0].toFixed(6)}}\\t${{p[1].toFixed(6)}}`).join("\\n");
           if (cfgGpzuCoords) cfgGpzuCoords.value = txt;
           activeGpzuCoordinates = txt;
           if (pkkStatusBadge) pkkStatusBadge.style.display = "none";
@@ -4492,6 +4495,8 @@ def build():
       checkBackendHealth().then(online => {{
         updateBackendBadge(online);
       }});
+      window.addEventListener("focus", () => checkBackendHealth());
+      setInterval(checkBackendHealth, 10000);
     }})();
   </script>
 </body>
