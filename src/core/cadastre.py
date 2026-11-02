@@ -10,17 +10,37 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
+import urllib3
 from shapely.geometry import LineString, Polygon
 
 from src.core.geo_utils import (
     metric_to_wgs84_coords,
     wgs84_to_metric_coords,
 )
+from src.geo.msk_converter import (
+    MSK_PRESETS,
+    detect_msk_by_coordinates,
+    msk_to_wgs84_coords,
+)
 from src.models.site import Site
+
+# Подавляем предупреждения о самоподписанных SSL-сертификатах Минцифры РФ
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+try:
+    from rosreestr2coord.parser import Area
+    _ROSREESTR_AVAILABLE = True
+except ImportError:
+    _ROSREESTR_AVAILABLE = False
+
+CADASTRE_CACHE_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "cadastre_cache"
+CADASTRE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass
@@ -818,6 +838,256 @@ def smart_resolve_location(query: str) -> tuple[str, str, str, float, float]:
     return resolve_cadastral_location(q)
 
 
+def fetch_pkk_parcel_data(cadastral_number: str, timeout: int = 5) -> dict[str, Any] | None:
+    """Запросить официальные границы и характеристики участка из Публичной кадастровой карты / НСПД.
+
+    Результаты кешируются локально в data/cadastre_cache/ для мгновенной повторной работы и оффлайна.
+    """
+    if not _ROSREESTR_AVAILABLE:
+        return None
+
+    clean = cadastral_number.strip()
+    norm_num = re.sub(r"[\s\-_\.]+", ":", clean)
+    if not validate_cadastral_number(norm_num):
+        return None
+
+    safe_key = norm_num.replace(":", "_")
+    cache_file = CADASTRE_CACHE_DIR / f"{safe_key}.json"
+
+    if cache_file.exists():
+        try:
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cached_data = json.load(f)
+            if cached_data and "coordinates_wgs84" in cached_data:
+                return cached_data
+        except Exception:
+            pass
+
+    try:
+        area = Area(norm_num, with_log=False)
+        geojson_str = area.to_geojson_poly()
+        if not geojson_str:
+            return None
+
+        data = json.loads(geojson_str)
+        geom = data.get("geometry") or {}
+        coords = geom.get("coordinates", [])
+        if not coords:
+            return None
+
+        gtype = geom.get("type", "Polygon")
+        if gtype == "Polygon":
+            poly_coords = coords[0]
+        elif gtype == "MultiPolygon":
+            poly_coords = coords[0][0]
+        else:
+            return None
+
+        if len(poly_coords) < 3:
+            return None
+
+        # Координаты в WGS-84 (lon, lat)
+        wgs_pts = [(float(pt[0]), float(pt[1])) for pt in poly_coords]
+
+        props = data.get("properties") or {}
+        opts = props.get("options") or {}
+        area_val = opts.get("specified_area") or opts.get("land_record_area_verified")
+        addr = opts.get("readable_address") or props.get("descr") or ""
+
+        result = {
+            "cadastral_number": norm_num,
+            "coordinates_wgs84": wgs_pts,
+            "area_sqm": float(area_val) if area_val else None,
+            "address": addr,
+            "source": "pkk_rosreestr",
+            "points_count": len(wgs_pts),
+        }
+
+        try:
+            with open(cache_file, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+        return result
+    except Exception:
+        return None
+
+
+def parse_coordinate_table(text: str) -> list[tuple[float, float]]:
+    """Разобрать текстовую таблицу координат из ГПЗУ, выписки ЕГРН или геодезического отчёта.
+
+    Поддерживает:
+    - Разделители: табуляция, пробелы, точки с запятой, запятые.
+    - Разделители десятичной дроби: точка (.) или запятая (,).
+    - Форматы с нумерацией точек (№, 1, 2...) или без неё.
+    - Координаты в метрах (МСК / локальные) и градусах (WGS-84).
+    """
+    points = []
+    lines = text.strip().splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Заменяем десятичные запятые в числах (например 337979,12 -> 337979.12)
+        line_norm = re.sub(r"(\d+),(\d+)", r"\1.\2", line)
+        parts = re.split(r"[,;\t|\s]+", line_norm)
+        nums = []
+        for p in parts:
+            p_clean = p.strip("(),[]{}:X=Y=x=y=").strip()
+            if not p_clean:
+                continue
+            try:
+                val = float(p_clean)
+                nums.append(val)
+            except ValueError:
+                pass
+        if len(nums) >= 2:
+            # Если 3 числа и первое — целое число < 5000 (номер поворотной точки 1, 2...)
+            if len(nums) >= 3 and nums[0].is_integer() and nums[0] < 5000:
+                p1, p2 = nums[1], nums[2]
+            else:
+                p1, p2 = nums[0], nums[1]
+            points.append((p1, p2))
+    return points
+
+
+def create_site_from_coordinate_table(
+    text: str,
+    msk_zone: str | None = None,
+    expected_center: tuple[float, float] | None = None,
+    region_hint: str | None = None,
+    cad_num: str | None = None,
+) -> tuple[Site, dict[str, Any]]:
+    """Создать Site и метаданные из каталога координат (ГПЗУ / ЕГРН).
+
+    Автоматически определяет:
+    - Систему координат: градусы WGS-84 или метры МСК / локальные.
+    - Геодезический порядок осей X (Север) / Y (Восток) vs CAD X (Восток) / Y (Север).
+    - Систему координат МСК региона при отсутствии явного указания.
+    """
+    import shapely.affinity
+    pts = parse_coordinate_table(text)
+    if len(pts) < 3:
+        raise ValueError(f"Для построения контура требуется минимум 3 точки, распознано: {len(pts)}")
+
+    # Убираем дублирующуюся замыкающую точку, если передан замкнутый полигон
+    if len(pts) > 3 and abs(pts[0][0] - pts[-1][0]) < 1e-4 and abs(pts[0][1] - pts[-1][1]) < 1e-4:
+        pts = pts[:-1]
+
+    p0 = pts[0]
+    is_wgs = (20.0 <= abs(p0[0]) <= 85.0 and 19.0 <= abs(p0[1]) <= 180.0) or (20.0 <= abs(p0[1]) <= 85.0 and 19.0 <= abs(p0[0]) <= 180.0)
+
+    if is_wgs:
+        if 40.0 <= p0[0] <= 85.0 and 19.0 <= p0[1] <= 180.0:
+            coords_wgs = [(p[1], p[0]) for p in pts]  # [lon, lat]
+            center_lat = sum(p[0] for p in pts) / len(pts)
+            center_lon = sum(p[1] for p in pts) / len(pts)
+        else:
+            coords_wgs = [(p[0], p[1]) for p in pts]  # [lon, lat]
+            center_lon = sum(p[0] for p in pts) / len(pts)
+            center_lat = sum(p[1] for p in pts) / len(pts)
+
+        metric_pts = wgs84_to_metric_coords(coords_wgs, center_lat, center_lon, is_lon_lat=True)
+        raw_poly = Polygon(metric_pts)
+        if not raw_poly.is_valid:
+            raw_poly = raw_poly.buffer(0)
+
+        min_x, min_y, _, _ = raw_poly.bounds
+        norm_poly = shapely.affinity.translate(raw_poly, -min_x, -min_y)
+
+        site = Site(
+            boundary=norm_poly,
+            base_offset=(0.0, 0.0),
+            geo_center=(center_lat, center_lon),
+            cadastral_number=cad_num or "ГПЗУ (WGS-84)",
+            address="Каталог координат ГПЗУ / ЕГРН (WGS-84)",
+            georef_source="По каталогу координат (WGS-84)",
+        )
+        meta = {
+            "coordinate_system": "WGS-84",
+            "points_count": len(pts),
+            "area_sqm": round(site.area, 1),
+            "area_ha": round(site.area / 10000.0, 2),
+            "center": (center_lat, center_lon),
+        }
+        return site, meta
+
+    # Метрические геодезические координаты МСК
+    v_max = max(abs(p0[0]), abs(p0[1]))
+    if v_max > 500:
+        # В российских каталогах ГПЗУ: p1 = X (северное смещение), p2 = Y (восточное смещение)
+        # В чертежах и САПР: X = восток, Y = север
+        if p0[1] > p0[0]:
+            cad_pts = [(p[1], p[0]) for p in pts]
+            easting_sample, northing_sample = p0[1], p0[0]
+        else:
+            cad_pts = [(p[0], p[1]) for p in pts]
+            easting_sample, northing_sample = p0[0], p0[1]
+
+        raw_poly = Polygon(cad_pts)
+        if not raw_poly.is_valid:
+            raw_poly = raw_poly.buffer(0)
+
+        min_x, min_y, _, _ = raw_poly.bounds
+        norm_poly = shapely.affinity.translate(raw_poly, -min_x, -min_y)
+
+        det_msk = msk_zone
+        if not det_msk or det_msk not in MSK_PRESETS:
+            det_msk = detect_msk_by_coordinates(easting_sample, northing_sample, region_hint=region_hint)
+        if not det_msk or det_msk not in MSK_PRESETS:
+            det_msk = "МСК-72 Зона 1 (Тюмень)"
+
+        c = raw_poly.centroid
+        lat_c, lon_c = msk_to_wgs84_coords(
+            c.x, c.y, det_msk,
+            axis_order="auto",
+            expected_center=expected_center
+        )
+
+        site = Site(
+            boundary=norm_poly,
+            base_offset=(min_x, min_y),
+            geo_center=(lat_c, lon_c),
+            cadastral_number=cad_num or f"ГПЗУ ({det_msk})",
+            address=f"Каталог координат ГПЗУ / ЕГРН ({det_msk})",
+            georef_source=f"По каталогу координат ({det_msk})",
+        )
+        meta = {
+            "coordinate_system": det_msk,
+            "points_count": len(pts),
+            "area_sqm": round(site.area, 1),
+            "area_ha": round(site.area / 10000.0, 2),
+            "center": (lat_c, lon_c),
+        }
+        return site, meta
+
+    # Локальные метры (< 500 м)
+    raw_poly = Polygon(pts)
+    if not raw_poly.is_valid:
+        raw_poly = raw_poly.buffer(0)
+    min_x, min_y, _, _ = raw_poly.bounds
+    norm_poly = shapely.affinity.translate(raw_poly, -min_x, -min_y)
+    lat_c, lon_c = expected_center if expected_center else (57.161069, 65.674079)
+
+    site = Site(
+        boundary=norm_poly,
+        base_offset=(0.0, 0.0),
+        geo_center=(lat_c, lon_c),
+        cadastral_number=cad_num or "ГПЗУ (локальные метры)",
+        address="Каталог координат (локальные метры)",
+        georef_source="По каталогу координат (локальные метры)",
+    )
+    meta = {
+        "coordinate_system": "Локальные метры",
+        "points_count": len(pts),
+        "area_sqm": round(site.area, 1),
+        "area_ha": round(site.area / 10000.0, 2),
+        "center": (lat_c, lon_c),
+    }
+    return site, meta
+
+
 def get_cadastral_parcel(
     cadastral_number: str,
     custom_area_sqm: float | None = None,
@@ -882,10 +1152,22 @@ def get_cadastral_parcel(
             source="preset",
         )
 
-    # 2. Если переданы точные координаты из выписки ЕГРН / Росреестра
+    # 2. Если передан номер участка без ручных координат — пробуем получить официальные границы из ПКК / НСПД
     comps = parse_cadastral_components(clean_num)
     reg_name, dist_name, norm_id, def_lat, def_lon = resolve_cadastral_location(clean_num)
+    pkk_source = False
 
+    if not custom_wgs84_coords:
+        pkk_data = fetch_pkk_parcel_data(clean_num)
+        if pkk_data and pkk_data.get("coordinates_wgs84"):
+            custom_wgs84_coords = pkk_data["coordinates_wgs84"]
+            if pkk_data.get("area_sqm") and not custom_area_sqm:
+                custom_area_sqm = pkk_data["area_sqm"]
+            if pkk_data.get("address"):
+                dist_name = pkk_data["address"]
+            pkk_source = True
+
+    # 3. Если получены точные координаты (из ПКК или выписки ЕГРН)
     if custom_wgs84_coords and len(custom_wgs84_coords) >= 3:
         # Автоматическое определение порядка координат [lat, lon] vs [lon, lat]
         # В выписках Росреестра и кадастровых паспортах часто координаты указаны как [lat, lon]
@@ -915,22 +1197,25 @@ def get_cadastral_parcel(
         if rotation_deg != 0.0:
             poly = shapely.affinity.rotate(poly, -rotation_deg, origin=poly.centroid)
 
+        source_label = "pkk_rosreestr" if pkk_source else "custom_coords"
+        addr_label = dist_name if pkk_source else f"{reg_name}, {dist_name}, выписка ЕГРН"
+
         return CadastralParcelInfo(
             cadastral_number=comps["formatted"] if comps else clean_num,
             region_code=comps["region_code"] if comps else "77",
             region_name=reg_name,
             district_name=dist_name,
             regional_norm_id=norm_id,
-            address=f"{reg_name}, {dist_name}, выписка ЕГРН",
+            address=addr_label,
             center_lat=c_lat,
             center_lon=c_lon,
             area_sqm=poly.area,
             boundary_metric=poly,
             red_lines_metric=[],
-            source="custom_coords",
+            source=source_label,
         )
 
-    # 3. Синтез участка в реальных координатах указанного региона и округа
+    # 4. Резервный синтез участка в реальных координатах указанного региона и округа
     target_area = custom_area_sqm or 32000.0
     side_a = round((target_area * 1.3) ** 0.5, 1)  # Соотношение сторон ~1:1.3
     side_b = round(target_area / side_a, 1)

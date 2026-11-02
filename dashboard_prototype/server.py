@@ -35,6 +35,8 @@ from dashboard_prototype.generator_service import (
     export_file_3d_html,
     export_file_geojson,
     export_file_report,
+    lookup_pkk_parcel,
+    parse_gpzu_table,
 )
 
 PORT = 8050
@@ -198,6 +200,65 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self._safe_write(response_bytes)
             except Exception as e:
                 err_bytes = json.dumps({"error": str(e)}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(err_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(err_bytes)
+            return
+
+        # 4. Запрос кадастровых границ с ПКК / НСПД
+        elif parsed.path == "/api/pkk-lookup":
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length).decode("utf-8")
+            try:
+                data = json.loads(post_data) if post_data else {}
+                cad_num = (data.get("cadastral_number") or "").strip()
+                res = lookup_pkk_parcel(cad_num)
+                response_bytes = json.dumps(res, ensure_ascii=False).encode("utf-8")
+
+                self.send_response(200 if res.get("success") else 404)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(response_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(response_bytes)
+            except Exception as e:
+                err_bytes = json.dumps({"success": False, "error": str(e)}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(err_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(err_bytes)
+            return
+
+        # 5. Парсинг и валидация координат ГПЗУ / ЕГРН
+        elif parsed.path == "/api/parse-gpzu":
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length).decode("utf-8")
+            try:
+                data = json.loads(post_data) if post_data else {}
+                text = data.get("text", "")
+                msk_zone = data.get("msk_zone")
+                exp_c = data.get("expected_center")
+                if exp_c and isinstance(exp_c, list) and len(exp_c) == 2:
+                    exp_c = (float(exp_c[0]), float(exp_c[1]))
+                else:
+                    exp_c = None
+                cad_num = data.get("cadastral_number")
+                res = parse_gpzu_table(text, msk_zone=msk_zone, expected_center=exp_c, cad_num=cad_num)
+                response_bytes = json.dumps(res, ensure_ascii=False).encode("utf-8")
+
+                self.send_response(200 if res.get("success") else 400)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(response_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(response_bytes)
+            except Exception as e:
+                err_bytes = json.dumps({"success": False, "error": str(e)}).encode("utf-8")
                 self.send_response(500)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(err_bytes)))

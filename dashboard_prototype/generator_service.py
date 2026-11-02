@@ -36,6 +36,9 @@ from src.core.cadastre import (
     create_site_from_cadastre,
     smart_resolve_location,
     parse_cadastral_components,
+    fetch_pkk_parcel_data,
+    create_site_from_coordinate_table,
+    parse_coordinate_table,
 )
 from src.core.site_parser import create_rectangular_site
 from src.core.buildable_area import compute_buildable_area
@@ -438,6 +441,7 @@ def _create_site_from_params(
         cad_query = (params.get("cad_query") or "72:23:0222001:16187").strip()
         custom_area = float(params.get("custom_area") or 32000)
         enable_red_line = bool(params.get("enable_red_line", False))
+        gpzu_coords_text = (params.get("gpzu_coordinates") or "").strip()
 
         reg_name, dist_name, resolved_norm_id, auto_lat, auto_lon = smart_resolve_location(cad_query)
         norm_id = resolved_norm_id or "russia_sp42"
@@ -445,22 +449,80 @@ def _create_site_from_params(
         use_lat = override_lat if override_lat != 0.0 else auto_lat
         use_lon = override_lon if override_lon != 0.0 else auto_lon
 
-        try:
-            parcel = get_cadastral_parcel(
-                cad_query,
-                custom_area_sqm=custom_area,
-                override_lat=use_lat,
-                override_lon=use_lon,
-                add_red_line=enable_red_line,
-            )
-            site = create_site_from_cadastre(parcel)
-            parcel_region_name = parcel.region_name
-            parcel_district_name = parcel.district_name
-            parcel_address = parcel.address
-            site.georef_source = f"По кадастру ({parcel.region_name})"
-        except Exception:
-            site = create_rectangular_site(200, 150, geo_center=(use_lat, use_lon))
-            site.address = f"{reg_name}, {dist_name} (участок)"
+        if gpzu_coords_text:
+            try:
+                requested_msk = params.get("msk_zone")
+                exp_c = (use_lat, use_lon) if (use_lat != 0.0 and use_lon != 0.0) else (auto_lat, auto_lon)
+                site_gpzu, gpzu_meta = create_site_from_coordinate_table(
+                    gpzu_coords_text,
+                    msk_zone=requested_msk,
+                    expected_center=exp_c,
+                    region_hint=reg_name,
+                    cad_num=cad_query,
+                )
+                site = site_gpzu
+                parcel_region_name = reg_name
+                parcel_district_name = dist_name
+                parcel_address = site.address
+                site.cad_info = {
+                    "is_cad": False,
+                    "is_gpzu": True,
+                    "points_count": gpzu_meta.get("points_count", 0),
+                    "detected_msk": gpzu_meta.get("coordinate_system"),
+                    "available_msk_presets": list(MSK_PRESETS.keys()),
+                    "dimensions": {
+                        "width_m": round(site.boundary.bounds[2] - site.boundary.bounds[0], 1),
+                        "depth_m": round(site.boundary.bounds[3] - site.boundary.bounds[1], 1),
+                    },
+                    "base_offset": {
+                        "x": round(site.base_offset[0], 2),
+                        "y": round(site.base_offset[1], 2),
+                    },
+                    "wgs84": {
+                        "lat": round(site.geo_center[0], 6),
+                        "lon": round(site.geo_center[1], 6),
+                    },
+                    "area_sqm": round(site.area, 1),
+                    "area_ha": round(site.area / 10000.0, 2),
+                }
+            except Exception as e:
+                print(f"Ошибка применения координат ГПЗУ: {e}")
+                site = None
+
+        if site is None:
+            try:
+                parcel = get_cadastral_parcel(
+                    cad_query,
+                    custom_area_sqm=custom_area,
+                    override_lat=use_lat,
+                    override_lon=use_lon,
+                    add_red_line=enable_red_line,
+                )
+                site = create_site_from_cadastre(parcel)
+                parcel_region_name = parcel.region_name
+                parcel_district_name = parcel.district_name
+                parcel_address = parcel.address
+                src_txt = "ПКК Росреестра" if parcel.source == "pkk_rosreestr" else f"По кадастру ({parcel.region_name})"
+                site.georef_source = src_txt
+                site.cad_info = {
+                    "is_cad": False,
+                    "is_pkk": parcel.source == "pkk_rosreestr",
+                    "source": parcel.source,
+                    "dimensions": {
+                        "width_m": round(site.boundary.bounds[2] - site.boundary.bounds[0], 1),
+                        "depth_m": round(site.boundary.bounds[3] - site.boundary.bounds[1], 1),
+                    },
+                    "area_sqm": round(site.area, 1),
+                    "area_ha": round(site.area / 10000.0, 2),
+                    "wgs84": {
+                        "lat": round(site.geo_center[0], 6),
+                        "lon": round(site.geo_center[1], 6),
+                    },
+                }
+            except Exception:
+                site = create_rectangular_site(200, 150, geo_center=(use_lat, use_lon))
+                site.address = f"{reg_name}, {dist_name} (участок)"
+                site.cad_info = {"is_cad": False}
 
         # Если прикреплен файл CAD поверх кадастра
         if cad_file_b64:
@@ -543,7 +605,8 @@ def _create_site_from_params(
             except Exception as e:
                 print(f"Ошибка применения CAD-контура: {e}")
         else:
-            site.cad_info = {"is_cad": False}
+            if not getattr(site, "cad_info", None):
+                site.cad_info = {"is_cad": False}
 
     # Поворот участка вокруг геометрического центра
     if site_rotation != 0.0:
@@ -1396,3 +1459,50 @@ def export_file_report(output_path: Path | None = None) -> str:
     if not site or not buildings or not tep:
         raise ValueError("Сначала выполните генерацию застройки")
     return generate_report(site, buildings, tep, config, filepath=output_path, balance=balance)
+
+
+def lookup_pkk_parcel(cad_number: str) -> dict[str, Any]:
+    """Запросить публичные кадастровые данные по номеру (с кешированием)."""
+    pkk = fetch_pkk_parcel_data(cad_number)
+    if not pkk:
+        return {"success": False, "error": "Участок не найден в публичном слое НСПД / Росреестра"}
+    return {
+        "success": True,
+        "cadastral_number": pkk.get("cadastral_number"),
+        "points_count": pkk.get("points_count", 0),
+        "area_sqm": pkk.get("area_sqm"),
+        "address": pkk.get("address"),
+        "coordinates_wgs84": pkk.get("coordinates_wgs84"),
+        "source": "pkk_rosreestr",
+    }
+
+
+def parse_gpzu_table(
+    text: str,
+    msk_zone: str | None = None,
+    expected_center: tuple[float, float] | None = None,
+    region_hint: str | None = None,
+    cad_num: str | None = None,
+) -> dict[str, Any]:
+    """Разобрать и провалидировать каталог координат ГПЗУ."""
+    try:
+        site, meta = create_site_from_coordinate_table(
+            text,
+            msk_zone=msk_zone,
+            expected_center=expected_center,
+            region_hint=region_hint,
+            cad_num=cad_num,
+        )
+        return {
+            "success": True,
+            "points_count": meta["points_count"],
+            "area_sqm": meta["area_sqm"],
+            "area_ha": meta["area_ha"],
+            "coordinate_system": meta["coordinate_system"],
+            "center": {
+                "lat": round(meta["center"][0], 6),
+                "lon": round(meta["center"][1], 6),
+            },
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}

@@ -836,8 +836,34 @@
 
           <div class="control-row">
             <label class="control-label" for="cfg-cad-input">Кадастровый номер, адрес или координаты</label>
-            <input type="text" class="input-text" id="cfg-cad-input" value="72:23:0222001:16187" placeholder="72:23:0222001:16187 или 'Тюмень'" />
+            <div style="display:flex; gap:6px;">
+              <input type="text" class="input-text" id="cfg-cad-input" value="72:23:0222001:16187" placeholder="72:23:0222001:16187 или 'Тюмень'" style="flex:1;" />
+              <button class="btn-toggle-sidebar" id="btn-fetch-pkk" type="button" title="Загрузить официальные границы напрямую из Публичной кадастровой карты Росреестра / НСПД" style="white-space:nowrap; padding:6px 10px; font-size:12px;">
+                🌐 Загрузить с ПКК
+              </button>
+            </div>
+            <div id="pkk-status-badge" style="font-size:11px; margin-top:3px; display:none; line-height:1.3;"></div>
           </div>
+
+          <!-- Аккордеон ввода каталога координат из ГПЗУ / ЕГРН -->
+          <details class="expander" id="gpzu-coords-expander">
+            <summary>📋 Вставить каталог координат из ГПЗУ / ЕГРН (X, Y)</summary>
+            <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px;">
+              <div class="control-hint" style="line-height:1.4;">
+                Вставьте каталог поворотных точек из ГПЗУ или выписки ЕГРН (координаты X, Y в метрах МСК или градусах WGS-84):
+              </div>
+              <textarea id="cfg-gpzu-coords" class="input-text" rows="5" style="font-family:monospace; font-size:11px; resize:vertical;" placeholder="1  337979.12  1475315.11&#10;2  338015.68  1475301.40&#10;3  337968.30  1475176.38&#10;4  337938.10  1475096.70&#10;..."></textarea>
+              <div style="display:flex; gap:6px;">
+                <button class="btn-toggle-sidebar active" id="btn-apply-gpzu" type="button" style="flex:1; justify-content:center; font-size:12px; padding:6px 10px;">
+                  📐 Применить контур из ГПЗУ
+                </button>
+                <button class="btn-toggle-sidebar" id="btn-clear-gpzu" type="button" style="font-size:12px; padding:6px 10px;">
+                  Очистить
+                </button>
+              </div>
+              <div id="gpzu-status-badge" style="font-size:11px; display:none; line-height:1.3;"></div>
+            </div>
+          </details>
 
           <!-- Аккордеон тонких настроек координат и площади -->
           <details class="expander" id="cadastre-fine-expander">
@@ -1824,6 +1850,13 @@
       // Поля режима 1 (Кадастр)
       const cfgParcelPresets = document.getElementById("cfg-parcel-presets");
       const cfgCadInput = document.getElementById("cfg-cad-input");
+      const btnFetchPkk = document.getElementById("btn-fetch-pkk");
+      const pkkStatusBadge = document.getElementById("pkk-status-badge");
+      const cfgGpzuCoords = document.getElementById("cfg-gpzu-coords");
+      const btnApplyGpzu = document.getElementById("btn-apply-gpzu");
+      const btnClearGpzu = document.getElementById("btn-clear-gpzu");
+      const gpzuStatusBadge = document.getElementById("gpzu-status-badge");
+      let activeGpzuCoordinates = "";
       const cfgRotSlider = document.getElementById("cfg-rot-slider");
       const cfgRotBadge = document.getElementById("cfg-rot-badge");
       const cfgAreaInput = document.getElementById("cfg-area-input");
@@ -2567,6 +2600,10 @@
       cfgParcelPresets.addEventListener("change", e => {
         const cadNum = e.target.value;
         cfgCadInput.value = cadNum;
+        activeGpzuCoordinates = "";
+        if (cfgGpzuCoords) cfgGpzuCoords.value = "";
+        if (gpzuStatusBadge) gpzuStatusBadge.style.display = "none";
+        if (pkkStatusBadge) pkkStatusBadge.style.display = "none";
         userHasMovedSite = false;
         currentSiteLat = null;
         currentSiteLon = null;
@@ -2588,6 +2625,121 @@
         isSiteLocked = false;
         loadSitePreview(true);
       });
+
+      // Запрос официальных границ из ПКК / НСПД
+      if (btnFetchPkk) {
+        btnFetchPkk.addEventListener("click", async () => {
+          const cadNum = cfgCadInput.value.trim();
+          if (!cadNum) {
+            showToast("⚠️ Введите кадастровый номер");
+            return;
+          }
+          pkkStatusBadge.style.display = "block";
+          pkkStatusBadge.style.color = "var(--secondary)";
+          pkkStatusBadge.textContent = "⏳ Запрос к Росреестру / НСПД...";
+          btnFetchPkk.disabled = true;
+
+          try {
+            const resp = await fetch("/api/pkk-lookup", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ cadastral_number: cadNum })
+            });
+            const data = await resp.json();
+            if (data.success) {
+              pkkStatusBadge.style.color = "#10b981";
+              const areaStr = data.area_sqm ? `${Math.round(data.area_sqm).toLocaleString()} м²` : "площадь уточнена";
+              pkkStatusBadge.textContent = `✓ Найдено в Росреестре: ${data.points_count} точек, ${areaStr}`;
+              if (data.area_sqm && cfgAreaInput) {
+                cfgAreaInput.value = Math.round(data.area_sqm);
+              }
+              activeGpzuCoordinates = "";
+              if (gpzuStatusBadge) gpzuStatusBadge.style.display = "none";
+              userHasMovedSite = false;
+              currentSiteLat = null;
+              currentSiteLon = null;
+              isSiteLocked = false;
+              showToast("✓ Официальные границы участка успешно получены из ПКК!");
+              loadSitePreview(true);
+            } else {
+              pkkStatusBadge.style.color = "#f59e0b";
+              pkkStatusBadge.textContent = "⚠️ Границы не опубликованы на публичном слое НСПД. Вставьте координаты из ГПЗУ ниже или загрузите DXF.";
+              showToast("⚠️ Границы не найдены на ПКК. Воспользуйтесь каталогом ГПЗУ ниже.");
+            }
+          } catch (err) {
+            pkkStatusBadge.style.color = "#ef4444";
+            pkkStatusBadge.textContent = "❌ Ошибка сетевого запроса к ПКК. Проверьте интернет или вставьте координаты из ГПЗУ.";
+            showToast("❌ Ошибка запроса к ПКК");
+          } finally {
+            btnFetchPkk.disabled = false;
+          }
+        });
+      }
+
+      // Применение каталога координат из ГПЗУ / ЕГРН
+      if (btnApplyGpzu) {
+        btnApplyGpzu.addEventListener("click", async () => {
+          const coordsText = cfgGpzuCoords.value.trim();
+          if (!coordsText) {
+            showToast("⚠️ Вставьте таблицу координат в текстовое поле");
+            return;
+          }
+          gpzuStatusBadge.style.display = "block";
+          gpzuStatusBadge.style.color = "var(--secondary)";
+          gpzuStatusBadge.textContent = "⏳ Проверка геометрии контура...";
+          btnApplyGpzu.disabled = true;
+
+          try {
+            const cadQuery = cfgCadInput.value.trim();
+            const requestedMsk = (cfgCadMskZone && cfgCadMskZone.value) || null;
+            const resp = await fetch("/api/parse-gpzu", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                text: coordsText,
+                msk_zone: requestedMsk,
+                cadastral_number: cadQuery
+              })
+            });
+            const data = await resp.json();
+            if (data.success) {
+              activeGpzuCoordinates = coordsText;
+              gpzuStatusBadge.style.color = "#10b981";
+              gpzuStatusBadge.textContent = `✓ Контур из ГПЗУ применён: ${data.points_count} точек, ${Math.round(data.area_sqm).toLocaleString()} м² (${data.coordinate_system})`;
+              if (cfgAreaInput) {
+                cfgAreaInput.value = Math.round(data.area_sqm);
+              }
+              if (pkkStatusBadge) pkkStatusBadge.style.display = "none";
+              userHasMovedSite = false;
+              currentSiteLat = null;
+              currentSiteLon = null;
+              isSiteLocked = false;
+              showToast(`✓ Контур ГПЗУ загружен: ${data.points_count} точек, ${Math.round(data.area_sqm).toLocaleString()} м²`);
+              loadSitePreview(true);
+            } else {
+              gpzuStatusBadge.style.color = "#ef4444";
+              gpzuStatusBadge.textContent = `❌ Ошибка контура: ${data.error || "Не удалось распознать точки"}`;
+              showToast("❌ Ошибка каталога координат");
+            }
+          } catch (err) {
+            gpzuStatusBadge.style.color = "#ef4444";
+            gpzuStatusBadge.textContent = "❌ Ошибка парсинга координат";
+            showToast("❌ Ошибка парсинга координат");
+          } finally {
+            btnApplyGpzu.disabled = false;
+          }
+        });
+      }
+
+      if (btnClearGpzu) {
+        btnClearGpzu.addEventListener("click", () => {
+          cfgGpzuCoords.value = "";
+          activeGpzuCoordinates = "";
+          gpzuStatusBadge.style.display = "none";
+          showToast("Контур ГПЗУ очищен");
+          loadSitePreview(true);
+        });
+      }
 
       // Изменение кадастрового номера / региона в режиме 2
       if (cfgDwgAssignedCad) {
@@ -2871,6 +3023,9 @@
           base.cad_query = cfgCadInput.value.trim() || "72:23:0222001:16187";
           base.custom_area = parseFloat(cfgAreaInput.value) || 32000;
           base.enable_red_line = cfgRedlineToggle.checked;
+          if (activeGpzuCoordinates) {
+            base.gpzu_coordinates = activeGpzuCoordinates;
+          }
           if (uploadedCadBase64) {
             base.cad_file_base64 = uploadedCadBase64;
             base.cad_filename = uploadedCadFilename;
