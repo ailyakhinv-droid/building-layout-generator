@@ -26,8 +26,13 @@ data_urbanomy/
 knowledge_base/
 docs/local_kb/
 
+# Logs
+*.log
+debug.log
+
 # Standalone HTML dashboard prototype temporary exports
 dashboard_prototype/tmp_exports/
+dashboard_modern/tmp_exports/
 
 # Temporary node & scratch dirs
 node_modules/
