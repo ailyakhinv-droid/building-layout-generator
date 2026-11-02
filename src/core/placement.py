@@ -112,6 +112,8 @@ class PlacementConfig:
     perimeter_layout_style: str = "U_SHAPE"
     max_bcr: float | None = None
     max_far: float | None = None
+    fire_gap_end_to_end: float = 10.0
+    fire_gap_parallel: float = 18.0
 
 
 class PlacementEngine:
@@ -933,7 +935,7 @@ class PlacementEngine:
         buildings: list[Building] = []
 
         court_angle = self._get_solar_courtyard_angle(placement_config, angle)
-        fire_gap = self._get_fire_gap(floors)
+        fire_gap = self._get_fire_gap(floors, is_parallel=True)
 
         # Соразмерный масштаб основания скобы (65–88 м вместо монстров 180 м)
         num_back = 1 if middle.width > 35.0 or placement_config.max_sections_per_building < 7 else 2
@@ -1093,8 +1095,10 @@ class PlacementEngine:
         length, width, _ = get_obb_dimensions(buildable)
         centroid = buildable.centroid
 
-        fire_gap = self._get_fire_gap(floors)
-        h = floors * self._current_floor_height
+        fire_gap = self._get_fire_gap(floors, is_parallel=True)
+        gh = getattr(tower_sec, "ground_floor_height", None) or self._current_floor_height
+        fh = getattr(tower_sec, "floor_height", None) or self._current_floor_height
+        h = gh + (floors - 1) * fh if getattr(tower_sec, "has_commercial_ground", False) else floors * fh
         insol_factor = float(self.config.get("insolation_factor", 0.5))
         req_gap = max(fire_gap, h * insol_factor, 24.0)
 
@@ -1177,7 +1181,7 @@ class PlacementEngine:
         buildings: list[Building] = []
 
         court_angle = self._get_solar_courtyard_angle(placement_config, angle)
-        fire_gap = self._get_fire_gap(floors)
+        fire_gap = self._get_fire_gap(floors, is_parallel=True)
 
         num_back = 1 if middle.width > 35.0 or placement_config.max_sections_per_building < 7 else 2
         passage_gap = float(self.config.get("passage_gap_min", 18.0))
@@ -1297,7 +1301,7 @@ class PlacementEngine:
         buildings: list[Building] = []
 
         court_angle = self._get_solar_courtyard_angle(placement_config, angle)
-        fire_gap = self._get_fire_gap(floors)
+        fire_gap = self._get_fire_gap(floors, is_parallel=True)
 
         max_sec = placement_config.max_sections_per_building
         min_sec = placement_config.min_sections_per_building
@@ -1361,7 +1365,7 @@ class PlacementEngine:
         placement_config: PlacementConfig,
     ) -> list[Building]:
         """Генерация параллельной рядовой застройки соразмерными корпусами (<= 90 м)."""
-        fire_gap = self._get_fire_gap(floors)
+        fire_gap = self._get_fire_gap(floors, is_parallel=True)
         insol_gap = self._get_insolation_gap(floors)
         row_spacing = middle.depth + max(fire_gap, insol_gap)
 
@@ -2054,6 +2058,120 @@ class PlacementEngine:
         except Exception:
             return False
 
+    @staticmethod
+    def get_building_edges_with_normals(building: Building) -> list[dict[str, Any]]:
+        """Извлечь наружные ребра здания с внешними нормалями и типами ('FACADE' или 'END')."""
+        is_tower = (
+            getattr(building, "typology", None) == "TOWER"
+            or (len(building.sections) == 1 and getattr(building.sections[0].section_type, "category", "") == "TOWER")
+        )
+        fp = building.footprint
+        coords = list(fp.exterior.coords)
+        if not fp.exterior.is_ccw:
+            coords = coords[::-1]
+
+        edges: list[dict[str, Any]] = []
+        for i in range(len(coords) - 1):
+            pA, pB = coords[i], coords[i + 1]
+            dx = pB[0] - pA[0]
+            dy = pB[1] - pA[1]
+            length = math.hypot(dx, dy)
+            if length < 0.1:
+                continue
+            line = LineString([pA, pB])
+            # В CCW контуре внешняя нормаль направлена вправо: (dy/length, -dx/length)
+            nx = dy / length
+            ny = -dx / length
+            mid_pt = ((pA[0] + pB[0]) / 2.0, (pA[1] + pB[1]) / 2.0)
+
+            if is_tower:
+                edge_type = "FACADE"
+            else:
+                edge_angle = math.degrees(math.atan2(dy, dx)) % 180.0
+                closest_sec = min(building.sections, key=lambda s: Point(s.x, s.y).distance(line))
+                sec_angle = closest_sec.angle % 180.0
+                diff = abs(edge_angle - sec_angle)
+                if diff > 90.0:
+                    diff = 180.0 - diff
+                edge_type = "END" if diff >= 45.0 else "FACADE"
+
+            edges.append({
+                "line": line,
+                "pA": pA,
+                "pB": pB,
+                "normal": (nx, ny),
+                "mid": mid_pt,
+                "length": length,
+                "type": edge_type,
+            })
+        return edges
+
+    def classify_fire_gap(
+        self,
+        b1: Building,
+        b2: Building,
+        gap_end: float = 10.0,
+        gap_parallel: float = 18.0,
+    ) -> tuple[float, str]:
+        """Определить требуемое нормативное противопожарное расстояние между зданиями.
+
+        Нормативы СП 4.13130, СП 42.13330:
+        - 10 м: минимальный просвет между глухими торцами секций (END_TO_END)
+          или между торцом и лицевым/дворовым фасадом (END_TO_FACADE).
+        - 15-20 м (по умолч. 18 м): минимальное расстояние при параллельной посадке
+          между продольными фасадами (FACADE_PARALLEL).
+        - Для башен (точечных домов): все 4 стороны являются лицевыми фасадами,
+          поэтому разрывы проверяются по всем 4 сторонам (до фасадов 15-20 м, до торцов 10 м).
+        """
+        D = b1.footprint.distance(b2.footprint)
+        edges1 = self.get_building_edges_with_normals(b1)
+        edges2 = self.get_building_edges_with_normals(b2)
+
+        facing_pairs: list[tuple[float, str, str]] = []
+        for e1 in edges1:
+            for e2 in edges2:
+                d = e1["line"].distance(e2["line"])
+                if d > D + 1.5:
+                    continue
+                n1 = e1["normal"]
+                n2 = e2["normal"]
+                dot = n1[0] * n2[0] + n1[1] * n2[1]
+                if dot > -0.2:
+                    continue
+                vx = e2["mid"][0] - e1["mid"][0]
+                vy = e2["mid"][1] - e1["mid"][1]
+                if (vx * n1[0] + vy * n1[1]) <= 0:
+                    continue
+                facing_pairs.append((d, e1["type"], e2["type"]))
+
+        if not facing_pairs:
+            min_d = float("inf")
+            pair_types = ("FACADE", "FACADE")
+            for e1 in edges1:
+                for e2 in edges2:
+                    d = e1["line"].distance(e2["line"])
+                    if d < min_d:
+                        min_d = d
+                        pair_types = (e1["type"], e2["type"])
+            facing_pairs.append((min_d, pair_types[0], pair_types[1]))
+
+        is_facade_facade = any(p[1] == "FACADE" and p[2] == "FACADE" for p in facing_pairs if p[0] <= D + 1.0)
+        is_end_end = any(p[1] == "END" and p[2] == "END" for p in facing_pairs if p[0] <= D + 1.0)
+        is_end_facade = any(
+            (p[1] == "END" and p[2] == "FACADE") or (p[1] == "FACADE" and p[2] == "END")
+            for p in facing_pairs
+            if p[0] <= D + 1.0
+        )
+
+        if is_facade_facade:
+            return gap_parallel, "FACADE_PARALLEL"
+        elif is_end_end and not is_end_facade:
+            return gap_end, "END_TO_END"
+        elif is_end_facade:
+            return gap_end, "END_TO_FACADE"
+        else:
+            return gap_end, "END_TO_END"
+
     def _check_constraints(
         self,
         new_building: Building,
@@ -2062,8 +2180,6 @@ class PlacementEngine:
     ) -> bool:
         """Проверить нормативные противопожарные и инсоляционные расстояния, а также лимит BCR."""
         # 0. Ограничение инсоляции для меридиональных секций (СанПиН 1.2.3685-21)
-        # Предельный угол продольной оси меридиональной секции к горизонтали (оси Восток-Запад)
-        # должен быть не менее 25°, чтобы северный фасад получал нормативную инсоляцию (1.5-2 ч).
         for sec in new_building.sections:
             if getattr(sec.section_type, "is_meridian", False):
                 if angle_to_horizontal(sec.angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
@@ -2083,6 +2199,8 @@ class PlacementEngine:
                     return False
 
         new_fp = new_building.footprint
+        gap_end = float(getattr(placement_config, "fire_gap_end_to_end", None) or self.config.get("fire_gap_end_to_end", 10.0))
+        gap_parallel = float(getattr(placement_config, "fire_gap_parallel", None) or self.config.get("fire_gap_parallel", 18.0))
 
         for existing in existing_buildings:
             exist_fp = existing.footprint
@@ -2092,29 +2210,43 @@ class PlacementEngine:
 
             distance = new_fp.distance(exist_fp)
 
-            max_floors = max(new_building.floors, existing.floors)
-            fire_gap = self._get_fire_gap(max_floors)
-            if distance < fire_gap:
+            # Дифференцированный противопожарный разрыв
+            req_fire_dist, gap_mode = self.classify_fire_gap(
+                new_building, existing, gap_end=gap_end, gap_parallel=gap_parallel
+            )
+            if distance < req_fire_dist - 1e-3:
                 return False
 
+            # Инсоляционный разрыв проверяется для обращённых фасадов
             max_height = max(new_building.height, existing.height)
-            insol_factor = self.config.get("insolation_factor", 0.5)
-            req_gap = max_height * insol_factor
+            insol_factor = float(self.config.get("insolation_factor", 0.5))
+            req_insol_gap = max_height * insol_factor
 
-            # Переменный шаг: с торцов разрыв может быть fire_gap, а по фасадам req_gap
-            if placement_config and placement_config.variable_insolation:
-                if distance < req_gap and distance < fire_gap * 1.2:
+            if gap_mode == "FACADE_PARALLEL":
+                if distance < req_insol_gap - 1e-3:
                     return False
-            elif distance < req_gap:
-                return False
+            else:
+                if distance < gap_end - 1e-3:
+                    return False
 
         return True
 
-    def _get_fire_gap(self, floors: int) -> float:
+    def _get_fire_gap(self, floors: int, is_parallel: bool = False) -> float:
         """Минимальный противопожарный разрыв в метрах."""
-        if floors > 10:
-            return self.config.get("fire_gap_high_rise", 15.0)
-        return self.config.get("fire_gap_min", 6.0)
+        p_cfg = getattr(self, "placement_config", None)
+        gap_end = (
+            getattr(p_cfg, "fire_gap_end_to_end", None)
+            if p_cfg is not None
+            else None
+        ) or self.config.get("fire_gap_end_to_end", 10.0)
+        gap_parallel = (
+            getattr(p_cfg, "fire_gap_parallel", None)
+            if p_cfg is not None
+            else None
+        ) or self.config.get("fire_gap_parallel", 18.0)
+        if is_parallel:
+            return float(gap_parallel)
+        return float(gap_end)
 
     def _get_insolation_gap(self, floors: int) -> float:
         """Инсоляционный разрыв в метрах."""

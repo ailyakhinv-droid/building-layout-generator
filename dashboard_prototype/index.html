@@ -1187,6 +1187,32 @@
           </label>
         </div>
 
+        <!-- БЛОК ПРОТИВОПОЖАРНЫХ РАССТОЯНИЙ (СП 4.13130, СП 42.13330) -->
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:8px; padding:10px; background:rgba(239, 68, 68, 0.04); border:1px solid #fecaca; border-radius:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="font-size:11.5px; font-weight:700; color:#b91c1c; text-transform:uppercase; letter-spacing:0.5px;">🔥 Противопожарные расстояния</div>
+            <span class="badge" style="font-size:10px; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;">СП 4.13130</span>
+          </div>
+
+          <div class="control-row">
+            <div style="display:flex; justify-content:space-between;">
+              <label class="control-label" for="cfg-fire-gap-end">Торец–торец / торец–фасад</label>
+              <span id="badge-fire-gap-end" style="font-size:11px; font-weight:600; color:#b91c1c;">10 м</span>
+            </div>
+            <input type="range" class="slider-input" id="cfg-fire-gap-end" min="6" max="25" step="1" value="10" />
+            <div class="control-hint">Мин. просвет между торцами секций или торцом и фасадом (норма ≥ 10 м)</div>
+          </div>
+
+          <div class="control-row">
+            <div style="display:flex; justify-content:space-between;">
+              <label class="control-label" for="cfg-fire-gap-parallel">Параллельная посадка (фасад–фасад)</label>
+              <span id="badge-fire-gap-parallel" style="font-size:11px; font-weight:600; color:#b91c1c;">18 м</span>
+            </div>
+            <input type="range" class="slider-input" id="cfg-fire-gap-parallel" min="12" max="35" step="1" value="18" />
+            <div class="control-hint">Разрыв между продольными фасадами и для башен со всех 4 сторон (15–20 м)</div>
+          </div>
+        </div>
+
         <div class="control-row">
           <div class="control-label">
             <span>Разрешенные типовые секции</span>
@@ -1916,6 +1942,10 @@
       const cfgCourtOrient = document.getElementById("cfg-court-orient");
       const cfgTowersMixed = document.getElementById("cfg-towers-mixed");
       const cfgVarInsolation = document.getElementById("cfg-var-insolation");
+      const cfgFireGapEnd = document.getElementById("cfg-fire-gap-end");
+      const badgeFireGapEnd = document.getElementById("badge-fire-gap-end");
+      const cfgFireGapParallel = document.getElementById("cfg-fire-gap-parallel");
+      const badgeFireGapParallel = document.getElementById("badge-fire-gap-parallel");
       const cfgGenMode = document.getElementById("cfg-gen-mode");
       const cfgTargetContainer = document.getElementById("cfg-target-tep-container");
       const cfgTargetMetric = document.getElementById("cfg-target-metric");
@@ -2978,6 +3008,18 @@
       if (cfgAsymmetricWings) cfgAsymmetricWings.addEventListener("change", scheduleRegeneration);
       if (cfgTowersMixed) cfgTowersMixed.addEventListener("change", scheduleRegeneration);
       if (cfgVarInsolation) cfgVarInsolation.addEventListener("change", scheduleRegeneration);
+      if (cfgFireGapEnd) {
+        cfgFireGapEnd.addEventListener("input", e => {
+          if (badgeFireGapEnd) badgeFireGapEnd.textContent = `${e.target.value} м`;
+        });
+        cfgFireGapEnd.addEventListener("change", scheduleRegeneration);
+      }
+      if (cfgFireGapParallel) {
+        cfgFireGapParallel.addEventListener("input", e => {
+          if (badgeFireGapParallel) badgeFireGapParallel.textContent = `${e.target.value} м`;
+        });
+        cfgFireGapParallel.addEventListener("change", scheduleRegeneration);
+      }
       if (cfgCourtOrient) cfgCourtOrient.addEventListener("change", scheduleRegeneration);
       if (cfgRegionalNorm) cfgRegionalNorm.addEventListener("change", scheduleRegeneration);
       if (cfgTargetMetric) cfgTargetMetric.addEventListener("change", scheduleRegeneration);
@@ -3146,6 +3188,8 @@
           courtyard_orientation: cfgCourtOrient.value,
           allow_towers_in_mixed: cfgTowersMixed.checked,
           variable_insolation: cfgVarInsolation.checked,
+          fire_gap_end_to_end: parseFloat(cfgFireGapEnd ? cfgFireGapEnd.value : 10) || 10,
+          fire_gap_parallel: parseFloat(cfgFireGapParallel ? cfgFireGapParallel.value : 18) || 18,
           gen_mode: cfgGenMode.value,
           target_metric: cfgTargetMetric.value,
           target_value: parseFloat(cfgTargetVal.value) || 1.5,

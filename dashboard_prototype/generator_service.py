@@ -865,6 +865,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     perimeter_layout_style = params.get("perimeter_layout_style", "U_SHAPE")
     max_bcr = float(config["max_bcr"]) if config.get("max_bcr") is not None else None
     max_far = float(config["max_far"]) if config.get("max_far") is not None else None
+    fire_gap_end_to_end = float(params.get("fire_gap_end_to_end", config.get("fire_gap_end_to_end", 10.0)))
+    fire_gap_parallel = float(params.get("fire_gap_parallel", config.get("fire_gap_parallel", 18.0)))
 
     placement_cfg = PlacementConfig(
         target_floors=target_floors,
@@ -884,6 +886,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         perimeter_layout_style=perimeter_layout_style,
         max_bcr=max_bcr,
         max_far=max_far,
+        fire_gap_end_to_end=fire_gap_end_to_end,
+        fire_gap_parallel=fire_gap_parallel,
     )
 
     # 5. Режимы генерации
@@ -989,6 +993,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         perimeter_layout_style=perimeter_layout_style,
         max_bcr=max_bcr,
         max_far=max_far,
+        fire_gap_end_to_end=fire_gap_end_to_end,
+        fire_gap_parallel=fire_gap_parallel,
     )
     try:
         v2_buildings = _generate_buildings_for_site(site, v2_cfg)
@@ -1031,6 +1037,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         perimeter_layout_style=perimeter_layout_style,
         max_bcr=min(max_bcr or 0.40, 0.32),
         max_far=max_far,
+        fire_gap_end_to_end=fire_gap_end_to_end,
+        fire_gap_parallel=fire_gap_parallel,
     )
     try:
         v3_buildings = _generate_buildings_for_site(site, v3_cfg)
@@ -1395,6 +1403,8 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
         perimeter_layout_style=params.get("perimeter_layout_style", "U_SHAPE"),
         max_bcr=config.get("max_bcr"),
         max_far=config.get("max_far"),
+        fire_gap_end_to_end=float(params.get("fire_gap_end_to_end", config.get("fire_gap_end_to_end", 10.0))),
+        fire_gap_parallel=float(params.get("fire_gap_parallel", config.get("fire_gap_parallel", 18.0))),
     )
 
     optimizer = Optimizer(site, library, config, base_placement_config=placement_cfg)

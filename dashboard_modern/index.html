@@ -1332,6 +1332,10 @@
       const cfgCourtOrient = document.getElementById("cfg-court-orient");
       const cfgTowersMixed = document.getElementById("cfg-towers-mixed");
       const cfgVarInsolation = document.getElementById("cfg-var-insolation");
+      const cfgFireGapEnd = document.getElementById("cfg-fire-gap-end");
+      const badgeFireGapEnd = document.getElementById("badge-fire-gap-end");
+      const cfgFireGapParallel = document.getElementById("cfg-fire-gap-parallel");
+      const badgeFireGapParallel = document.getElementById("badge-fire-gap-parallel");
       const cfgGenMode = document.getElementById("cfg-gen-mode");
       const cfgTargetContainer = document.getElementById("cfg-target-tep-container");
       const cfgTargetMetric = document.getElementById("cfg-target-metric");
@@ -2394,6 +2398,18 @@
       if (cfgAsymmetricWings) cfgAsymmetricWings.addEventListener("change", scheduleRegeneration);
       if (cfgTowersMixed) cfgTowersMixed.addEventListener("change", scheduleRegeneration);
       if (cfgVarInsolation) cfgVarInsolation.addEventListener("change", scheduleRegeneration);
+      if (cfgFireGapEnd) {{
+        cfgFireGapEnd.addEventListener("input", e => {{
+          if (badgeFireGapEnd) badgeFireGapEnd.textContent = `${{e.target.value}} м`;
+        }});
+        cfgFireGapEnd.addEventListener("change", scheduleRegeneration);
+      }}
+      if (cfgFireGapParallel) {{
+        cfgFireGapParallel.addEventListener("input", e => {{
+          if (badgeFireGapParallel) badgeFireGapParallel.textContent = `${{e.target.value}} м`;
+        }});
+        cfgFireGapParallel.addEventListener("change", scheduleRegeneration);
+      }}
       if (cfgCourtOrient) cfgCourtOrient.addEventListener("change", scheduleRegeneration);
       if (cfgRegionalNorm) cfgRegionalNorm.addEventListener("change", scheduleRegeneration);
       if (cfgTargetMetric) cfgTargetMetric.addEventListener("change", scheduleRegeneration);
@@ -2562,6 +2578,8 @@
           courtyard_orientation: cfgCourtOrient.value,
           allow_towers_in_mixed: cfgTowersMixed.checked,
           variable_insolation: cfgVarInsolation.checked,
+          fire_gap_end_to_end: parseFloat(cfgFireGapEnd ? cfgFireGapEnd.value : 10) || 10,
+          fire_gap_parallel: parseFloat(cfgFireGapParallel ? cfgFireGapParallel.value : 18) || 18,
           gen_mode: cfgGenMode.value,
           target_metric: cfgTargetMetric.value,
           target_value: parseFloat(cfgTargetVal.value) || 1.5,
