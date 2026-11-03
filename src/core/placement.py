@@ -344,6 +344,8 @@ class PlacementEngine:
                 else:
                     primary_angle = RECOMMENDED_MERIDIAN_ANGLE_DEG
 
+        self._last_primary_angle = primary_angle
+
         # 2. Выбор секций
         sections = self._select_sections(placement_config)
         if not sections:

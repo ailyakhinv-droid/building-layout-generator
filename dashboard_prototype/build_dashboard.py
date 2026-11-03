@@ -673,6 +673,69 @@ def build():
       filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.6));
     }}
 
+    /* БОКОВОЙ ИНДИКАТОР ПЕРЕБОРА ВАРИАНТОВ (TOP-1) */
+    .opt-side-card {{
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 300px;
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid #c7d2fe;
+      border-radius: 12px;
+      box-shadow: 0 12px 28px -4px rgba(79, 70, 229, 0.22), 0 4px 8px -2px rgba(0, 0, 0, 0.06);
+      padding: 12px 14px;
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: auto;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+      font-family: inherit;
+    }}
+    .opt-card-header {{
+      display: flex; justify-content: space-between; align-items: center;
+    }}
+    .opt-card-pulse {{
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #6366f1;
+      box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
+      animation: optPulse 1.4s infinite cubic-bezier(0.66, 0, 0, 1);
+      display: inline-block;
+    }}
+    @keyframes optPulse {{
+      0% {{ box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); transform: scale(0.95); }}
+      70% {{ box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); transform: scale(1.1); }}
+      100% {{ box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); transform: scale(0.95); }}
+    }}
+    .opt-bar-bg {{
+      width: 100%; height: 6px; background: #e0e7ff; border-radius: 999px; overflow: hidden;
+    }}
+    .opt-bar-fill {{
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 50%, #3b82f6 100%);
+      border-radius: 999px;
+      transition: width 0.15s ease-out;
+    }}
+    .opt-status-msg {{
+      font-size: 11.5px; color: #475569; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }}
+    .opt-mini-grid {{
+      display: grid; grid-template-columns: 1fr 1.3fr 0.9fr; gap: 6px;
+      background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 8px;
+    }}
+    .opt-mini-box {{ display: flex; flex-direction: column; }}
+    .opt-mini-lbl {{ font-size: 9.5px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.3px; }}
+    .opt-mini-val {{ font-size: 12px; font-weight: 700; color: #0f172a; }}
+    .opt-compliance-tags {{
+      display: flex; flex-wrap: wrap; gap: 4px;
+    }}
+    .opt-tag {{
+      font-size: 9.5px; font-weight: 600; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0;
+      padding: 1px 5px; border-radius: 4px;
+    }}
+
     /* ИНСПЕКТОР */
     .inspector-card {{
       padding: 20px; display: flex; flex-direction: column; gap: 16px;
@@ -1279,6 +1342,40 @@ def build():
           </select>
         </div>
 
+        <div class="control-row" id="cfg-maximize-container" style="display:none; background:rgba(30, 41, 59, 0.45); border:1px solid rgba(99, 102, 241, 0.35); border-radius:8px; padding:10px 12px; margin-bottom:12px;">
+          <div style="font-weight:600; font-size:12px; color:#818cf8; margin-bottom:8px;">⚡ Параметры максимизации (перебор)</div>
+          <div class="toggle-row" style="margin-bottom:8px;">
+            <div>
+              <div class="control-label" style="font-size:12px;">Сетка углов (±15°, ±25°)</div>
+              <div class="control-hint" style="font-size:10px;">Вращение сетки для лучшей посадки</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="cfg-max-explore-angles" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row" style="margin-bottom:8px;">
+            <div>
+              <div class="control-label" style="font-size:12px;">Все типологии (AUTO, П, Г, башни)</div>
+              <div class="control-hint" style="font-size:10px;">Сравнить все морфотипы застройки</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="cfg-max-explore-typs" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="toggle-row">
+            <div>
+              <div class="control-label" style="font-size:12px;">Строго по закону (нормативы)</div>
+              <div class="control-hint" style="font-size:10px;">FAR, BCR, пожарные разрывы, инсоляция</div>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="cfg-max-respect-norms" checked />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
         <div class="control-row" id="cfg-target-tep-container" style="display:none;">
           <label class="control-label" for="cfg-target-metric">Целевой показатель</label>
           <select class="select-custom" id="cfg-target-metric" style="width:100%; margin-bottom:6px;">
@@ -1382,6 +1479,10 @@ def build():
         <span>🚀 Сгенерировать застройку</span>
       </button>
 
+      <button class="btn-generate btn-maximize-opt" id="btn-run-maximize" type="button" style="margin-top:8px; background:linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); border:1px solid #a78bfa; box-shadow:0 4px 14px rgba(124, 58, 237, 0.35);">
+        <span>⚡ Выжать максимум по закону (Top-1)</span>
+      </button>
+
       </div><!-- закрытие sidebar-stage2-group -->
 
     </aside>
@@ -1424,6 +1525,17 @@ def build():
           <button class="btn btn-unlock-site" id="btn-unlock-main" type="button">
             🔓 Изменить посадку участка
           </button>
+        </div>
+      </div>
+
+      <!-- БАННЕР ОПТИМИЗАЦИИ (ВЫЖАТЬ МАКСИМУМ) -->
+      <div id="optimization-banner" style="display:none; margin-bottom:16px; background:linear-gradient(90deg, rgba(79, 70, 229, 0.15) 0%, rgba(124, 58, 237, 0.1) 100%); border:1px solid rgba(124, 58, 237, 0.4); border-radius:10px; padding:12px 18px; color:var(--text); font-size:13px; line-height:1.5;">
+        <div style="display:flex; align-items:flex-start; gap:12px;">
+          <span style="font-size:22px; line-height:1;">⚡</span>
+          <div style="flex:1;">
+            <div style="font-weight:700; color:#c4b5fd; margin-bottom:4px; font-size:14px;" id="opt-banner-title">Результат оптимизации посадки (Top-1 по закону)</div>
+            <div id="opt-banner-text" style="white-space:pre-line; color:var(--text); font-family:var(--font-mono, monospace); font-size:12.5px;"></div>
+          </div>
         </div>
       </div>
 
@@ -1584,6 +1696,40 @@ def build():
             <div class="map-floating-legend" id="map-legend">
               <strong id="legend-title">Типы типовых секций</strong>
               <div id="legend-items"></div>
+            </div>
+
+            <!-- БОКОВОЙ ИНДИКАТОР ПЕРЕБОРА ВАРИАНТОВ (TOP-1) -->
+            <div id="opt-progress-panel" class="opt-side-card" style="display:none;">
+              <div class="opt-card-header">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <span class="opt-card-pulse"></span>
+                  <span style="font-size:12.5px; font-weight:700; color:#1e1b4b; letter-spacing:-0.2px;">Перебор вариантов (Top-1)</span>
+                </div>
+                <span class="badge" id="opt-badge-pct" style="background:#e0e7ff; color:#4338ca; font-weight:700; font-size:11px;">0%</span>
+              </div>
+              <div class="opt-bar-bg">
+                <div class="opt-bar-fill" id="opt-bar-fill" style="width:0%;"></div>
+              </div>
+              <div class="opt-status-msg" id="opt-status-msg">Инициализация оптимизатора...</div>
+              <div class="opt-mini-grid">
+                <div class="opt-mini-box">
+                  <div class="opt-mini-lbl">Проверено</div>
+                  <div class="opt-mini-val" id="opt-val-count">0 / 0</div>
+                </div>
+                <div class="opt-mini-box">
+                  <div class="opt-mini-lbl">Лидер GFA</div>
+                  <div class="opt-mini-val" id="opt-val-gfa" style="color:#2563eb;">—</div>
+                </div>
+                <div class="opt-mini-box">
+                  <div class="opt-mini-lbl">Этажи</div>
+                  <div class="opt-mini-val" id="opt-val-floors" style="color:#059669;">—</div>
+                </div>
+              </div>
+              <div class="opt-compliance-tags">
+                <span class="opt-tag">✓ Противопожарные (10/18м)</span>
+                <span class="opt-tag">✓ Инсоляция СП 42</span>
+                <span class="opt-tag">✓ Лимиты FAR/BCR</span>
+              </div>
             </div>
 
             <div class="map-tooltip" id="map-tooltip"></div>
@@ -1991,6 +2137,13 @@ def build():
       const cfgFireGapParallel = document.getElementById("cfg-fire-gap-parallel");
       const badgeFireGapParallel = document.getElementById("badge-fire-gap-parallel");
       const cfgGenMode = document.getElementById("cfg-gen-mode");
+      const btnRunMaximize = document.getElementById("btn-run-maximize");
+      const cfgMaximizeContainer = document.getElementById("cfg-maximize-container");
+      const cfgMaxExploreAngles = document.getElementById("cfg-max-explore-angles");
+      const cfgMaxExploreTyps = document.getElementById("cfg-max-explore-typs");
+      const cfgMaxRespectNorms = document.getElementById("cfg-max-respect-norms");
+      const optBanner = document.getElementById("optimization-banner");
+      const optBannerText = document.getElementById("opt-banner-text");
       const cfgTargetContainer = document.getElementById("cfg-target-tep-container");
       const cfgTargetMetric = document.getElementById("cfg-target-metric");
       const cfgTargetVal = document.getElementById("cfg-target-val");
@@ -2093,6 +2246,58 @@ def build():
       const boxCustomRoads = document.getElementById("box-custom-roads");
       const badgeCustomRoadsCount = document.getElementById("badge-custom-roads-count");
       const btnClearCustomRoads = document.getElementById("btn-clear-custom-roads");
+
+      // Боковой индикатор перебора вариантов
+      const optProgressPanel = document.getElementById("opt-progress-panel");
+      const optBadgePct = document.getElementById("opt-badge-pct");
+      const optBarFill = document.getElementById("opt-bar-fill");
+      const optStatusMsg = document.getElementById("opt-status-msg");
+      const optValCount = document.getElementById("opt-val-count");
+      const optValGfa = document.getElementById("opt-val-gfa");
+      const optValFloors = document.getElementById("opt-val-floors");
+
+      let optFinishTimeout = null;
+
+      function startOptimizationIndicator() {{
+        if (!optProgressPanel) return;
+        if (optFinishTimeout) clearTimeout(optFinishTimeout);
+        optProgressPanel.style.display = "flex";
+        optProgressPanel.style.opacity = "1";
+        optProgressPanel.style.transform = "translateY(0)";
+        if (optBadgePct) optBadgePct.textContent = "0%";
+        if (optBarFill) optBarFill.style.width = "4%";
+        if (optStatusMsg) optStatusMsg.textContent = "Запуск поиска: оценка сетки этажей и углов...";
+        if (optValCount) optValCount.textContent = "0 / 0";
+        if (optValGfa) optValGfa.textContent = "—";
+        if (optValFloors) optValFloors.textContent = "—";
+      }}
+
+      function updateOptimizationIndicator(data) {{
+        if (!data || !optProgressPanel) return;
+        const pct = Math.max(4, Math.min(100, data.percent || 0));
+        if (optBadgePct) optBadgePct.textContent = `${{pct}}%`;
+        if (optBarFill) optBarFill.style.width = `${{pct}}%`;
+        if (optStatusMsg && data.message) optStatusMsg.textContent = data.message;
+        if (optValCount) optValCount.textContent = `${{data.tested_count || data.step || 0}} / ${{data.total || 0}}`;
+        if (optValGfa && data.best_gfa) optValGfa.textContent = `${{fmt(data.best_gfa)}} м²`;
+        if (optValFloors && data.best_floors) optValFloors.textContent = `${{data.best_floors}} эт.`;
+      }}
+
+      function finishOptimizationIndicator(bestGfa, bestFloors) {{
+        if (!optProgressPanel) return;
+        if (optBadgePct) optBadgePct.textContent = "100%";
+        if (optBarFill) optBarFill.style.width = "100%";
+        if (bestGfa && optValGfa) optValGfa.textContent = `${{fmt(bestGfa)}} м²`;
+        if (bestFloors && optValFloors) optValFloors.textContent = `${{bestFloors}} эт.`;
+        if (optStatusMsg) optStatusMsg.textContent = "✓ Оптимум по закону найден! Генплан обновлён.";
+        optFinishTimeout = setTimeout(() => {{
+          optProgressPanel.style.opacity = "0";
+          optProgressPanel.style.transform = "translateY(-6px)";
+          setTimeout(() => {{
+            optProgressPanel.style.display = "none";
+          }}, 350);
+        }}, 2200);
+      }}
 
       let currentRoadPreset = "none";
       let customRoadLines = [];
@@ -3039,8 +3244,26 @@ def build():
 
       cfgGenMode.addEventListener("change", e => {{
         cfgTargetContainer.style.display = e.target.value === "target" ? "flex" : "none";
+        if (cfgMaximizeContainer) {{
+          cfgMaximizeContainer.style.display = e.target.value === "maximize" ? "block" : "none";
+        }}
         scheduleRegeneration();
       }});
+      if (cfgMaxExploreAngles) cfgMaxExploreAngles.addEventListener("change", scheduleRegeneration);
+      if (cfgMaxExploreTyps) cfgMaxExploreTyps.addEventListener("change", scheduleRegeneration);
+      if (cfgMaxRespectNorms) cfgMaxRespectNorms.addEventListener("change", scheduleRegeneration);
+
+      if (btnRunMaximize) {{
+        btnRunMaximize.addEventListener("click", async () => {{
+          if (regenerateTimer) clearTimeout(regenerateTimer);
+          cfgGenMode.value = "maximize";
+          if (cfgTargetContainer) cfgTargetContainer.style.display = "none";
+          if (cfgMaximizeContainer) cfgMaximizeContainer.style.display = "block";
+          if (cfgMaxExploreAngles) cfgMaxExploreAngles.checked = true;
+          if (cfgMaxRespectNorms) cfgMaxRespectNorms.checked = true;
+          await lockSiteAndGenerate(true);
+        }});
+      }}
       if (cfgTypology) {{
         cfgTypology.addEventListener("change", () => {{
           scheduleRegeneration();
@@ -3235,6 +3458,9 @@ def build():
           fire_gap_end_to_end: parseFloat(cfgFireGapEnd ? cfgFireGapEnd.value : 10) || 10,
           fire_gap_parallel: parseFloat(cfgFireGapParallel ? cfgFireGapParallel.value : 18) || 18,
           gen_mode: cfgGenMode.value,
+          explore_angles: cfgMaxExploreAngles ? cfgMaxExploreAngles.checked : true,
+          explore_all_typologies: cfgMaxExploreTyps ? cfgMaxExploreTyps.checked : false,
+          respect_norms: cfgMaxRespectNorms ? cfgMaxRespectNorms.checked : true,
           target_metric: cfgTargetMetric.value,
           target_value: parseFloat(cfgTargetVal.value) || 1.5,
           target_floors: parseInt(cfgFloorsSlider.value, 10) || 14,
@@ -3401,19 +3627,43 @@ def build():
         updateStageUI();
       }}
 
+      let isGenerating = false;
+
       // Фиксация участка и запуск генерации (Переход к Этапу 2)
-      async function lockSiteAndGenerate() {{
+      async function lockSiteAndGenerate(isMaximize = false) {{
+        if (isGenerating) return;
+        isGenerating = true;
+        if (regenerateTimer) clearTimeout(regenerateTimer);
+
         isSiteLocked = true;
         updateStageUI();
 
         if (btnLockMain) btnLockMain.disabled = true;
         if (btnLockSidebar) btnLockSidebar.disabled = true;
         if (btnRunPipeline) btnRunPipeline.disabled = true;
-        showToast("🔒 Участок зафиксирован! Генерация застройки и расчёт ТЭП...");
+        if (btnRunMaximize) {{
+          btnRunMaximize.disabled = true;
+          btnRunMaximize.innerHTML = '<span>⏳ Оптимизация по закону (подбор сетки и этажей)...</span>';
+        }}
+        showToast(isMaximize ? "⚡ Подбор лучшей расстановки: перебор сетки углов и этажей по нормативам..." : "🔒 Участок зафиксирован! Генерация застройки и расчёт ТЭП...");
 
         const payload = getFormData();
         payload.stage = 2;
         payload.site_locked = true;
+
+        let progressInterval = null;
+        if (isMaximize) {{
+          startOptimizationIndicator();
+          progressInterval = setInterval(async () => {{
+            try {{
+              const pResp = await fetch(API_BASE + "/api/progress");
+              if (pResp.ok) {{
+                const pData = await pResp.json();
+                updateOptimizationIndicator(pData);
+              }}
+            }} catch (_) {{}}
+          }}, 160);
+        }}
 
         try {{
           const resp = await fetch(API_BASE + "/api/generate", {{
@@ -3431,6 +3681,22 @@ def build():
           currentScenario = result;
           selectedSectionId = null;
 
+          if (result.site_rotation !== undefined && result.site_rotation !== null) {{
+            setRotation(result.site_rotation, true, false);
+          }}
+
+          if (isMaximize) {{
+            const gfaVal = (result.tep && result.tep.gfa) || 0;
+            const flVal = result.floors || (result.buildings && result.buildings[0] && result.buildings[0].floors) || 0;
+            finishOptimizationIndicator(gfaVal, flVal);
+
+            if (flVal && cfgFloorsSlider) {{
+              cfgFloorsSlider.value = flVal;
+              if (cfgFloorsBadge) cfgFloorsBadge.textContent = `${{flVal}} эт.`;
+            }}
+            if (cfgGenMode) cfgGenMode.value = "fixed";
+          }}
+
           resetSvgView();
           renderScenario();
           updateStageUI();
@@ -3446,9 +3712,18 @@ def build():
           renderScenario();
           updateStageUI();
         }} finally {{
+          if (progressInterval) {{
+            clearInterval(progressInterval);
+            progressInterval = null;
+          }}
+          isGenerating = false;
           if (btnLockMain) btnLockMain.disabled = false;
           if (btnLockSidebar) btnLockSidebar.disabled = false;
           if (btnRunPipeline) btnRunPipeline.disabled = false;
+          if (btnRunMaximize) {{
+            btnRunMaximize.disabled = false;
+            btnRunMaximize.innerHTML = '<span>⚡ Выжать максимум по закону (Top-1)</span>';
+          }}
         }}
       }}
 
@@ -3866,6 +4141,16 @@ def build():
           }});
         }}
 
+        // Баннер оптимизации
+        if (optBanner && optBannerText) {{
+          if (!isStage1 && s.optimization_note && s.optimization_note.trim().length > 0) {{
+            optBanner.style.display = "block";
+            optBannerText.textContent = s.optimization_note;
+          }} else {{
+            optBanner.style.display = "none";
+          }}
+        }}
+
         // SVG
         svgRoot.setAttribute("viewBox", s.svg_viewbox);
         svgSiteBound.setAttribute("d", s.site_path);
@@ -4212,11 +4497,25 @@ def build():
         const svgX = vx * svgScaleX;
         const svgY = vy * svgScaleY;
 
+        // Если мир повернут, компенсируем поворот вокруг центра (500, 350)
+        let wx = svgX;
+        let wy = svgY;
+        const baseRot = (currentScenario && currentScenario.site_rotation) || 0;
+        const visualDelta = currentRotation - baseRot;
+        if (visualDelta !== 0) {{
+          const rad = -visualDelta * Math.PI / 180.0;
+          const cx = 500, cy = 350;
+          const dx = svgX - cx;
+          const dy = svgY - cy;
+          wx = cx + dx * Math.cos(rad) - dy * Math.sin(rad);
+          wy = cy + dx * Math.sin(rad) + dy * Math.cos(rad);
+        }}
+
         const meta = (currentScenario && currentScenario.svg_meta) || {{
           minx: 0, miny: 0, maxx: 200, maxy: 150, scale: 1, ox: 40, oy: 40
         }};
-        const siteX = meta.minx + (svgX - meta.ox) / meta.scale;
-        const siteY = meta.maxy - (svgY - meta.oy) / meta.scale;
+        const siteX = meta.minx + (wx - meta.ox) / meta.scale;
+        const siteY = meta.maxy - (wy - meta.oy) / meta.scale;
 
         return {{ siteX, siteY, svgX, svgY }};
       }}

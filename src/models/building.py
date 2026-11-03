@@ -50,9 +50,13 @@ class PlacedSection:
     @property
     def footprint(self) -> Polygon:
         """Полигон пятна застройки секции."""
-        return self.section_type.create_footprint(
-            self.x, self.y, self.angle, is_flipped=self.is_flipped
-        )
+        cached = getattr(self, "_cached_footprint", None)
+        if cached is None:
+            cached = self.section_type.create_footprint(
+                self.x, self.y, self.angle, is_flipped=self.is_flipped
+            )
+            self._cached_footprint = cached
+        return cached
 
     @property
     def gfa(self) -> float:
@@ -134,6 +138,10 @@ class Building:
         Raises:
             ValueError: Если здание не содержит секций.
         """
+        cached = getattr(self, "_cached_footprint", None)
+        if cached is not None:
+            return cached
+
         if not self.sections:
             raise ValueError("Здание не содержит секций.")
 
@@ -145,8 +153,10 @@ class Building:
         if union.geom_type == "MultiPolygon":
             merged = union.buffer(0.05).buffer(-0.05)
             if merged.geom_type == "Polygon":
+                self._cached_footprint = merged
                 return merged
 
+        self._cached_footprint = union
         return union
 
     @property
@@ -183,7 +193,11 @@ class Building:
     @property
     def total_building_area(self) -> float:
         """Площадь пятна застройки здания в м²."""
-        return self.footprint.area
+        cached = getattr(self, "_cached_building_area", None)
+        if cached is None:
+            cached = self.footprint.area
+            self._cached_building_area = cached
+        return cached
 
     @property
     def total_apartments(self) -> dict[str, int]:
@@ -224,6 +238,8 @@ class Building:
             section: Размещённая секция для добавления.
         """
         self.sections.append(section)
+        self._cached_footprint = None
+        self._cached_building_area = None
 
     def __repr__(self) -> str:
         """Строковое представление здания."""

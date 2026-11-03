@@ -38,6 +38,7 @@ from dashboard_prototype.generator_service import (
     lookup_pkk_parcel,
     parse_gpzu_table,
     process_gpzu_upload,
+    get_optimization_progress,
 )
 
 PORT = 8050
@@ -314,6 +315,27 @@ class DashboardHandler(SimpleHTTPRequestHandler):
             self._send_cors_headers()
             self.end_headers()
             self._safe_write(body)
+            return
+
+        # Индикатор прогресса перебора вариантов на лету
+        elif parsed.path == "/api/progress":
+            try:
+                progress = get_optimization_progress()
+                bytes_out = json.dumps(progress, ensure_ascii=False).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(bytes_out)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(bytes_out)
+            except Exception as e:
+                err_bytes = json.dumps({"active": False, "error": str(e)}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(err_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(err_bytes)
             return
 
         # Главная страница

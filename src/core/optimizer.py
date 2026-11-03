@@ -10,7 +10,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from src.core.placement import PlacementConfig, PlacementEngine
+from src.core.placement import (
+    MIN_MERIDIAN_INSOLATION_ANGLE_DEG,
+    PlacementConfig,
+    PlacementEngine,
+    angle_to_horizontal,
+)
 from src.core.tep_calculator import calculate_tep, check_normatives
 from src.library.section_library import SectionLibrary
 from src.models.building import Building
@@ -30,6 +35,8 @@ class OptimizationResult:
         score: Оценка варианта (для сравнения).
         typology: Использованная типология застройки.
         note: Пояснительное примечание к варианту.
+        angle: Использованный угол поворота сетки.
+        configs_tested: Количество протестированных конфигураций в оптимизаторе.
     """
     buildings: list[Building]
     tep: TEP
@@ -38,6 +45,8 @@ class OptimizationResult:
     score: float = 0.0
     typology: str = "AUTO"
     note: str = ""
+    angle: float = 0.0
+    configs_tested: int = 1
 
 
 class Optimizer:
@@ -130,49 +139,95 @@ class Optimizer:
         self,
         respect_normatives: bool = True,
         explore_typologies: bool = False,
+        explore_angles: bool = True,
+        angles: list[float] | None = None,
+        progress_callback: Any = None,
     ) -> OptimizationResult:
-        """Максимизировать жилую площадь.
+        """Максимизировать жилую площадь («Выжать максимум по закону»).
 
         Args:
-            respect_normatives: Если True — строго соблюдать нормативы (FAR <= max_far, BCR <= max_bcr).
+            respect_normatives: Если True — строго соблюдать нормативы (FAR <= max_far, BCR <= max_bcr,
+                               пожарные разрывы, инсоляция, озеленение >= 25%).
                                Если False — абсолютная максимизация площади без отсечения по плотности.
-            explore_typologies: Если True — перебрать все типологии (AUTO, U_SHAPE, L_SHAPE, LINEAR).
+            explore_typologies: Если True — перебрать все доступные типологии (AUTO, PERIMETER, TOWER, U_SHAPE, L_SHAPE, LINEAR).
+            explore_angles: Если True — перебрать сетку углов поворота (0°, ±15°, ±25°).
+            angles: Пользовательский список углов для перебора (опционально).
+            progress_callback: Функция обратного вызова для отслеживания прогресса перебора на лету.
 
         Returns:
-            Лучший найденный результат.
+            Лучший найденный результат с подробной аудиторской запиской.
         """
-        variants = self.generate_variants(explore_typologies=explore_typologies)
+        variants = self.generate_variants(
+            explore_typologies=explore_typologies,
+            explore_angles=explore_angles,
+            angles=angles,
+            progress_callback=progress_callback,
+        )
 
         if not variants:
             raise ValueError("Не удалось сгенерировать ни одного варианта.")
 
+        total_tested = len(variants)
         max_far_limit = float(self.config.get("max_far", 2.50))
+        max_bcr_limit = float(self.config.get("max_bcr", 0.40))
+        fire_e2e = float(self.config.get("fire_gap_end_to_end", 10.0))
+        fire_par = float(self.config.get("fire_gap_parallel", 18.0))
 
         if respect_normatives:
-            # Фильтруем допустимые нормативами варианты
+            # Фильтруем строго нормативные варианты
             valid = [v for v in variants if v.normative_ok]
             if valid:
-                best = max(valid, key=lambda v: v.tep.residential_area)
+                # Победитель: максимальная жилая площадь при соблюдении 100% норм закона
+                best = max(valid, key=lambda v: (v.tep.residential_area, -v.floors))
+                best.configs_tested = total_tested
                 best.note = (
-                    f"Оптимальный максимум по нормативам: {best.floors} эт. ({best.typology}), "
-                    f"FAR={best.tep.far:.2f} (лимит {max_far_limit:.2f})."
+                    f"⚡ ВЫЖАТ МАКСИМУМ ПО ЗАКОНУ (протестировано {total_tested} конфигураций):\n"
+                    f"• Победитель: {best.floors} эт., типология «{best.typology}», угол {best.angle:+.1f}°\n"
+                    f"• GFA: {best.tep.total_gfa:,.0f} м² | Жилая площадь: {best.tep.residential_area:,.0f} м² | Квартир: {best.tep.apartments_total}\n"
+                    f"• FAR: {best.tep.far:.2f} (лимит ≤ {max_far_limit:.2f}) — 100% законно\n"
+                    f"• BCR: {best.tep.bcr:.1%} (лимит ≤ {max_bcr_limit:.1%})\n"
+                    f"• Противопожарные расстояния ({fire_e2e:.0f}м торцы, {fire_par:.0f}м фасады), инсоляция и отступы соблюдены."
                 )
                 return best
             else:
                 # Если ни один не уложился в нормативы — берем с минимальными отклонениями
                 best = max(variants, key=lambda v: v.score)
+                best.configs_tested = total_tested
                 best.note = (
-                    f"Все варианты превышают предельный FAR {max_far_limit:.2f}. "
-                    f"Выбран вариант с мин. нарушениями ({best.floors} эт.)."
+                    f"⚠️ Все протестированные {total_tested} конфигураций превышают нормативные лимиты "
+                    f"(FAR лимит {max_far_limit:.2f}). Выбран вариант с мин. отклонением: {best.floors} эт. ({best.typology}), "
+                    f"FAR={best.tep.far:.2f}."
                 )
                 return best
         else:
             best = max(variants, key=lambda v: v.tep.residential_area)
+            best.configs_tested = total_tested
             best.note = (
-                f"Абсолютный физический максимум (без лимитов FAR): {best.floors} эт. ({best.typology}), "
-                f"FAR={best.tep.far:.2f}."
+                f"⚡ Физический максимум без ограничений FAR/BCR (протестировано {total_tested} конфигураций):\n"
+                f"• Выбрано: {best.floors} эт., типология «{best.typology}», угол {best.angle:+.1f}°\n"
+                f"• GFA: {best.tep.total_gfa:,.0f} м² (FAR={best.tep.far:.2f})."
             )
             return best
+
+    def find_absolute_maximum(
+        self,
+        explore_typologies: bool = True,
+        explore_angles: bool = True,
+    ) -> OptimizationResult:
+        """Выжать абсолютный максимум из участка: перебор типологий, углов и этажности с отбором №1 строго по закону.
+
+        Args:
+            explore_typologies: Перебирать все типологии застройки.
+            explore_angles: Перебирать сетку углов поворота.
+
+        Returns:
+            Победный вариант застройки с максимальной жилой площадью в рамках закона.
+        """
+        return self.optimize_maximize(
+            respect_normatives=True,
+            explore_typologies=explore_typologies,
+            explore_angles=explore_angles,
+        )
 
     def _get_floors_range(self, typology: str | None = None) -> range:
         """Определить допустимый диапазон этажности с учетом секций, типологии и высотных лимитов."""
@@ -226,12 +281,18 @@ class Optimizer:
         self,
         floors_range: range | None = None,
         explore_typologies: bool = False,
+        explore_angles: bool = False,
+        angles: list[float] | None = None,
+        progress_callback: Any = None,
     ) -> list[OptimizationResult]:
-        """Сгенерировать варианты застройки с шагом в 1 этаж.
+        """Сгенерировать варианты застройки с шагом в 1 этаж (и опционально по углам и типологиям).
 
         Args:
             floors_range: Диапазон этажности. Если None — определяется автоматически.
             explore_typologies: Если True — перебрать все типологии застройки.
+            explore_angles: Если True — перебрать сетку углов поворота (0°, ±15°, ±25°).
+            angles: Пользовательский список углов (если передан, используется напрямую).
+            progress_callback: Функция обратного вызова on_progress(info_dict) для индикатора UI.
 
         Returns:
             Список вариантов с ТЭП.
@@ -242,17 +303,141 @@ class Optimizer:
             else [self.base_placement_config.typology]
         )
 
+        if explore_angles:
+            if angles is not None:
+                angles_to_check = angles
+            else:
+                if self.base_placement_config.placement_angle is not None:
+                    base_angle = self.base_placement_config.placement_angle
+                elif getattr(self.site, "buildable_area", None) is not None:
+                    from src.core.buildable_area import get_primary_axes
+                    base_angle, _ = get_primary_axes(self.site.buildable_area)
+                else:
+                    base_angle = getattr(self.site, "rotation_deg", 0.0) or 0.0
+
+                raw_angles = [base_angle, base_angle + 15.0, base_angle - 15.0, base_angle + 25.0, base_angle - 25.0]
+                angles_to_check = []
+                for a in raw_angles:
+                    norm_a = round(((a + 180.0) % 180.0), 1)
+                    if norm_a not in angles_to_check:
+                        angles_to_check.append(norm_a)
+        else:
+            angles_to_check = [self.base_placement_config.placement_angle]
+
+        # Оценка общего числа шагов для прогресс-бара
+        est_total = 0
+        for typ in typs_to_check:
+            cr = floors_range or self._get_floors_range(typ)
+            n_f = (len(cr) // 2 + 1) if len(cr) > 6 else len(cr)
+            est_total += len(angles_to_check) * n_f + (6 if len(cr) > 6 else 0)
+        est_total = max(1, est_total)
+
+        current_step = 0
         variants: list[OptimizationResult] = []
+
+        def _notify_progress(fl: int, ang: float | None, typ_name: str, cur_best_cand: OptimizationResult | None):
+            if not progress_callback:
+                return
+            pct = min(96, int((current_step / est_total) * 100))
+            bgfa = round(cur_best_cand.tep.total_gfa) if cur_best_cand else 0
+            bfl = cur_best_cand.floors if cur_best_cand else 0
+            btyp = cur_best_cand.typology if cur_best_cand else typ_name
+            ang_str = f"{ang:+.0f}°" if ang is not None else "0°"
+            msg = f"Тестирование: {fl} эт., угол {ang_str}, типология «{typ_name}»"
+            try:
+                progress_callback({
+                    "active": True,
+                    "step": current_step,
+                    "total": est_total,
+                    "percent": pct,
+                    "current_floors": fl,
+                    "current_angle": ang or 0.0,
+                    "current_typology": typ_name,
+                    "tested_count": len(variants),
+                    "best_gfa": bgfa,
+                    "best_floors": bfl,
+                    "best_typology": btyp,
+                    "message": msg,
+                })
+            except Exception:
+                pass
 
         for typ in typs_to_check:
             cur_range = floors_range or self._get_floors_range(typ)
-            for floors in cur_range:
-                result = self._try_placement(floors, typology=typ)
-                if result is not None:
-                    variants.append(result)
+            if len(cur_range) > 6:
+                coarse_floors = list(cur_range)[::2]
+                if cur_range[-1] not in coarse_floors:
+                    coarse_floors.append(cur_range[-1])
+            else:
+                coarse_floors = list(cur_range)
+
+            typ_variants: list[OptimizationResult] = []
+            tested_keys: set[tuple[str, float | None, int]] = set()
+
+            for ang in angles_to_check:
+                effective_angle = ang
+                if typ == "LINEAR" and ang is not None and angle_to_horizontal(ang) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+                    effective_angle = 28.0
+
+                for floors in coarse_floors:
+                    key = (typ, effective_angle, floors)
+                    if key in tested_keys:
+                        continue
+                    tested_keys.add(key)
+                    current_step += 1
+
+                    valid_so_far = [v for v in (variants + typ_variants) if v.normative_ok]
+                    lead = max(valid_so_far, key=lambda x: x.tep.total_gfa, default=None)
+                    _notify_progress(floors, effective_angle, typ, lead)
+
+                    result = self._try_placement(floors, typology=typ, angle=effective_angle)
+                    if result is not None:
+                        typ_variants.append(result)
+
+            # Точная доводка (fine-tuning): для лучших вариантов проверяем соседние этажи (±1 эт.)
+            if len(cur_range) > 6 and typ_variants:
+                valid_coarse = [v for v in typ_variants if v.normative_ok]
+                top_to_refine = sorted(valid_coarse, key=lambda v: v.tep.residential_area, reverse=True)[:3] if valid_coarse else sorted(typ_variants, key=lambda v: v.score, reverse=True)[:2]
+                for best_v in top_to_refine:
+                    eff_ang = best_v.angle
+                    for neighbor_f in (best_v.floors - 1, best_v.floors + 1):
+                        if neighbor_f in cur_range:
+                            key = (typ, eff_ang, neighbor_f)
+                            if key not in tested_keys:
+                                tested_keys.add(key)
+                                current_step += 1
+                                valid_now = [v for v in (variants + typ_variants) if v.normative_ok]
+                                lead = max(valid_now, key=lambda x: x.tep.total_gfa, default=None)
+                                _notify_progress(neighbor_f, eff_ang, typ, lead)
+
+                                result = self._try_placement(neighbor_f, typology=typ, angle=eff_ang)
+                                if result is not None:
+                                    typ_variants.append(result)
+
+            variants.extend(typ_variants)
 
         # Сортируем по жилой площади (убывание)
         variants.sort(key=lambda v: v.tep.residential_area, reverse=True)
+
+        if progress_callback:
+            best_lead = max([v for v in variants if v.normative_ok], key=lambda x: x.tep.total_gfa, default=variants[0] if variants else None)
+            try:
+                progress_callback({
+                    "active": True,
+                    "step": est_total,
+                    "total": est_total,
+                    "percent": 100,
+                    "current_floors": best_lead.floors if best_lead else 0,
+                    "current_angle": best_lead.angle if best_lead else 0.0,
+                    "current_typology": best_lead.typology if best_lead else "",
+                    "tested_count": len(variants),
+                    "best_gfa": round(best_lead.tep.total_gfa) if best_lead else 0,
+                    "best_floors": best_lead.floors if best_lead else 0,
+                    "best_typology": best_lead.typology if best_lead else "",
+                    "message": f"✓ Оптимальный вариант найден: {best_lead.floors if best_lead else 0} эт. (GFA {round(best_lead.tep.total_gfa):,} м²)",
+                })
+            except Exception:
+                pass
 
         return variants
 
@@ -260,22 +445,24 @@ class Optimizer:
         self,
         floors: int,
         typology: str | None = None,
+        angle: float | None = None,
     ) -> OptimizationResult | None:
-        """Попытка расстановки с заданной этажностью и типологией.
+        """Попытка расстановки с заданной этажностью, типологией и углом.
 
         Args:
             floors: Количество этажей.
             typology: Типология (если None — из base_placement_config).
+            angle: Угол посадки (если None — из base_placement_config).
 
         Returns:
             Результат или None при неудаче.
         """
         typ = typology or self.base_placement_config.typology
+        cur_angle = angle if angle is not None else self.base_placement_config.placement_angle
         try:
-            engine = PlacementEngine(self.site, self.library, self.config)
             placement_config = PlacementConfig(
                 target_floors=floors,
-                placement_angle=self.base_placement_config.placement_angle,
+                placement_angle=cur_angle,
                 preferred_section_ids=self.base_placement_config.preferred_section_ids,
                 min_sections_per_building=self.base_placement_config.min_sections_per_building,
                 max_sections_per_building=self.base_placement_config.max_sections_per_building,
@@ -294,8 +481,33 @@ class Optimizer:
                 perimeter_layout_style=self.base_placement_config.perimeter_layout_style,
                 max_bcr=self.base_placement_config.max_bcr,
                 max_far=self.base_placement_config.max_far,
+                fire_gap_end_to_end=float(self.base_placement_config.fire_gap_end_to_end if self.base_placement_config.fire_gap_end_to_end is not None else self.config.get("fire_gap_end_to_end", 10.0)),
+                fire_gap_parallel=float(self.base_placement_config.fire_gap_parallel if self.base_placement_config.fire_gap_parallel is not None else self.config.get("fire_gap_parallel", 18.0)),
             )
-            buildings = engine.generate(placement_config)
+
+            roads_res = getattr(self.site, "roads_result", None)
+            if (
+                roads_res
+                and getattr(roads_res, "roads_polygon", None) is not None
+                and getattr(roads_res, "sub_blocks", None)
+                and len(roads_res.sub_blocks) >= 1
+            ):
+                all_b = []
+                for s_poly in roads_res.sub_blocks:
+                    sub_site = Site(boundary=s_poly)
+                    sub_site.buildable_area = s_poly
+                    sub_site.address = self.site.address
+                    sub_site.cadastral_number = self.site.cadastral_number
+                    sub_engine = PlacementEngine(sub_site, self.library, self.config)
+                    try:
+                        all_b.extend(sub_engine.generate(placement_config))
+                    except Exception:
+                        pass
+                buildings = all_b
+                engine = None
+            else:
+                engine = PlacementEngine(self.site, self.library, self.config)
+                buildings = engine.generate(placement_config)
 
             if not buildings:
                 return None
@@ -309,6 +521,10 @@ class Optimizer:
             if not normative_ok:
                 score *= 0.5
 
+            actual_angle = getattr(engine, "_last_primary_angle", None) if engine else None
+            if actual_angle is None:
+                actual_angle = cur_angle if cur_angle is not None else getattr(self.site, "rotation_deg", 0.0)
+
             return OptimizationResult(
                 buildings=buildings,
                 tep=tep,
@@ -316,7 +532,12 @@ class Optimizer:
                 normative_ok=normative_ok,
                 score=score,
                 typology=typ,
+                angle=round(float(actual_angle), 1),
             )
+
+        except Exception as e:
+            print(f"Ошибка при расстановке ({floors} эт., {typ}, {cur_angle}°): {e}")
+            return None
 
         except Exception as e:
             print(f"Ошибка при расстановке ({floors} эт., {typ}): {e}")

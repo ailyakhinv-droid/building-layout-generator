@@ -64,6 +64,33 @@ from src.geo.msk_converter import (
     MSK_PRESETS,
 )
 
+# Глобальное состояние отслеживания перебора вариантов (для индикатора UI на лету)
+_OPTIMIZATION_PROGRESS: dict[str, Any] = {
+    "active": False,
+    "step": 0,
+    "total": 0,
+    "percent": 0,
+    "current_floors": 0,
+    "current_angle": 0.0,
+    "current_typology": "",
+    "tested_count": 0,
+    "best_gfa": 0.0,
+    "best_floors": 0,
+    "best_typology": "",
+    "message": "",
+}
+
+
+def get_optimization_progress() -> dict[str, Any]:
+    """Получить текущее состояние фонового перебора вариантов."""
+    return dict(_OPTIMIZATION_PROGRESS)
+
+
+def set_optimization_progress(data: dict[str, Any]) -> None:
+    """Обновить прогресс перебора вариантов."""
+    global _OPTIMIZATION_PROGRESS
+    _OPTIMIZATION_PROGRESS.update(data)
+
 
 def geom_to_svg_path(geom, minx, miny, maxx, maxy, width=1000, height=700, pad=40):
     """Преобразовать геометрию Shapely в SVG path 'd' с переворотом оси Y и центрированием."""
@@ -936,14 +963,40 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     elif gen_mode == "maximize":
         respect_norms = bool(params.get("respect_norms", True))
         explore_all_typs = bool(params.get("explore_all_typologies", False))
+        explore_angles = bool(params.get("explore_angles", True))
         optimizer = Optimizer(site, library, config, base_placement_config=placement_cfg)
-        result = optimizer.optimize_maximize(
-            respect_normatives=respect_norms,
-            explore_typologies=explore_all_typs,
-        )
+
+        set_optimization_progress({
+            "active": True,
+            "step": 0,
+            "total": 24,
+            "percent": 5,
+            "message": "Запуск поиска лучшей расстановки по закону...",
+            "best_gfa": 0.0,
+            "best_floors": 0,
+        })
+
+        try:
+            result = optimizer.optimize_maximize(
+                respect_normatives=respect_norms,
+                explore_typologies=explore_all_typs,
+                explore_angles=explore_angles,
+                progress_callback=set_optimization_progress,
+            )
+        finally:
+            set_optimization_progress({"active": False, "percent": 100})
+
         buildings = result.buildings
         tep = result.tep
         opt_note = getattr(result, "note", "")
+        if hasattr(result, "floors") and result.floors:
+            target_floors = result.floors
+        if hasattr(result, "typology") and result.typology:
+            typology = result.typology
+        if hasattr(result, "angle") and result.angle is not None:
+            # result.angle - это оптимальный угол посадки корпусов (placement_angle).
+            # Границы участка (site.rotation_deg) остаются нетронутыми!
+            placement_cfg.placement_angle = result.angle
 
     else:
         engine = PlacementEngine(site, library, config)
@@ -961,12 +1014,14 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     )
     checks = check_normatives(tep, config)
 
-    # Вариант 1 (Целевой / Сбалансированный)
+    # Вариант 1 (Целевой / Сбалансированный / Top-1 по закону)
+    v1_name = "Максимум по закону (Top-1)" if gen_mode == "maximize" else "Сбалансированный"
+    v1_tag = "Победитель" if gen_mode == "maximize" else "Целевой"
     var1 = _package_single_variant(
         site, buildings, tep, balance, checks, selected_norm,
         parcel_region_name, parcel_district_name, parcel_address,
         opt_note, typology, target_floors,
-        variant_id="var_1", variant_name="Сбалансированный", variant_tag="Целевой"
+        variant_id="var_1", variant_name=v1_name, variant_tag=v1_tag
     )
 
     # Вариант 2 (Максимум GFA)
@@ -1245,7 +1300,10 @@ def _package_single_variant(
         "address": parcel_address,
         "norm_name": selected_norm.name,
         "typology": typology,
+        "floors": target_floors,
+        "target_floors": target_floors,
         "site_rotation": round(site.rotation_deg, 1),
+        "building_placement_angle": round(float(getattr(buildings[0].sections[0], "angle", 0.0) if buildings and buildings[0].sections else 0.0), 1),
         "site_area_sqm": round(site.area, 1),
         "site_area_ha": round(site.area / 10000.0, 2),
         "buildable_area_sqm": round(site.buildable_area.area, 1) if site.buildable_area else 0,
