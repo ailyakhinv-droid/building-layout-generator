@@ -23,6 +23,7 @@ regions:
       relax: 0.1                 # площадки для отдыха взрослого населения
       utility: 0.1               # площадки для хозяйственных целей
       waste: 0.05                # площадки контейнеров ТКО
+    living_area_per_person: 25.0 # нормативная обеспеченность жильем, м²/чел
 
   moscow_mngp:
     id: "moscow_mngp"
@@ -43,6 +44,7 @@ regions:
       relax: 0.1
       utility: 0.1
       waste: 0.05
+    living_area_per_person: 30.0
 
   moscow_oblast_rngp:
     id: "moscow_oblast_rngp"
@@ -63,6 +65,7 @@ regions:
       relax: 0.1
       utility: 0.15
       waste: 0.05
+    living_area_per_person: 28.2
 
   spb_rngp:
     id: "spb_rngp"
@@ -83,3 +86,25 @@ regions:
       relax: 0.1
       utility: 0.1
       waste: 0.05
+    living_area_per_person: 28.0
+
+  tyumen_mngp:
+    id: "tyumen_mngp"
+    name: "Тюмень (МНГП г. Тюмени)"
+    description: "Местные нормативы градостроительного проектирования г. Тюмени (утв. Решением ТГД № 182 / № 204)"
+    density:
+      max_far: 2.5
+      max_bcr: 0.40
+      green_ratio_min: 0.25
+    parking:
+      method: "per_apartment"    # 1 машиноместо на 1 квартиру для комфорт-класса
+      ratio: 1.0                 # 1 м/м на квартиру
+      guest_share: 0.20          # 20% открытые гостевые стоянки
+      area_per_car: 25.0
+    playgrounds:
+      children: 0.7
+      sport: 0.6
+      relax: 0.1
+      utility: 0.1
+      waste: 0.05
+    living_area_per_person: 28.2

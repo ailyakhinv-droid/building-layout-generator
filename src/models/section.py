@@ -138,9 +138,12 @@ class SectionType:
         hw = self.width / 2.0
         hd = self.depth / 2.0
 
-        if self.category == "CORNER" and self.width_small and self.depth_small:
-            ws = self.width_small
-            ds = self.depth_small
+        if self.category == "CORNER":
+            # Для угловых Г-образных секций толщина обоих примыкающих крыльев должна соответствовать
+            # глубине типовых рядовых секций (17.0 м), чтобы наружные и дворовые фасады
+            # формировали непрерывные гладкие плоскости без выступов и разрывов.
+            ws = self.width_small if (self.width_small and self.width_small >= 16.0) else 17.0
+            ds = self.depth_small if (self.depth_small and self.depth_small >= 16.0) else 17.0
             footprint = Polygon([
                 (-hw, hd),
                 (hw, hd),

@@ -506,6 +506,7 @@ class PlacementEngine:
                                 y=s.y,
                                 angle=s.angle,
                                 floors=max(1, target_f),
+                                is_flipped=s.is_flipped,
                                 floor_height=s.floor_height,
                                 ground_floor_height=s.ground_floor_height,
                             )
@@ -587,8 +588,8 @@ class PlacementEngine:
         floor_list = []
         for idx in range(num_total):
             if cascade_floors:
-                # Силуэт: центр на целевой высоте, концы каскадно понижаются на 2-4 этажа
-                drop = min(4, max(2, floors - min_wing_floors)) if (floors - min_wing_floors) >= 2 else min(2, max(0, floors - 1))
+                # Силуэт: центр на целевой высоте, концы каскадно понижаются до min_wing_floors (8 эт.)
+                drop = max(0, floors - min_wing_floors) if (floors - min_wing_floors) >= 2 else min(2, max(0, floors - 1))
                 dist = abs(idx - (num_total - 1) / 2.0) / max(1.0, (num_total - 1) / 2.0)
                 fl = round(floors - dist * drop)
                 floor_list.append(max(1, min(floors, fl)))
@@ -714,7 +715,7 @@ class PlacementEngine:
         K_l = num_wing_left + 1
         y_curr_l = -dc_l
         wing_start_l = floors
-        drop_l = min(4, max(2, wing_start_l - min_wing_floors)) if wing_start_l > min_wing_floors else 0
+        drop_l = max(0, wing_start_l - min_wing_floors) if wing_start_l > min_wing_floors else 0
         for j in range(num_wing_left):
             if cascade_floors:
                 step_ratio = (j + 1) / K_l
@@ -748,7 +749,7 @@ class PlacementEngine:
         K_r = num_wing_right + 1
         y_curr_r = -dc_r
         wing_start_r = floors
-        drop_r = min(4, max(2, wing_start_r - min_wing_floors)) if wing_start_r > min_wing_floors else 0
+        drop_r = max(0, wing_start_r - min_wing_floors) if wing_start_r > min_wing_floors else 0
         for k in range(num_wing_right):
             if cascade_floors:
                 step_ratio = (k + 1) / K_r
@@ -843,7 +844,7 @@ class PlacementEngine:
         K_y = num_mid_y + 1
         y_curr = -dc
         wing_start_y = floors
-        drop_ly = min(4, max(2, wing_start_y - min_wing_floors)) if wing_start_y > min_wing_floors else 0
+        drop_ly = max(0, wing_start_y - min_wing_floors) if wing_start_y > min_wing_floors else 0
         for j in range(num_mid_y):
             if cascade_floors:
                 step_ratio = (j + 1) / K_y

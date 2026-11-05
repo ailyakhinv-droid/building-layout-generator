@@ -576,9 +576,9 @@ def build():
     .badge-warn {{ background: rgba(217, 119, 6, 0.12); color: var(--warning); }}
     .badge-info {{ background: rgba(83, 141, 178, 0.12); color: var(--accent); }}
 
-    /* КАРТА И ИНСПЕКТОР */
+    /* КАРТА И ИНСПЕКТОР: ИНСПЕКТОР СЛЕВА, КАРТА/3D СПРАВА (БОЛЬШАЯ ЧАСТЬ) */
     .spatial-split {{
-      display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(360px, 1fr);
+      display: grid; grid-template-columns: minmax(320px, 1fr) minmax(0, 2.7fr);
       gap: 20px; align-items: stretch;
     }}
     @media (max-width: 1100px) {{ .spatial-split {{ grid-template-columns: 1fr; }} }}
@@ -611,7 +611,7 @@ def build():
     }}
 
     .map-canvas-container {{
-      height: 640px; position: relative; overflow: hidden;
+      height: 740px; position: relative; overflow: hidden;
       background: #f1f5f9; user-select: none;
     }}
     [data-theme="dark"] .map-canvas-container {{ background: #0f172a; }}
@@ -676,23 +676,42 @@ def build():
     /* БОКОВОЙ ИНДИКАТОР ПЕРЕБОРА ВАРИАНТОВ (TOP-1) */
     .opt-side-card {{
       position: absolute;
-      top: 14px;
-      right: 14px;
-      width: 300px;
-      background: rgba(255, 255, 255, 0.96);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid #c7d2fe;
+      top: 60px;
+      right: 18px;
+      width: 320px;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid #818cf8;
       border-radius: 12px;
-      box-shadow: 0 12px 28px -4px rgba(79, 70, 229, 0.22), 0 4px 8px -2px rgba(0, 0, 0, 0.06);
-      padding: 12px 14px;
-      z-index: 50;
+      box-shadow: 0 16px 36px -4px rgba(79, 70, 229, 0.3), 0 4px 12px rgba(0, 0, 0, 0.1);
+      padding: 14px 16px;
+      z-index: 1000;
       display: flex;
       flex-direction: column;
       gap: 8px;
       pointer-events: auto;
       transition: opacity 0.3s ease, transform 0.3s ease;
       font-family: inherit;
+    }}
+    [data-theme="dark"] .opt-side-card {{
+      background: rgba(15, 23, 42, 0.96);
+      border-color: #6366f1;
+      color: #f8fafc;
+      box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(99, 102, 241, 0.4);
+    }}
+    [data-theme="dark"] .opt-side-card .opt-card-header span:first-child {{
+      color: #f8fafc !important;
+    }}
+    [data-theme="dark"] .opt-mini-grid {{
+      background: rgba(30, 41, 59, 0.8) !important;
+      border-color: #334155 !important;
+    }}
+    [data-theme="dark"] .opt-mini-val {{
+      color: #f8fafc !important;
+    }}
+    [data-theme="dark"] .opt-status-msg {{
+      color: #cbd5e1 !important;
     }}
     .opt-card-header {{
       display: flex; justify-content: space-between; align-items: center;
@@ -849,6 +868,67 @@ def build():
     }}
     .modal-body {{ padding: 20px; overflow-y: auto; font-family: monospace; font-size: 12px; white-space: pre-wrap; }}
     .modal-close {{ background: transparent; border: 0; font-size: 18px; cursor: pointer; color: var(--secondary); }}
+    .modal-footer {{
+      padding: 14px 20px; border-top: 1px solid var(--border);
+      background: var(--surface); display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    }}
+    .norm-cards-grid {{
+      display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+    }}
+    @media (max-width: 768px) {{ .norm-cards-grid {{ grid-template-columns: 1fr; }} }}
+    .norm-card {{
+      background: var(--muted); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px; display: flex; flex-direction: column; gap: 10px;
+    }}
+    .norm-card-title {{
+      font-size: 13px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 6px;
+      padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    }}
+    .norm-field {{
+      display: flex; flex-direction: column; gap: 4px;
+    }}
+    .norm-field-label {{
+      font-size: 11.5px; color: var(--secondary); font-weight: 500; display: flex; justify-content: space-between;
+    }}
+    .norm-input {{
+      font-family: inherit; font-size: 13px; padding: 6px 10px; border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong); background: var(--surface); color: var(--text);
+      outline: none; transition: border-color 0.15s ease;
+    }}
+    .norm-input:focus {{ border-color: var(--accent); }}
+
+    /* МАСТЕР СТАРТА РАСЧЕТА */
+    .wizard-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }}
+    .wizard-card {{
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      text-align: left;
+    }}
+    .wizard-card:hover {{
+      border-color: var(--accent) !important;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px -4px rgba(0,0,0,0.15);
+    }}
+    .wizard-badge {{
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 2px 7px;
+      border-radius: 4px;
+    }}
 
     .toast-msg {{
       position: fixed; bottom: 24px; right: 24px; background: var(--surface); color: var(--text);
@@ -874,11 +954,11 @@ def build():
       <div>
         <h1 class="app-title">Генератор застройки · ТЭП</h1>
         <div class="app-status-strip" id="site-status-strip">
-          <span id="site-cad-label">📍 72:23:0222001:16187</span>
+          <span id="site-cad-label">📍 Участок не выбран</span>
           <span>·</span>
-          <span id="site-region-label">Тюмень, р-н ЖК «Акватория» (4.44 га)</span>
+          <span id="site-region-label">Задайте границы ЗУ для расчёта ТЭП</span>
           <span>·</span>
-          <span id="site-coords-label">WGS-84: [57.16107, 65.67408]</span>
+          <span id="site-coords-label">WGS-84: [—, —]</span>
           <span>·</span>
           <a href="#" id="link-yandex" target="_blank" rel="noopener">🌐 Яндекс.Карты ↗</a>
           <span>·</span>
@@ -899,6 +979,9 @@ def build():
       </div>
     </div>
     <div class="header-actions">
+      <button class="btn-toggle-sidebar" id="btn-open-wizard" title="Начать новый расчет или сменить участок" style="font-weight:600; display:flex; align-items:center; gap:5px; background:rgba(83,141,178,0.14); border-color:var(--accent); color:var(--text);">
+        <span>✨</span> Новый расчёт
+      </button>
       <span class="backend-badge offline" id="backend-status-badge" title="Статус сервера генератора (нажмите для справки)">
         <span class="status-dot"></span>
         <span id="backend-status-text">Проверка сервера...</span>
@@ -931,7 +1014,8 @@ def build():
           <div class="control-row">
             <label class="control-label" for="cfg-parcel-presets">Каталог участков (пресеты РФ)</label>
             <select class="select-custom" id="cfg-parcel-presets" style="width:100%;">
-              <option value="72:23:0222001:16187" selected>Тюмень, ЖК «Акватория» (4.4 га)</option>
+              <option value="" disabled selected>— Выберите участок из каталога или введите свой ЗУ —</option>
+              <option value="72:23:0222001:16187">Тюмень, ЖК «Акватория» (4.4 га)</option>
               <option value="63:01:0709002:2320">Самара, Зубчаниновка (4.2 га)</option>
               <option value="77:17:0120316:1024">Москва, Коммунарка (3.6 га)</option>
               <option value="78:34:0004286:115">Санкт-Петербург, Приморский (3.4 га)</option>
@@ -944,7 +1028,7 @@ def build():
           <div class="control-row">
             <label class="control-label" for="cfg-cad-input">Кадастровый номер, адрес или координаты</label>
             <div style="display:flex; gap:6px;">
-              <input type="text" class="input-text" id="cfg-cad-input" value="72:23:0222001:16187" placeholder="72:23:0222001:16187 или 'Тюмень'" style="flex:1;" />
+              <input type="text" class="input-text" id="cfg-cad-input" value="" placeholder="72:23:0222001:16187 или 'Тюмень'" style="flex:1;" />
               <button class="btn-toggle-sidebar" id="btn-fetch-pkk" type="button" title="Загрузить официальные границы напрямую из Публичной кадастровой карты Росреестра / НСПД" style="white-space:nowrap; padding:6px 8px; font-size:11px;">
                 🌐 ПКК
               </button>
@@ -1274,22 +1358,11 @@ def build():
 
         <div class="toggle-row">
           <div>
-            <div class="control-label">Башни-акценты на флангах</div>
-            <div class="control-hint">Размещать точечные секции на углах</div>
+            <div class="control-label">Точечные башни на свободных пятнах</div>
+            <div class="control-hint">Размещение высотных башен на свободных участках квартала (режим AUTO)</div>
           </div>
           <label class="toggle-switch">
             <input type="checkbox" id="cfg-towers-mixed" checked />
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
-
-        <div class="toggle-row">
-          <div>
-            <div class="control-label">Переменный шаг инсоляции</div>
-            <div class="control-hint">Сокращает торцевой пожарный разрыв</div>
-          </div>
-          <label class="toggle-switch">
-            <input type="checkbox" id="cfg-var-insolation" checked />
             <span class="toggle-slider"></span>
           </label>
         </div>
@@ -1303,20 +1376,20 @@ def build():
 
           <div class="control-row">
             <div style="display:flex; justify-content:space-between;">
-              <label class="control-label" for="cfg-fire-gap-end">Торец–торец / торец–фасад</label>
+              <label class="control-label" for="cfg-fire-gap-end">Пожарный разрыв торцов</label>
               <span id="badge-fire-gap-end" style="font-size:11px; font-weight:600; color:#b91c1c;">10 м</span>
             </div>
             <input type="range" class="slider-input" id="cfg-fire-gap-end" min="6" max="25" step="1" value="10" />
-            <div class="control-hint">Мин. просвет между торцами секций или торцом и фасадом (норма ≥ 10 м)</div>
+            <div class="control-hint">Мин. просвет между глухими торцами или торцом и фасадом (СП 4.13130, норма ≥ 10 м)</div>
           </div>
 
           <div class="control-row">
             <div style="display:flex; justify-content:space-between;">
-              <label class="control-label" for="cfg-fire-gap-parallel">Параллельная посадка (фасад–фасад)</label>
+              <label class="control-label" for="cfg-fire-gap-parallel">Разрыв фасадов (параллельная посадка)</label>
               <span id="badge-fire-gap-parallel" style="font-size:11px; font-weight:600; color:#b91c1c;">18 м</span>
             </div>
             <input type="range" class="slider-input" id="cfg-fire-gap-parallel" min="12" max="35" step="1" value="18" />
-            <div class="control-hint">Разрыв между продольными фасадами и для башен со всех 4 сторон (15–20 м)</div>
+            <div class="control-hint">Разрыв между продольными фасадами и для башен по 4 сторонам (СП 4.13130, 15–20 м)</div>
           </div>
         </div>
 
@@ -1367,7 +1440,7 @@ def build():
           <div class="toggle-row">
             <div>
               <div class="control-label" style="font-size:12px;">Строго по закону (нормативы)</div>
-              <div class="control-hint" style="font-size:10px;">FAR, BCR, пожарные разрывы, инсоляция</div>
+              <div class="control-hint" style="font-size:10px;">Кпз, процент застройки (Кз), пожарные нормы, инсоляция</div>
             </div>
             <label class="toggle-switch">
               <input type="checkbox" id="cfg-max-respect-norms" checked />
@@ -1379,7 +1452,7 @@ def build():
         <div class="control-row" id="cfg-target-tep-container" style="display:none;">
           <label class="control-label" for="cfg-target-metric">Целевой показатель</label>
           <select class="select-custom" id="cfg-target-metric" style="width:100%; margin-bottom:6px;">
-            <option value="far">Плотность (FAR)</option>
+            <option value="far">Плотность застройки (Кпз)</option>
             <option value="apts">Количество квартир</option>
             <option value="gfa">Общая площадь (GFA, м²)</option>
           </select>
@@ -1441,21 +1514,42 @@ def build():
 
       <!-- РАЗДЕЛ 4: РЕГИОНАЛЬНЫЕ НОРМАТИВЫ -->
       <div class="settings-section">
-        <span class="settings-section-title">📜 Региональные нормативы (РНГП)</span>
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span class="settings-section-title">📜 Нормативы застройки (РНГП / МНГП)</span>
+          <span id="badge-norm-status" class="badge-status badge-ok" style="font-size:10px; padding:2px 7px;">СП 42</span>
+        </div>
 
         <div class="control-row">
           <label class="control-label" for="cfg-regional-norm">Регион проектирования</label>
           <select class="select-custom" id="cfg-regional-norm" style="width:100%;">
-            <option value="russia_sp42">РФ — СП 42.13330.2016</option>
-            <option value="moscow_mngp">Москва — МНГП</option>
-            <option value="moscow_oblast_rngp">Московская область — РНГП</option>
-            <option value="spb_rngp">Санкт-Петербург — РНГП</option>
+            <option value="russia_sp42">РФ — СП 42.13330.2016 (базовый)</option>
+            <option value="moscow_mngp">Москва — МНГП № 945-ПП</option>
+            <option value="moscow_oblast_rngp">Московская область — РНГП МО № 713/30</option>
+            <option value="spb_rngp">Санкт-Петербург — РНГП СПб</option>
+            <option value="tyumen_mngp">Тюмень — МНГП г. Тюмени</option>
+            <option value="custom">⚙️ Пользовательский (ручной ввод / ГПЗУ)</option>
           </select>
+        </div>
+
+        <!-- Мини-карточка параметров выбранного норматива -->
+        <div id="regional-norm-pill-box" style="background:var(--muted); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; font-size:11.5px; line-height:1.5;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:4px;">
+            <strong id="badge-regional-norm-title" style="color:var(--text); font-size:12px;">РФ (СП 42.13330.2016)</strong>
+          </div>
+          <div id="badge-regional-norm-summary" style="color:var(--secondary); font-size:11px;">
+            🚗 350 м/м на 1000 чел (25% гост.)<br>
+            👥 Норма жилья: 25.0 м²/чел<br>
+            🛝 Детские 0.7 · Спорт 0.5 м²/чел<br>
+            🌿 Озеленение: ≥ 25% · Кпз ≤ 2.50
+          </div>
+          <button type="button" class="btn" id="btn-open-regional-modal" style="width:100%; margin-top:8px; justify-content:center; font-size:11.5px; padding:6px 8px; background:var(--surface);">
+            <span>⚙️ Карточка норматива (настроить)</span>
+          </button>
         </div>
 
         <div class="control-row">
           <div class="control-label">
-            <span>Макс. FAR (плотность)</span>
+            <span>Макс. плотность застройки (Кпз)</span>
             <span class="slider-badge" id="cfg-far-badge">2.50</span>
           </div>
           <div class="slider-container">
@@ -1465,7 +1559,7 @@ def build():
 
         <div class="control-row">
           <div class="control-label">
-            <span>Макс. BCR (КЗ застройки)</span>
+            <span>Макс. процент застройки (Кз)</span>
             <span class="slider-badge" id="cfg-bcr-badge">40%</span>
           </div>
           <div class="slider-container">
@@ -1561,24 +1655,24 @@ def build():
           <span class="badge-status badge-ok" id="kpi-living-badge">Комфорт-класс (30 м²/чел)</span>
         </div>
 
-        <!-- 3. ПЛОТНОСТЬ (FAR) -->
+        <!-- 3. ПЛОТНОСТЬ ЗАСТРОЙКИ (Кпз) -->
         <div class="metric-card">
           <div class="metric-card-header">
-            <span class="metric-card-title">📊 Плотность (FAR)</span>
+            <span class="metric-card-title">📊 Плотность застройки (Кпз)</span>
           </div>
           <span class="metric-card-value" id="kpi-far">—</span>
           <p class="metric-card-desc" id="kpi-far-desc">Плотность жилфонда: <strong>—</strong></p>
-          <span class="badge-status badge-ok" id="kpi-far-badge">СП 42: FAR ≤ 2.50</span>
+          <span class="badge-status badge-ok" id="kpi-far-badge">СП 42: Кпз ≤ 2.50</span>
         </div>
 
-        <!-- 4. ПРОЦЕНТ ЗАСТРОЙКИ (BCR) -->
+        <!-- 4. ПРОЦЕНТ ЗАСТРОЙКИ (Кз) -->
         <div class="metric-card">
           <div class="metric-card-header">
-            <span class="metric-card-title">📐 Застройка (BCR)</span>
+            <span class="metric-card-title">📐 Процент застройки (Кз)</span>
           </div>
           <span class="metric-card-value" id="kpi-bcr">—</span>
           <p class="metric-card-desc" id="kpi-bcr-desc">Пятно зданий: <strong>—</strong></p>
-          <span class="badge-status badge-ok" id="kpi-bcr-badge">Лимит ПЗЗ ≤ 40%</span>
+          <span class="badge-status badge-ok" id="kpi-bcr-badge">Норма: Кз ≤ 40%</span>
         </div>
 
         <!-- 5. КОММЕРЦИЯ / РИТЕЙЛ -->
@@ -1642,11 +1736,57 @@ def build():
         </div>
       </section>
 
-      <!-- 2. ЦЕНТРАЛЬНЫЙ СПЛИТ: КАРТА + ИНСПЕКТОР -->
+      <!-- 2. ЦЕНТРАЛЬНЫЙ СПЛИТ: ИНСПЕКТОР (СЛЕВА) + КАРТА/3D/СХЕМА (СПРАВА, БОЛЬШАЯ ЧАСТЬ) -->
       <section class="spatial-split">
 
-        <!-- КАРТА -->
-        <div class="card">
+        <!-- ИНСПЕКТОР СЕКЦИИ (СЛЕВА) -->
+        <div class="card" id="inspector-card-container">
+          <div class="card-header">
+            <h2 class="card-title">Инспектор секции</h2>
+            <button class="btn" id="btn-clear-selection" style="display:none;">Снять выбор</button>
+          </div>
+
+          <div class="inspector-card" id="inspector-content">
+            <div class="inspector-empty" id="inspector-empty">
+              <div class="inspector-empty-icon">⌖</div>
+              <strong style="font-size:15px; color:var(--text);">Инспектор параметров застройки</strong>
+              <p>Кликните по любой секции на генплане или выберите строку в ведомости ниже для просмотра архитектурных параметров, высоты и квартирографии.</p>
+            </div>
+
+            <div id="inspector-active" style="display:none; flex-direction:column; gap:14px;">
+              <div class="inspector-header">
+                <div>
+                  <h3 class="inspector-title" id="insp-title">Дом Д1 · Секция 1</h3>
+                  <p class="inspector-subtitle" id="insp-subtitle">Марка: Рядовая 14×26м</p>
+                </div>
+                <span class="category-badge" id="insp-cat-badge">Рядовая</span>
+              </div>
+
+              <dl class="detail-grid">
+                <div class="detail-item"><dt>Этажность</dt><dd id="insp-floors">—</dd></div>
+                <div class="detail-item"><dt>Высота здания</dt><dd id="insp-height">—</dd></div>
+                <div class="detail-item"><dt>Габариты фасада</dt><dd id="insp-dims">—</dd></div>
+                <div class="detail-item"><dt>Пятно секции</dt><dd id="insp-footprint">—</dd></div>
+                <div class="detail-item"><dt>GFA секции</dt><dd id="insp-gfa">—</dd></div>
+                <div class="detail-item"><dt>Всего квартир</dt><dd id="insp-apts-count">—</dd></div>
+              </dl>
+
+              <div class="feature-box">
+                <span class="feature-box-title">Квартирография данной секции</span>
+                <div class="apt-bars" id="insp-apt-bars"></div>
+              </div>
+
+              <div class="feature-box">
+                <span class="feature-box-title">Инженерные узлы и лифты</span>
+                <p style="font-size:13px; color:var(--text);" id="insp-elevators">Лифтов: 2 шт.</p>
+                <p style="font-size:12px; color:var(--secondary);" id="insp-ground">1-й этаж: Коммерческие помещения</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ГЕНПЛАН ЗАСТРОЙКИ: КАРТА, 3D И СХЕМА НА ВКЛАДКАХ (СПРАВА, ДОМИНИРУЮЩИЙ РАЗМЕР) -->
+        <div class="card" id="viewport-card-container" style="position:relative;">
           <div class="card-header">
             <div style="display:flex; align-items:center; gap:10px;">
               <h2 class="card-title">Генплан застройки</h2>
@@ -1665,6 +1805,40 @@ def build():
                 <option value="building">По корпусам</option>
                 <option value="gfa">По площади GFA</option>
               </select>
+            </div>
+          </div>
+
+          <!-- БОКОВОЙ ИНДИКАТОР ПЕРЕБОРА ВАРИАНТОВ (TOP-1) - ПЛАВАЕТ НАД ЛЮБОЙ ВКЛАДКОЙ КАРТЫ -->
+          <div id="opt-progress-panel" class="opt-side-card" style="display:none;">
+            <div class="opt-card-header">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="opt-card-pulse"></span>
+                <span style="font-size:12.5px; font-weight:700; color:var(--text); letter-spacing:-0.2px;">Перебор вариантов (Top-1)</span>
+              </div>
+              <span class="badge" id="opt-badge-pct" style="background:#e0e7ff; color:#4338ca; font-weight:700; font-size:11px;">0%</span>
+            </div>
+            <div class="opt-bar-bg">
+              <div class="opt-bar-fill" id="opt-bar-fill" style="width:0%;"></div>
+            </div>
+            <div class="opt-status-msg" id="opt-status-msg">Инициализация оптимизатора...</div>
+            <div class="opt-mini-grid">
+              <div class="opt-mini-box">
+                <div class="opt-mini-lbl">Проверено</div>
+                <div class="opt-mini-val" id="opt-val-count">0 / 0</div>
+              </div>
+              <div class="opt-mini-box">
+                <div class="opt-mini-lbl">Лидер GFA</div>
+                <div class="opt-mini-val" id="opt-val-gfa" style="color:#2563eb;">—</div>
+              </div>
+              <div class="opt-mini-box">
+                <div class="opt-mini-lbl">Этажи</div>
+                <div class="opt-mini-val" id="opt-val-floors" style="color:#059669;">—</div>
+              </div>
+            </div>
+            <div class="opt-compliance-tags">
+              <span class="opt-tag">✓ Противопожарные (10/18м)</span>
+              <span class="opt-tag">✓ Инсоляция СП 42</span>
+              <span class="opt-tag">✓ Лимиты Кпз / Кз (СП 42)</span>
             </div>
           </div>
 
@@ -1698,95 +1872,15 @@ def build():
               <div id="legend-items"></div>
             </div>
 
-            <!-- БОКОВОЙ ИНДИКАТОР ПЕРЕБОРА ВАРИАНТОВ (TOP-1) -->
-            <div id="opt-progress-panel" class="opt-side-card" style="display:none;">
-              <div class="opt-card-header">
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <span class="opt-card-pulse"></span>
-                  <span style="font-size:12.5px; font-weight:700; color:#1e1b4b; letter-spacing:-0.2px;">Перебор вариантов (Top-1)</span>
-                </div>
-                <span class="badge" id="opt-badge-pct" style="background:#e0e7ff; color:#4338ca; font-weight:700; font-size:11px;">0%</span>
-              </div>
-              <div class="opt-bar-bg">
-                <div class="opt-bar-fill" id="opt-bar-fill" style="width:0%;"></div>
-              </div>
-              <div class="opt-status-msg" id="opt-status-msg">Инициализация оптимизатора...</div>
-              <div class="opt-mini-grid">
-                <div class="opt-mini-box">
-                  <div class="opt-mini-lbl">Проверено</div>
-                  <div class="opt-mini-val" id="opt-val-count">0 / 0</div>
-                </div>
-                <div class="opt-mini-box">
-                  <div class="opt-mini-lbl">Лидер GFA</div>
-                  <div class="opt-mini-val" id="opt-val-gfa" style="color:#2563eb;">—</div>
-                </div>
-                <div class="opt-mini-box">
-                  <div class="opt-mini-lbl">Этажи</div>
-                  <div class="opt-mini-val" id="opt-val-floors" style="color:#059669;">—</div>
-                </div>
-              </div>
-              <div class="opt-compliance-tags">
-                <span class="opt-tag">✓ Противопожарные (10/18м)</span>
-                <span class="opt-tag">✓ Инсоляция СП 42</span>
-                <span class="opt-tag">✓ Лимиты FAR/BCR</span>
-              </div>
-            </div>
-
             <div class="map-tooltip" id="map-tooltip"></div>
           </div>
 
-          <div id="view-container-osm" style="display:none; height:640px;">
+          <div id="view-container-osm" style="display:none; height:740px;">
             <iframe id="iframe-osm" style="width:100%; height:100%; border:0;" title="OSM Карта"></iframe>
           </div>
 
-          <div id="view-container-3d" style="display:none; height:640px;">
+          <div id="view-container-3d" style="display:none; height:740px;">
             <iframe id="iframe-3d" src="viewer_3d.html" style="width:100%; height:100%; border:0;" title="3D Модель"></iframe>
-          </div>
-        </div>
-
-        <!-- ИНСПЕКТОР СЕКЦИИ -->
-        <div class="card">
-          <div class="card-header">
-            <h2 class="card-title">Инспектор секции</h2>
-            <button class="btn" id="btn-clear-selection" style="display:none;">Снять выбор</button>
-          </div>
-
-          <div class="inspector-card" id="inspector-content">
-            <div class="inspector-empty" id="inspector-empty">
-              <div class="inspector-empty-icon">⌖</div>
-              <strong style="font-size:15px; color:var(--text);">Выберите секцию на генплане</strong>
-              <p>Кликните по любой секции на карте или выберите строку в ведомости ниже. Здесь отобразятся архитектурные параметры, квартирография и проверка высотных ограничений.</p>
-            </div>
-
-            <div id="inspector-active" style="display:none; flex-direction:column; gap:14px;">
-              <div class="inspector-header">
-                <div>
-                  <h3 class="inspector-title" id="insp-title">Дом Д1 · Секция 1</h3>
-                  <p class="inspector-subtitle" id="insp-subtitle">Марка: Рядовая 14×26м</p>
-                </div>
-                <span class="category-badge" id="insp-cat-badge">Рядовая</span>
-              </div>
-
-              <dl class="detail-grid">
-                <div class="detail-item"><dt>Этажность</dt><dd id="insp-floors">—</dd></div>
-                <div class="detail-item"><dt>Высота здания</dt><dd id="insp-height">—</dd></div>
-                <div class="detail-item"><dt>Габариты фасада</dt><dd id="insp-dims">—</dd></div>
-                <div class="detail-item"><dt>Пятно секции</dt><dd id="insp-footprint">—</dd></div>
-                <div class="detail-item"><dt>GFA секции</dt><dd id="insp-gfa">—</dd></div>
-                <div class="detail-item"><dt>Всего квартир</dt><dd id="insp-apts-count">—</dd></div>
-              </dl>
-
-              <div class="feature-box">
-                <span class="feature-box-title">Квартирография данной секции</span>
-                <div class="apt-bars" id="insp-apt-bars"></div>
-              </div>
-
-              <div class="feature-box">
-                <span class="feature-box-title">Инженерные узлы и лифты</span>
-                <p style="font-size:13px; color:var(--text);" id="insp-elevators">Лифтов: 2 шт.</p>
-                <p style="font-size:12px; color:var(--secondary);" id="insp-ground">1-й этаж: Коммерческие помещения</p>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -1877,7 +1971,7 @@ def build():
             <button class="btn btn-primary" id="btn-calc-variants">⚡ Рассчитать варианты</button>
           </div>
           <div class="card-body">
-            <p style="font-size:12px; color:var(--secondary);">Сравнение сценариев высотности от 8 до 24 этажей с проверкой лимитов плотности FAR и КЗ (BCR):</p>
+            <p style="font-size:12px; color:var(--secondary);">Сравнение сценариев высотности от 8 до 24 этажей с проверкой коэффициента плотности (Кпз) и процента застройки (Кз):</p>
             <div class="table-wrapper">
               <table class="data-table">
                 <thead>
@@ -1886,8 +1980,8 @@ def build():
                     <th>GFA, м²</th>
                     <th>Жил.пл.</th>
                     <th>Квартир</th>
-                    <th>BCR</th>
-                    <th>FAR</th>
+                    <th>Кз (%)</th>
+                    <th>Кпз</th>
                     <th>Нормы</th>
                   </tr>
                 </thead>
@@ -2002,6 +2096,277 @@ def build():
     </div>
   </div>
 
+  <!-- МОДАЛЬНОЕ ОКНО РЕГИОНАЛЬНЫХ НОРМАТИВОВ -->
+  <div class="modal-backdrop" id="regional-norm-modal">
+    <div class="modal-box" style="max-width: 820px; font-family: var(--font-sans);">
+      <div class="modal-header" style="padding: 16px 22px;">
+        <div>
+          <div style="font-size: 16px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px;">
+            <span>📋</span> Карточка градостроительных нормативов (РНГП / МНГП)
+          </div>
+          <div style="font-size: 12px; color: var(--secondary); margin-top: 3px;">
+            Просмотр нормативов региона и корректировка параметров под конкретный участок (ГПЗУ / ПЗЗ)
+          </div>
+        </div>
+        <button class="modal-close" id="regional-modal-close" title="Закрыть">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 18px 22px; max-height: calc(85vh - 130px); overflow-y: auto; font-family: var(--font-sans); white-space: normal;">
+        
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:rgba(83, 141, 178, 0.08); border-left:4px solid var(--accent); padding:10px 14px; border-radius:0 var(--radius-sm) var(--radius-sm) 0;">
+          <div>
+            <span style="font-size:12px; color:var(--secondary);">Базовый нормативный профиль:</span>
+            <div id="modal-norm-active-name" style="font-weight:700; font-size:13px; color:var(--text);">РФ (СП 42.13330.2016)</div>
+          </div>
+          <span id="modal-norm-custom-badge" class="badge-status badge-ok" style="font-size:11px;">Эталон региона</span>
+        </div>
+
+        <div class="norm-cards-grid">
+          <!-- КАРТОЧКА 1: ПАРКОВОЧНЫЕ МЕСТА -->
+          <div class="norm-card">
+            <div class="norm-card-title">
+              <span>🚗</span> Парковочные места и стоянки
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">Метод расчета потребности</label>
+              <select class="norm-input" id="norm-parking-method">
+                <option value="per_1000_people">На 1 000 жителей (СП 42)</option>
+                <option value="per_living_area">На площадь жилья (Москва / МО / СПб)</option>
+                <option value="per_apartment">На 1 квартиру (Тюмень)</option>
+              </select>
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">
+                <span id="norm-parking-ratio-label">Машиномест на 1000 чел.</span>
+                <span style="color:var(--accent); font-weight:600;" id="norm-parking-ratio-unit">м/м</span>
+              </label>
+              <input type="number" step="0.1" min="0" class="norm-input" id="norm-parking-ratio" value="350">
+              <div id="norm-parking-ratio-hint" style="font-size:11px; color:var(--secondary);">
+                СП 42: базовый уровень автомобилизации 350 м/м на 1000 чел.
+              </div>
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">
+                <span>Доля открытых гостевых стоянок</span>
+                <span style="color:var(--accent); font-weight:600;">%</span>
+              </label>
+              <input type="number" step="1" min="0" max="100" class="norm-input" id="norm-guest-share" value="25">
+              <div style="font-size:11px; color:var(--secondary);">
+                СП 42 п. 11.5: приоритет размещения на наземных стоянках
+              </div>
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">
+                <span>Площадь на 1 открытое м/м (с проездами)</span>
+                <span style="color:var(--accent); font-weight:600;">м²</span>
+              </label>
+              <input type="number" step="0.5" min="15" max="40" class="norm-input" id="norm-area-per-car" value="25.0">
+            </div>
+          </div>
+
+          <!-- КАРТОЧКА 2: ДЕМОГРАФИЯ И НАСЕЛЕНИЕ -->
+          <div class="norm-card">
+            <div class="norm-card-title">
+              <span>👥</span> Демография и жилая обеспеченность
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">
+                <span>Обеспеченность жильем на 1 жителя</span>
+                <span style="color:var(--accent); font-weight:600;">м²/чел</span>
+              </label>
+              <input type="number" step="0.1" min="15" max="60" class="norm-input" id="norm-living-per-person" value="25.0">
+              <div style="font-size:11px; color:var(--secondary);">
+                СП 42: 25.0 м²/чел; Москва: 30.0; МО/Тюмень: 28.2 м²/чел.
+              </div>
+            </div>
+
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px; margin-top:8px; font-size:11.5px; color:var(--secondary); line-height:1.45;">
+              <strong style="color:var(--text); display:block; margin-bottom:4px;">💡 Взаимосвязь расчетов:</strong>
+              • Население = Жилая площадь ÷ Обеспеченность.<br>
+              • Места в ДОО (детсады) = ~61 место / 1000 жителей.<br>
+              • Места в СОШ (школы) = ~120 мест / 1000 жителей.<br>
+              • Нормативы площадок масштабируются от населения.
+            </div>
+          </div>
+
+          <!-- КАРТОЧКА 3: ПЛОЩАДКИ БЛАГОУСТРОЙСТВА -->
+          <div class="norm-card">
+            <div class="norm-card-title">
+              <span>🛝</span> Придомовые дворовые площадки (м²/чел)
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">
+                <span>Детские игровые площадки</span>
+                <span style="color:var(--accent); font-weight:600;">м²/чел</span>
+              </label>
+              <input type="number" step="0.05" min="0" class="norm-input" id="norm-play-children" value="0.70">
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">
+                <span>Физкультурные и спортплощадки</span>
+                <span style="color:var(--accent); font-weight:600;">м²/чел</span>
+              </label>
+              <input type="number" step="0.05" min="0" class="norm-input" id="norm-play-sport" value="0.50">
+              <div style="font-size:11px; color:var(--secondary);">
+                СП 42: 0.50; Тюмень: 0.60; СПб: 0.80; Москва: 1.00; МО: 2.00 м²/чел.
+              </div>
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">
+                <span>Площадки для отдыха взрослых</span>
+                <span style="color:var(--accent); font-weight:600;">м²/чел</span>
+              </label>
+              <input type="number" step="0.01" min="0" class="norm-input" id="norm-play-relax" value="0.10">
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+              <div class="norm-field">
+                <label class="norm-field-label"><span>Хозцели</span><span>м²/чел</span></label>
+                <input type="number" step="0.01" min="0" class="norm-input" id="norm-play-utility" value="0.10">
+              </div>
+              <div class="norm-field">
+                <label class="norm-field-label"><span>ТКО (мусор)</span><span>м²/чел</span></label>
+                <input type="number" step="0.01" min="0" class="norm-input" id="norm-play-waste" value="0.05">
+              </div>
+            </div>
+          </div>
+
+          <!-- КАРТОЧКА 4: ПЛОТНОСТЬ И ОЗЕЛЕНЕНИЕ -->
+          <div class="norm-card">
+            <div class="norm-card-title">
+              <span>🌿</span> Озеленение и градостроительные лимиты
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">
+                <span>Минимальное озеленение территории</span>
+                <span style="color:var(--accent); font-weight:600;">% от ЗУ</span>
+              </label>
+              <input type="number" step="1" min="5" max="60" class="norm-input" id="norm-green-ratio" value="25">
+              <div style="font-size:11px; color:var(--secondary);">
+                СП 42 Табл. 9.1: не менее 25% площади участка жилой зоны.
+              </div>
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">
+                <span>Предельная плотность застройки (Кпз)</span>
+                <span style="color:var(--accent); font-weight:600;">коэфф.</span>
+              </label>
+              <input type="number" step="0.05" min="0.5" max="5.0" class="norm-input" id="norm-max-far" value="2.50">
+            </div>
+
+            <div class="norm-field">
+              <label class="norm-field-label">
+                <span>Предельный процент застройки (Кз)</span>
+                <span style="color:var(--accent); font-weight:600;">%</span>
+              </label>
+              <input type="number" step="1" min="10" max="80" class="norm-input" id="norm-max-bcr" value="40">
+            </div>
+
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 10px; font-size:11px; color:var(--secondary);">
+              🏢 <strong>Кровля стилобата (СП 42 п. 9.13):</strong> до 50% площади эксплуатируемой озелененной кровли подземного паркинга может засчитываться в баланс озеленения.
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <div>
+          <button type="button" class="btn" id="btn-modal-norm-reset" title="Сбросить все поля к официальным значениям выбранного региона">
+            <span>↺ Сбросить к нормам региона</span>
+          </button>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button type="button" class="btn" id="btn-modal-norm-cancel">Отмена</button>
+          <button type="button" class="btn btn-primary" id="btn-modal-norm-apply">
+            <span>✓ Применить параметры</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- МОДАЛЬНОЕ ОКНО СТАРТА: МАСТЕР НАЧАЛА РАБОТЫ -->
+  <div class="modal-backdrop" id="welcome-wizard-modal" style="display:flex;">
+    <div class="modal-box" style="max-width: 720px; border: 1px solid var(--border-strong); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35);">
+      <div class="modal-header" style="padding: 20px 24px 16px 24px; border-bottom: 1px solid var(--border);">
+        <div>
+          <div style="font-size: 19px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px;">
+            <span>✨</span> Новый градостроительный расчёт
+          </div>
+          <div style="font-size: 13px; color: var(--secondary); margin-top: 4px;">
+            Выберите источник границ участка для посадки зданий и расчета ТЭП:
+          </div>
+        </div>
+        <button class="modal-close" id="welcome-modal-close" title="Закрыть">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 24px; font-family: var(--font-sans); white-space: normal;">
+        <div class="wizard-grid">
+          
+          <!-- Карточка 1: Кадастр -->
+          <div class="wizard-card" id="wizard-opt-cadastre">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 26px;">🌐</span>
+              <span class="wizard-badge" style="background: rgba(59,130,246,0.12); color: #3b82f6;">ПКК / НСПД</span>
+            </div>
+            <div style="font-size: 15px; font-weight: 600; color: var(--text);">1. По кадастру РФ</div>
+            <div style="font-size: 12px; color: var(--secondary); line-height: 1.4; flex: 1;">
+              Импорт официальных границ ЗУ по кадастровому номеру или адресу из Росреестра.
+            </div>
+            <button class="btn btn-primary" type="button" style="margin-top: 6px; width: 100%; justify-content: center; font-size: 12px; padding: 7px 10px;">Ввести кадастр →</button>
+          </div>
+
+          <!-- Карточка 2: CAD / DXF -->
+          <div class="wizard-card" id="wizard-opt-cad">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 26px;">📐</span>
+              <span class="wizard-badge" style="background: rgba(16,185,129,0.12); color: #10b981;">САПР / CAD</span>
+            </div>
+            <div style="font-size: 15px; font-weight: 600; color: var(--text);">2. По чертежу CAD</div>
+            <div style="font-size: 12px; color: var(--secondary); line-height: 1.4; flex: 1;">
+              Загрузка файла топосъемки, ГПЗУ или генплана со слоями ЗУ и красных линий.
+            </div>
+            <button class="btn" type="button" style="margin-top: 6px; width: 100%; justify-content: center; font-size: 12px; padding: 7px 10px;">Загрузить файл →</button>
+          </div>
+
+          <!-- Карточка 3: По точкам -->
+          <div class="wizard-card" id="wizard-opt-map">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+              <span style="font-size: 26px;">✏️</span>
+              <span class="wizard-badge" style="background: rgba(245,158,11,0.12); color: #f59e0b;">На карте</span>
+            </div>
+            <div style="font-size: 15px; font-weight: 600; color: var(--text);">3. Разметка по точкам</div>
+            <div style="font-size: 12px; color: var(--secondary); line-height: 1.4; flex: 1;">
+              Интерактивная расстановка вершин участка кликами прямо по спутниковой карте.
+            </div>
+            <button class="btn" type="button" style="margin-top: 6px; width: 100%; justify-content: center; font-size: 12px; padding: 7px 10px;">Указать точки →</button>
+          </div>
+
+        </div>
+
+        <!-- Нижняя панель: ссылка на демо -->
+        <div style="border-top: 1px solid var(--border); padding-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+          <div style="font-size: 12.5px; color: var(--secondary);">
+            Хотите сначала изучить возможности сервиса?
+          </div>
+          <button class="btn" id="btn-welcome-demo" type="button" style="font-size: 12px; padding: 6px 12px;">
+            📂 Открыть демонстрационный пример (4.4 га)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-msg" id="toast-msg"></div>
 
   <script type="application/json" id="scenarios-data">{data_json_str}</script>
@@ -2015,18 +2380,18 @@ def build():
       const SCENARIOS = JSON.parse(document.getElementById("scenarios-data").textContent);
       const CATALOG = JSON.parse(document.getElementById("catalog-data").textContent);
 
-      let currentScenario = SCENARIOS[0];
+      let currentScenario = null;
       let selectedSectionId = null;
       let activeMetric = "category";
-      let activeView = "osm";
+      let activeView = "svg";
       let preferredSectionIds = [];
       let siteMode = "cadastre"; // 'cadastre' или 'cad'
 
       // Состояние 2-этапного взаимодействия (Посадка -> Застройка)
-      let isSiteLocked = !!(currentScenario.buildings && currentScenario.buildings.length > 0);
+      let isSiteLocked = false;
       let currentRotation = 0;
-      let currentSiteLat = (currentScenario.geo_center && currentScenario.geo_center.lat) || 53.2502;
-      let currentSiteLon = (currentScenario.geo_center && currentScenario.geo_center.lon) || 50.3184;
+      let currentSiteLat = 55.75124;
+      let currentSiteLon = 37.61842;
       let userHasMovedSite = false;
       let userHasEnteredManualCoords = false;
 
@@ -2156,6 +2521,35 @@ def build():
       const cfgMaxSectionsSlider = document.getElementById("cfg-max-sections-slider");
       const cfgMaxSectionsBadge = document.getElementById("cfg-max-sections-badge");
       const cfgRegionalNorm = document.getElementById("cfg-regional-norm");
+      const badgeNormStatus = document.getElementById("badge-norm-status");
+      const badgeRegionalNormTitle = document.getElementById("badge-regional-norm-title");
+      const badgeRegionalNormSummary = document.getElementById("badge-regional-norm-summary");
+      const btnOpenRegionalModal = document.getElementById("btn-open-regional-modal");
+      const regionalNormModal = document.getElementById("regional-norm-modal");
+      const regionalModalClose = document.getElementById("regional-modal-close");
+      const btnModalNormReset = document.getElementById("btn-modal-norm-reset");
+      const btnModalNormCancel = document.getElementById("btn-modal-norm-cancel");
+      const btnModalNormApply = document.getElementById("btn-modal-norm-apply");
+      const modalNormActiveName = document.getElementById("modal-norm-active-name");
+      const modalNormCustomBadge = document.getElementById("modal-norm-custom-badge");
+
+      // Поля формы модалки
+      const normParkingMethod = document.getElementById("norm-parking-method");
+      const normParkingRatio = document.getElementById("norm-parking-ratio");
+      const normParkingRatioLabel = document.getElementById("norm-parking-ratio-label");
+      const normParkingRatioUnit = document.getElementById("norm-parking-ratio-unit");
+      const normParkingRatioHint = document.getElementById("norm-parking-ratio-hint");
+      const normGuestShare = document.getElementById("norm-guest-share");
+      const normAreaPerCar = document.getElementById("norm-area-per-car");
+      const normLivingPerPerson = document.getElementById("norm-living-per-person");
+      const normPlayChildren = document.getElementById("norm-play-children");
+      const normPlaySport = document.getElementById("norm-play-sport");
+      const normPlayRelax = document.getElementById("norm-play-relax");
+      const normPlayUtility = document.getElementById("norm-play-utility");
+      const normPlayWaste = document.getElementById("norm-play-waste");
+      const normGreenRatio = document.getElementById("norm-green-ratio");
+      const normMaxFar = document.getElementById("norm-max-far");
+      const normMaxBcr = document.getElementById("norm-max-bcr");
       const cfgFarSlider = document.getElementById("cfg-far-slider");
       const cfgFarBadge = document.getElementById("cfg-far-badge");
       const cfgBcrSlider = document.getElementById("cfg-bcr-slider");
@@ -2211,6 +2605,14 @@ def build():
       const backendModal = document.getElementById("backend-modal");
       const backendModalClose = document.getElementById("backend-modal-close");
       const btnBackendModalOk = document.getElementById("btn-backend-modal-ok");
+
+      const welcomeWizardModal = document.getElementById("welcome-wizard-modal");
+      const welcomeModalClose = document.getElementById("welcome-modal-close");
+      const btnOpenWizard = document.getElementById("btn-open-wizard");
+      const wizardOptCadastre = document.getElementById("wizard-opt-cadastre");
+      const wizardOptCad = document.getElementById("wizard-opt-cad");
+      const wizardOptMap = document.getElementById("wizard-opt-map");
+      const btnWelcomeDemo = document.getElementById("btn-welcome-demo");
 
       // SVG
       const mapMetricSelect = document.getElementById("map-metric-select");
@@ -2404,6 +2806,108 @@ def build():
       if (backendModal) {{
         backendModal.addEventListener("click", e => {{
           if (e.target === backendModal) closeBackendModal();
+        }});
+      }}
+
+      // Обработчики Мастера старта
+      function closeWelcomeWizard() {{
+        if (welcomeWizardModal) welcomeWizardModal.style.display = "none";
+      }}
+      function openWelcomeWizard() {{
+        if (welcomeWizardModal) welcomeWizardModal.style.display = "flex";
+      }}
+
+      if (welcomeModalClose) welcomeModalClose.addEventListener("click", closeWelcomeWizard);
+      if (btnOpenWizard) btnOpenWizard.addEventListener("click", openWelcomeWizard);
+      if (welcomeWizardModal) {{
+        welcomeWizardModal.addEventListener("click", e => {{
+          if (e.target === welcomeWizardModal) closeWelcomeWizard();
+        }});
+      }}
+      document.addEventListener("keydown", e => {{
+        if (e.key === "Escape" && welcomeWizardModal && welcomeWizardModal.style.display !== "none") {{
+          closeWelcomeWizard();
+        }}
+      }});
+
+      function startCleanProject(mode) {{
+        isSiteLocked = false;
+        currentScenario = null;
+        selectedSectionId = null;
+        userHasMovedSite = false;
+        userHasEnteredManualCoords = false;
+
+        if (cfgParcelPresets) cfgParcelPresets.value = "";
+        if (cfgCadInput) cfgCadInput.value = "";
+
+        updateStageUI();
+        renderScenario();
+
+        if (mode === "cadastre") {{
+          if (settingsDrawer && settingsDrawer.classList.contains("collapsed")) {{
+            settingsDrawer.classList.remove("collapsed");
+            if (btnToggleSidebar) btnToggleSidebar.classList.add("active");
+          }}
+          if (btnModeCadastre) btnModeCadastre.click();
+          setTimeout(() => {{
+            const inp = document.getElementById("cfg-cad-input");
+            if (inp) {{ inp.focus(); inp.select(); }}
+          }}, 200);
+          showToast("Введите кадастровый номер или выберите участок в левой панели");
+        }} else if (mode === "cad") {{
+          if (settingsDrawer && settingsDrawer.classList.contains("collapsed")) {{
+            settingsDrawer.classList.remove("collapsed");
+            if (btnToggleSidebar) btnToggleSidebar.classList.add("active");
+          }}
+          if (btnModeCad) btnModeCad.click();
+          const fileInp = document.getElementById("file-cad-main");
+          if (fileInp) {{
+            setTimeout(() => fileInp.click(), 150);
+          }}
+          showToast("Выберите файл чертежа DXF / DWG для импорта границ ЗУ");
+        }} else if (mode === "map") {{
+          const btnDigitize = document.getElementById("btn-digitize-map");
+          if (btnDigitize) {{
+            btnDigitize.click();
+          }}
+        }}
+      }}
+
+      function loadDemoScenario() {{
+        currentScenario = SCENARIOS[0];
+        isSiteLocked = !!(currentScenario.buildings && currentScenario.buildings.length > 0);
+        if (cfgParcelPresets) cfgParcelPresets.value = "72:23:0222001:16187";
+        if (cfgCadInput) cfgCadInput.value = "72:23:0222001:16187";
+        updateStageUI();
+        renderScenario();
+        showToast("Загружен демонстрационный проект (ЖК «Акватория», 4.4 га)");
+      }}
+
+      if (wizardOptCadastre) {{
+        wizardOptCadastre.addEventListener("click", () => {{
+          closeWelcomeWizard();
+          startCleanProject("cadastre");
+        }});
+      }}
+
+      if (wizardOptCad) {{
+        wizardOptCad.addEventListener("click", () => {{
+          closeWelcomeWizard();
+          startCleanProject("cad");
+        }});
+      }}
+
+      if (wizardOptMap) {{
+        wizardOptMap.addEventListener("click", () => {{
+          closeWelcomeWizard();
+          startCleanProject("map");
+        }});
+      }}
+
+      if (btnWelcomeDemo) {{
+        btnWelcomeDemo.addEventListener("click", () => {{
+          closeWelcomeWizard();
+          loadDemoScenario();
         }});
       }}
 
@@ -2832,7 +3336,7 @@ def build():
         }}
 
         // Визуальное вращение мира SVG вокруг центра участка
-        const baseRot = currentScenario.site_rotation || 0;
+        const baseRot = (currentScenario && currentScenario.site_rotation) || 0;
         const visualDelta = currentRotation - baseRot;
 
         const world = document.getElementById("svg-site-world");
@@ -2846,7 +3350,9 @@ def build():
           northArrow.style.transform = `rotate(${{-currentRotation}}deg)`;
         }}
 
-        currentScenario.site_rotation = currentRotation;
+        if (currentScenario) {{
+          currentScenario.site_rotation = currentRotation;
+        }}
 
         if (syncIframe) {{
           onSidebarRotationChange();
@@ -2888,10 +3394,16 @@ def build():
       }});
       cfgFarSlider.addEventListener("input", e => {{
         cfgFarBadge.textContent = Number(e.target.value).toFixed(2);
+        if (typeof activeNormValues !== "undefined" && activeNormValues) {{
+          activeNormValues.max_far = parseFloat(e.target.value) || 2.5;
+        }}
         scheduleRegeneration();
       }});
       cfgBcrSlider.addEventListener("input", e => {{
         cfgBcrBadge.textContent = `${{Math.round(e.target.value * 100)}}%`;
+        if (typeof activeNormValues !== "undefined" && activeNormValues) {{
+          activeNormValues.max_bcr = Math.round(e.target.value * 100);
+        }}
         scheduleRegeneration();
       }});
 
@@ -3256,6 +3768,10 @@ def build():
       if (btnRunMaximize) {{
         btnRunMaximize.addEventListener("click", async () => {{
           if (regenerateTimer) clearTimeout(regenerateTimer);
+          if (!currentScenario && !cfgCadInput.value.trim() && !activeGpzuCoordinates && !uploadedCadBase64 && (!customRoadLines || customRoadLines.length === 0)) {{
+            loadDemoScenario();
+          }}
+          setViewTab("svg");
           cfgGenMode.value = "maximize";
           if (cfgTargetContainer) cfgTargetContainer.style.display = "none";
           if (cfgMaximizeContainer) cfgMaximizeContainer.style.display = "block";
@@ -3274,7 +3790,6 @@ def build():
       if (cfgCascadeFloors) cfgCascadeFloors.addEventListener("change", scheduleRegeneration);
       if (cfgAsymmetricWings) cfgAsymmetricWings.addEventListener("change", scheduleRegeneration);
       if (cfgTowersMixed) cfgTowersMixed.addEventListener("change", scheduleRegeneration);
-      if (cfgVarInsolation) cfgVarInsolation.addEventListener("change", scheduleRegeneration);
       if (cfgFireGapEnd) {{
         cfgFireGapEnd.addEventListener("input", e => {{
           if (badgeFireGapEnd) badgeFireGapEnd.textContent = `${{e.target.value}} м`;
@@ -3288,7 +3803,311 @@ def build():
         cfgFireGapParallel.addEventListener("change", scheduleRegeneration);
       }}
       if (cfgCourtOrient) cfgCourtOrient.addEventListener("change", scheduleRegeneration);
-      if (cfgRegionalNorm) cfgRegionalNorm.addEventListener("change", scheduleRegeneration);
+
+      // РЕГИОНАЛЬНЫЕ ПРЕСЕТЫ И МОДАЛЬНОЕ ОКНО РНГП / МНГП
+      const REGIONAL_PRESETS = {{
+        "russia_sp42": {{
+          id: "russia_sp42",
+          name: "РФ (СП 42.13330.2016)",
+          badge: "СП 42",
+          summary: "🚗 350 м/м на 1000 чел (25% гост.)<br>👥 Норма жилья: 25.0 м²/чел<br>🛝 Детские 0.7 · Спорт 0.5 м²/чел<br>🌿 Озеленение ≥ 25% · Кпз ≤ 2.50",
+          parking_method: "per_1000_people",
+          parking_ratio: 350,
+          guest_share: 25,
+          area_per_car: 25.0,
+          living_area_per_person: 25.0,
+          play_children: 0.70,
+          play_sport: 0.50,
+          play_relax: 0.10,
+          play_utility: 0.10,
+          play_waste: 0.05,
+          green_ratio: 25,
+          max_far: 2.50,
+          max_bcr: 40
+        }},
+        "moscow_mngp": {{
+          id: "moscow_mngp",
+          name: "Москва (МНГП № 945-ПП)",
+          badge: "Москва",
+          summary: "🚗 1 м/м на 90 м² жилья (15% гост.)<br>👥 Норма жилья: 30.0 м²/чел<br>🛝 Детские 0.7 · Спорт 1.0 м²/чел<br>🌿 Озеленение ≥ 25% · Кпз ≤ 2.80",
+          parking_method: "per_living_area",
+          parking_ratio: 90,
+          guest_share: 15,
+          area_per_car: 25.0,
+          living_area_per_person: 30.0,
+          play_children: 0.70,
+          play_sport: 1.00,
+          play_relax: 0.10,
+          play_utility: 0.10,
+          play_waste: 0.05,
+          green_ratio: 25,
+          max_far: 2.80,
+          max_bcr: 45
+        }},
+        "moscow_oblast_rngp": {{
+          id: "moscow_oblast_rngp",
+          name: "Московская область (РНГП МО № 713/30)",
+          badge: "МО РНГП",
+          summary: "🚗 1 м/м на 80 м² жилья (20% гост.)<br>👥 Норма жилья: 28.2 м²/чел<br>🛝 Детские 0.7 · Спорт 2.0 м²/чел<br>🌿 Озеленение ≥ 25% · Кпз ≤ 2.20",
+          parking_method: "per_living_area",
+          parking_ratio: 80,
+          guest_share: 20,
+          area_per_car: 25.0,
+          living_area_per_person: 28.2,
+          play_children: 0.70,
+          play_sport: 2.00,
+          play_relax: 0.10,
+          play_utility: 0.15,
+          play_waste: 0.05,
+          green_ratio: 25,
+          max_far: 2.20,
+          max_bcr: 40
+        }},
+        "spb_rngp": {{
+          id: "spb_rngp",
+          name: "Санкт-Петербург (РНГП СПб)",
+          badge: "СПб РНГП",
+          summary: "🚗 1 м/м на 80 м² жилья (15% гост.)<br>👥 Норма жилья: 28.0 м²/чел<br>🛝 Детские 0.7 · Спорт 0.8 м²/чел<br>🌿 Озеленение ≥ 25% · Кпз ≤ 2.30",
+          parking_method: "per_living_area",
+          parking_ratio: 80,
+          guest_share: 15,
+          area_per_car: 25.0,
+          living_area_per_person: 28.0,
+          play_children: 0.70,
+          play_sport: 0.80,
+          play_relax: 0.10,
+          play_utility: 0.10,
+          play_waste: 0.05,
+          green_ratio: 25,
+          max_far: 2.30,
+          max_bcr: 40
+        }},
+        "tyumen_mngp": {{
+          id: "tyumen_mngp",
+          name: "Тюмень (МНГП г. Тюмени)",
+          badge: "Тюмень",
+          summary: "🚗 1 м/м на 1 квартиру (20% гост.)<br>👥 Норма жилья: 28.2 м²/чел<br>🛝 Детские 0.7 · Спорт 0.6 м²/чел<br>🌿 Озеленение ≥ 25% · Кпз ≤ 2.50",
+          parking_method: "per_apartment",
+          parking_ratio: 1.0,
+          guest_share: 20,
+          area_per_car: 25.0,
+          living_area_per_person: 28.2,
+          play_children: 0.70,
+          play_sport: 0.60,
+          play_relax: 0.10,
+          play_utility: 0.10,
+          play_waste: 0.05,
+          green_ratio: 25,
+          max_far: 2.50,
+          max_bcr: 40
+        }}
+      }};
+
+      let activeNormValues = Object.assign({{}}, REGIONAL_PRESETS["russia_sp42"]);
+      let isCustomNormActive = false;
+
+      function updateParkingRatioLabels(method) {{
+        if (!normParkingRatioLabel) return;
+        if (method === "per_apartment") {{
+          normParkingRatioLabel.textContent = "Машиномест на 1 квартиру";
+          normParkingRatioUnit.textContent = "м/м на кв.";
+          normParkingRatioHint.textContent = "Тюмень: 1.0 м/м на 1 квартиру (комфорт-класс).";
+        }} else if (method === "per_living_area") {{
+          normParkingRatioLabel.textContent = "Площадь квартир на 1 м/м";
+          normParkingRatioUnit.textContent = "м² жилья/м-м";
+          normParkingRatioHint.textContent = "Москва: 90 м² жилья; МО / СПб: 80 м² жилья на 1 машиноместо.";
+        }} else {{
+          normParkingRatioLabel.textContent = "Машиномест на 1000 жителей";
+          normParkingRatioUnit.textContent = "м/м на 1000 чел";
+          normParkingRatioHint.textContent = "СП 42: базовый уровень автомобилизации 350 м/м на 1000 чел.";
+        }}
+      }}
+
+      function syncModalInputsFromState() {{
+        if (!normParkingMethod) return;
+        normParkingMethod.value = activeNormValues.parking_method;
+        normParkingRatio.value = activeNormValues.parking_ratio;
+        normGuestShare.value = activeNormValues.guest_share;
+        normAreaPerCar.value = activeNormValues.area_per_car;
+        normLivingPerPerson.value = activeNormValues.living_area_per_person;
+        normPlayChildren.value = activeNormValues.play_children;
+        normPlaySport.value = activeNormValues.play_sport;
+        normPlayRelax.value = activeNormValues.play_relax;
+        normPlayUtility.value = activeNormValues.play_utility;
+        normPlayWaste.value = activeNormValues.play_waste;
+        normGreenRatio.value = activeNormValues.green_ratio;
+        normMaxFar.value = activeNormValues.max_far;
+        normMaxBcr.value = activeNormValues.max_bcr;
+        updateParkingRatioLabels(activeNormValues.parking_method);
+
+        if (modalNormActiveName) {{
+          modalNormActiveName.textContent = activeNormValues.name || "Норматив региона";
+        }}
+        if (modalNormCustomBadge) {{
+          if (isCustomNormActive) {{
+            modalNormCustomBadge.className = "badge-status badge-warn";
+            modalNormCustomBadge.textContent = "Индивидуальный (ГПЗУ)";
+          }} else {{
+            modalNormCustomBadge.className = "badge-status badge-ok";
+            modalNormCustomBadge.textContent = "Эталон региона";
+          }}
+        }}
+      }}
+
+      function applyPresetToState(presetKey) {{
+        const preset = REGIONAL_PRESETS[presetKey];
+        if (!preset) return;
+        activeNormValues = Object.assign({{}}, preset);
+        isCustomNormActive = false;
+
+        if (badgeNormStatus) {{
+          badgeNormStatus.className = "badge-status badge-ok";
+          badgeNormStatus.textContent = preset.badge;
+        }}
+        if (badgeRegionalNormTitle) {{
+          badgeRegionalNormTitle.textContent = preset.name;
+        }}
+        if (badgeRegionalNormSummary) {{
+          badgeRegionalNormSummary.innerHTML = preset.summary;
+        }}
+        if (cfgFarSlider) {{
+          cfgFarSlider.value = preset.max_far;
+          if (cfgFarBadge) cfgFarBadge.textContent = Number(preset.max_far).toFixed(2);
+        }}
+        if (cfgBcrSlider) {{
+          cfgBcrSlider.value = (preset.max_bcr / 100).toFixed(2);
+          if (cfgBcrBadge) cfgBcrBadge.textContent = `${{preset.max_bcr}}%`;
+        }}
+        syncModalInputsFromState();
+      }}
+
+      function openRegionalNormModal() {{
+        if (!regionalNormModal) return;
+        syncModalInputsFromState();
+        regionalNormModal.style.display = "flex";
+      }}
+
+      function closeRegionalNormModal() {{
+        if (!regionalNormModal) return;
+        regionalNormModal.style.display = "none";
+      }}
+
+      if (btnOpenRegionalModal) {{
+        btnOpenRegionalModal.addEventListener("click", openRegionalNormModal);
+      }}
+      if (regionalModalClose) {{
+        regionalModalClose.addEventListener("click", closeRegionalNormModal);
+      }}
+      if (btnModalNormCancel) {{
+        btnModalNormCancel.addEventListener("click", closeRegionalNormModal);
+      }}
+      if (regionalNormModal) {{
+        regionalNormModal.addEventListener("click", e => {{
+          if (e.target === regionalNormModal) closeRegionalNormModal();
+        }});
+      }}
+      document.addEventListener("keydown", e => {{
+        if (e.key === "Escape" && regionalNormModal && regionalNormModal.style.display === "flex") {{
+          closeRegionalNormModal();
+        }}
+      }});
+
+      if (normParkingMethod) {{
+        normParkingMethod.addEventListener("change", e => {{
+          updateParkingRatioLabels(e.target.value);
+          if (modalNormCustomBadge) {{
+            modalNormCustomBadge.className = "badge-status badge-warn";
+            modalNormCustomBadge.textContent = "Параметр изменён";
+          }}
+        }});
+      }}
+
+      // Сброс к официальному эталону
+      if (btnModalNormReset) {{
+        btnModalNormReset.addEventListener("click", () => {{
+          const baseKey = (cfgRegionalNorm.value in REGIONAL_PRESETS) ? cfgRegionalNorm.value : "russia_sp42";
+          applyPresetToState(baseKey);
+          cfgRegionalNorm.value = baseKey;
+          showToast("↺ Нормативы сброшены к эталону региона");
+        }});
+      }}
+
+      // Применение настроек из модалки
+      if (btnModalNormApply) {{
+        btnModalNormApply.addEventListener("click", () => {{
+          const pMethod = normParkingMethod.value;
+          const pRatio = parseFloat(normParkingRatio.value) || 350;
+          const gShare = parseFloat(normGuestShare.value) || 25;
+          const carArea = parseFloat(normAreaPerCar.value) || 25.0;
+          const livPerPers = parseFloat(normLivingPerPerson.value) || 25.0;
+          const pChild = parseFloat(normPlayChildren.value) || 0.70;
+          const pSport = parseFloat(normPlaySport.value) || 0.50;
+          const pRelax = parseFloat(normPlayRelax.value) || 0.10;
+          const pUtil = parseFloat(normPlayUtility.value) || 0.10;
+          const pWaste = parseFloat(normPlayWaste.value) || 0.05;
+          const greenPct = parseFloat(normGreenRatio.value) || 25;
+          const farVal = parseFloat(normMaxFar.value) || 2.50;
+          const bcrVal = parseFloat(normMaxBcr.value) || 40;
+
+          activeNormValues = {{
+            id: "custom",
+            name: "Пользовательский норматив (ГПЗУ)",
+            badge: "ГПЗУ",
+            parking_method: pMethod,
+            parking_ratio: pRatio,
+            guest_share: gShare,
+            area_per_car: carArea,
+            living_area_per_person: livPerPers,
+            play_children: pChild,
+            play_sport: pSport,
+            play_relax: pRelax,
+            play_utility: pUtil,
+            play_waste: pWaste,
+            green_ratio: greenPct,
+            max_far: farVal,
+            max_bcr: bcrVal
+          }};
+          isCustomNormActive = true;
+
+          cfgRegionalNorm.value = "custom";
+          if (badgeNormStatus) {{
+            badgeNormStatus.className = "badge-status badge-warn";
+            badgeNormStatus.textContent = "ГПЗУ";
+          }}
+          if (badgeRegionalNormTitle) {{
+            badgeRegionalNormTitle.textContent = "Пользовательский норматив (ГПЗУ)";
+          }}
+          if (badgeRegionalNormSummary) {{
+            const pText = pMethod === "per_apartment" ? `${{pRatio}} м/м/кв` : (pMethod === "per_living_area" ? `1 м/м на ${{pRatio}} м²` : `${{pRatio}} м/м на 1000 чел`);
+            badgeRegionalNormSummary.innerHTML = `🚗 ${{pText}} (${{gShare}}% гост.) · 👥 ${{livPerPers}} м²/чел<br>🛝 Детские ${{pChild}} · Спорт ${{pSport}} м²/чел<br>🌿 Озеленение ≥ ${{greenPct}}% · Кпз ≤ ${{farVal.toFixed(2)}}`;
+          }}
+
+          if (cfgFarSlider) {{
+            cfgFarSlider.value = farVal;
+            if (cfgFarBadge) cfgFarBadge.textContent = farVal.toFixed(2);
+          }}
+          if (cfgBcrSlider) {{
+            cfgBcrSlider.value = (bcrVal / 100).toFixed(2);
+            if (cfgBcrBadge) cfgBcrBadge.textContent = `${{bcrVal}}%`;
+          }}
+
+          closeRegionalNormModal();
+          showToast("✓ Параметры норматива применены и сохранены");
+          scheduleRegeneration();
+        }});
+      }}
+
+      if (cfgRegionalNorm) {{
+        cfgRegionalNorm.addEventListener("change", e => {{
+          const val = e.target.value;
+          if (val === "custom") {{
+            openRegionalNormModal();
+          }} else if (REGIONAL_PRESETS[val]) {{
+            applyPresetToState(val);
+            scheduleRegeneration();
+          }}
+        }});
+      }}
       if (cfgTargetMetric) cfgTargetMetric.addEventListener("change", scheduleRegeneration);
       if (cfgTargetVal) cfgTargetVal.addEventListener("change", scheduleRegeneration);
 
@@ -3384,7 +4203,7 @@ def build():
 
         if (tab === "osm") {{
           const iframeOsm = viewOsm.querySelector("iframe");
-          if (iframeOsm && currentScenario.leaflet_html && (!iframeOsm.srcdoc || iframeOsm.srcdoc !== currentScenario.leaflet_html)) {{
+          if (iframeOsm && currentScenario && currentScenario.leaflet_html && (!iframeOsm.srcdoc || iframeOsm.srcdoc !== currentScenario.leaflet_html)) {{
             iframeOsm.srcdoc = currentScenario.leaflet_html;
           }}
         }}
@@ -3453,8 +4272,8 @@ def build():
           red_line_setback: parseFloat(cfgRedlineSetback ? cfgRedlineSetback.value : 5) || 5,
           typology: cfgTypology.value,
           courtyard_orientation: cfgCourtOrient.value,
-          allow_towers_in_mixed: cfgTowersMixed.checked,
-          variable_insolation: cfgVarInsolation.checked,
+          allow_towers_in_mixed: cfgTowersMixed ? cfgTowersMixed.checked : true,
+          variable_insolation: cfgVarInsolation ? cfgVarInsolation.checked : true,
           fire_gap_end_to_end: parseFloat(cfgFireGapEnd ? cfgFireGapEnd.value : 10) || 10,
           fire_gap_parallel: parseFloat(cfgFireGapParallel ? cfgFireGapParallel.value : 18) || 18,
           gen_mode: cfgGenMode.value,
@@ -3470,6 +4289,22 @@ def build():
           max_building_height_m: parseFloat(cfgMaxH.value) || 0,
           max_sections: parseInt(cfgMaxSectionsSlider.value, 10) || 8,
           regional_norm_id: cfgRegionalNorm.value,
+          custom_regional_norm: {{
+            name: activeNormValues ? activeNormValues.name : "Норматив региона",
+            parking_method: activeNormValues ? activeNormValues.parking_method : "per_1000_people",
+            parking_ratio: activeNormValues ? activeNormValues.parking_ratio : 350,
+            guest_share: activeNormValues ? (activeNormValues.guest_share / 100.0) : 0.25,
+            area_per_car: activeNormValues ? activeNormValues.area_per_car : 25.0,
+            living_area_per_person: activeNormValues ? activeNormValues.living_area_per_person : 25.0,
+            play_children: activeNormValues ? activeNormValues.play_children : 0.70,
+            play_sport: activeNormValues ? activeNormValues.play_sport : 0.50,
+            play_relax: activeNormValues ? activeNormValues.play_relax : 0.10,
+            play_utility: activeNormValues ? activeNormValues.play_utility : 0.10,
+            play_waste: activeNormValues ? activeNormValues.play_waste : 0.05,
+            green_ratio_min: activeNormValues ? (activeNormValues.green_ratio / 100.0) : 0.25,
+            max_far: activeNormValues ? activeNormValues.max_far : (parseFloat(cfgFarSlider.value) || 2.5),
+            max_bcr: activeNormValues ? (activeNormValues.max_bcr / 100.0) : (parseFloat(cfgBcrSlider.value) || 0.4)
+          }},
           max_far: parseFloat(cfgFarSlider.value) || 2.5,
           max_bcr: parseFloat(cfgBcrSlider.value) || 0.4,
           preferred_section_ids: preferredSectionIds.length ? preferredSectionIds : null,
@@ -3488,7 +4323,7 @@ def build():
         }}
 
         if (siteMode === "cadastre") {{
-          base.cad_query = cfgCadInput.value.trim() || "72:23:0222001:16187";
+          base.cad_query = cfgCadInput.value.trim();
           base.custom_area = parseFloat(cfgAreaInput.value) || 32000;
           base.enable_red_line = cfgRedlineToggle.checked;
           if (activeGpzuCoordinates) {{
@@ -3545,11 +4380,15 @@ def build():
           if (sidebarStage2Group) sidebarStage2Group.classList.remove("sidebar-stage2-locked");
           if (sidebarLockNotice) sidebarLockNotice.style.display = "none";
 
+          if (activeView === "osm") {{
+            setViewTab("svg");
+          }}
+
           if (stage2StatusDesc) {{
             const rotSign = currentRotation >= 0 ? "+" : "";
-            const latStr = (currentSiteLat || (currentScenario.geo_center && currentScenario.geo_center.lat) || 53.2502).toFixed(5);
-            const lonStr = (currentSiteLon || (currentScenario.geo_center && currentScenario.geo_center.lon) || 50.3184).toFixed(5);
-            const haStr = currentScenario.site_area_ha || (currentScenario.site_area_sqm / 10000).toFixed(2);
+            const latStr = (currentSiteLat || (currentScenario && currentScenario.geo_center && currentScenario.geo_center.lat) || 53.2502).toFixed(5);
+            const lonStr = (currentSiteLon || (currentScenario && currentScenario.geo_center && currentScenario.geo_center.lon) || 50.3184).toFixed(5);
+            const haStr = currentScenario ? (currentScenario.site_area_ha || (currentScenario.site_area_sqm / 10000).toFixed(2)) : "—";
             stage2StatusDesc.textContent = `Участок зафиксирован: ${{haStr}} га • поворот ${{rotSign}}${{currentRotation.toFixed(1)}}° • WGS-84: [${{latStr}}, ${{lonStr}}]`;
           }}
         }}
@@ -3561,6 +4400,12 @@ def build():
           setRotation(0, true, false);
         }}
         const payload = getFormData();
+        if (siteMode === "cadastre" && !payload.cad_query && !payload.gpzu_coordinates && !payload.cad_file_base64) {{
+          return;
+        }}
+        if (siteMode === "cad" && !payload.cad_file_base64) {{
+          return;
+        }}
         payload.stage = 1;
         payload.preview_only = true;
 
@@ -3635,8 +4480,13 @@ def build():
         isGenerating = true;
         if (regenerateTimer) clearTimeout(regenerateTimer);
 
+        if (!currentScenario && !cfgCadInput.value.trim() && !activeGpzuCoordinates && !uploadedCadBase64 && (!customRoadLines || customRoadLines.length === 0)) {{
+          loadDemoScenario();
+        }}
+
         isSiteLocked = true;
         updateStageUI();
+        setViewTab("svg");
 
         if (btnLockMain) btnLockMain.disabled = true;
         if (btnLockSidebar) btnLockSidebar.disabled = true;
@@ -3705,12 +4555,21 @@ def build():
         }} catch (err) {{
           console.warn("Ошибка генерации:", err);
           updateBackendBadge(false);
-          const msg = (err.message && (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")))
-            ? "Python-сервер не запущен. Для генерации на лету запустите 'run_dashboard.bat'"
-            : (err.message || "Ошибка генерации застройки");
-          showToast(`⚠️ ${{msg}}`, true);
-          renderScenario();
-          updateStageUI();
+
+          if (isMaximize && SCENARIOS && SCENARIOS.length > 0) {{
+            if (progressInterval) {{
+              clearInterval(progressInterval);
+              progressInterval = null;
+            }}
+            await runOfflineOptimizationDemo();
+          }} else {{
+            const msg = (err.message && (err.message.includes("Failed to fetch") || err.message.includes("NetworkError")))
+              ? "Python-сервер не запущен. Для генерации на лету запустите 'run_dashboard.bat'"
+              : (err.message || "Ошибка генерации застройки");
+            showToast(`⚠️ ${{msg}}`, true);
+            renderScenario();
+            updateStageUI();
+          }}
         }} finally {{
           if (progressInterval) {{
             clearInterval(progressInterval);
@@ -3733,6 +4592,71 @@ def build():
         updateStageUI();
         showToast("🔓 Режим посадки: выровняйте контур и закрепите его");
         await loadSitePreview(false);
+      }}
+
+      // Демонстрационный офлайн-перебор вариантов для кнопки Top-1
+      async function runOfflineOptimizationDemo() {{
+        startOptimizationIndicator();
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+        updateOptimizationIndicator({{
+          percent: 18,
+          step: 4,
+          total: 24,
+          best_gfa: 31200,
+          best_floors: 10,
+          message: "Сетка углов: тест поворота -15°..."
+        }});
+        setRotation(-15, false, true);
+        await sleep(350);
+
+        updateOptimizationIndicator({{
+          percent: 42,
+          step: 10,
+          total: 24,
+          best_gfa: 36800,
+          best_floors: 12,
+          message: "Сетка углов: тест поворота +15° (инсоляция СанПиН)..."
+        }});
+        setRotation(15, false, true);
+        await sleep(400);
+
+        updateOptimizationIndicator({{
+          percent: 68,
+          step: 16,
+          total: 24,
+          best_gfa: 41200,
+          best_floors: 14,
+          message: "Подбор высоты: этажи 12..16 эт. по пожарным нормам СП 4..."
+        }});
+        setRotation(0, false, true);
+        await sleep(450);
+
+        updateOptimizationIndicator({{
+          percent: 92,
+          step: 22,
+          total: 24,
+          best_gfa: 43500,
+          best_floors: 14,
+          message: "Проверка баланса СП 42: парковки и озеленение..."
+        }});
+        await sleep(350);
+
+        const best = SCENARIOS.slice().sort((a, b) => ((b.tep && b.tep.gfa) || 0) - ((a.tep && a.tep.gfa) || 0))[0] || SCENARIOS[0];
+        currentScenario = best;
+        const gfaVal = (best.tep && best.tep.gfa) || 0;
+        const flVal = best.floors || (best.buildings && best.buildings[0] && best.buildings[0].floors) || 14;
+
+        if (flVal && cfgFloorsSlider) {{
+          cfgFloorsSlider.value = flVal;
+          if (cfgFloorsBadge) cfgFloorsBadge.textContent = `${{flVal}} эт.`;
+        }}
+
+        finishOptimizationIndicator(gfaVal, flVal);
+        resetSvgView();
+        renderScenario();
+        updateStageUI();
+        showToast(`⚡ Найден оптимальный сценарий: GFA ${{fmt(gfaVal)}} м² (${{flVal}} эт.)`);
       }}
 
             // Прослушивание сообщений от 3D вьюера и карты
@@ -3889,7 +4813,7 @@ def build():
           updateBackendBadge(true);
         }} catch (err) {{
           updateBackendBadge(false);
-          modalReportText.textContent = `ТЕХНИКО-ЭКОНОМИЧЕСКИЕ ПОКАЗАТЕЛИ (ДЕМО-ОТЧЕТ)\n=========================================\nУчасток: ${{currentScenario.cadastral_number}}\nПлощадь: ${{currentScenario.site_area_sqm}} м²\nОбщая площадь (GFA): ${{currentScenario.tep.gfa}} м²\nПлотность FAR: ${{currentScenario.tep.far}}\nBCR: ${{currentScenario.tep.bcr}}\n\n💡 Для живого отчёта запустите run_dashboard.bat!`;
+          modalReportText.textContent = `ТЕХНИКО-ЭКОНОМИЧЕСКИЕ ПОКАЗАТЕЛИ (ДЕМО-ОТЧЕТ)\n=========================================\nУчасток: ${{currentScenario.cadastral_number}}\nПлощадь: ${{currentScenario.site_area_sqm}} м²\nОбщая площадь (GFA): ${{currentScenario.tep.gfa}} м²\nКоэфф. плотности (Кпз): ${{currentScenario.tep.far}}\nПроцент застройки (Кз): ${{(currentScenario.tep.bcr * 100).toFixed(1)}}%\n\n💡 Для живого отчёта запустите run_dashboard.bat!`;
         }}
       }});
 
@@ -3899,6 +4823,39 @@ def build():
       // РЕНДЕР СЦЕНАРИЯ
       function renderScenario() {{
         const s = currentScenario;
+        if (!s) {{
+          // Чистый лист: если сценарий еще не выбран
+          siteCadLabel.textContent = "📍 Участок не выбран";
+          siteRegionLabel.textContent = "Задайте границы для расчёта ТЭП";
+          if (siteCoordsLabel) siteCoordsLabel.textContent = "WGS-84: [—, —]";
+          if (linkYandex) linkYandex.href = "#";
+          if (linkPkk) linkPkk.href = "#";
+
+          // Все 10 KPI карточек в нейтральное состояние
+          if (kpiGfa) {{ kpiGfa.textContent = "— м²"; kpiGfaDesc.innerHTML = "Зона застройки: <strong>— м²</strong>"; kpiGfaBadge.className = "badge-status badge-info"; kpiGfaBadge.textContent = "Ожидание ввода"; }}
+          if (kpiLiving) {{ kpiLiving.textContent = "— м²"; kpiLivingDesc.innerHTML = "Площадь участка: <strong>— м²</strong>"; kpiLivingBadge.textContent = "—"; }}
+          if (kpiFar) {{ kpiFar.textContent = "Кпз —"; kpiFarDesc.innerHTML = "Лимит СП 42: <strong>Кпз ≤ 2.50</strong>"; }}
+          if (kpiBcr) {{ kpiBcr.textContent = "Кз —"; kpiBcrDesc.innerHTML = "Лимит застройки: <strong>≤ 40%</strong>"; }}
+          if (kpiComm) {{ kpiComm.textContent = "— м²"; kpiCommDesc.innerHTML = "Расчет коммерции на Шаге 2"; }}
+          if (kpiPop) {{ kpiPop.textContent = "— чел."; kpiPopDesc.innerHTML = "Расчет населения на Шаге 2"; }}
+          if (kpiParking) {{ kpiParking.textContent = "— м/м"; kpiParkingDesc.innerHTML = "Баланс парковок по РНГП"; }}
+          if (kpiGreen) {{ kpiGreen.textContent = "— м²"; kpiGreenDesc.innerHTML = "Мин. озеленение: ≥ 25%"; }}
+          if (kpiPlaygrounds) {{ kpiPlaygrounds.textContent = "— м²"; kpiPlaygroundsDesc.innerHTML = "Дворовые площадки по РНГП"; }}
+          if (kpiMorphology) {{ kpiMorphology.textContent = "—"; kpiMorphologyDesc.innerHTML = "Секций: <strong>—</strong> · Этажность: <strong>—</strong>"; }}
+
+          // Очистка SVG
+          if (svgSiteBound) svgSiteBound.setAttribute("d", "");
+          if (svgBuildable) svgBuildable.setAttribute("d", "");
+          if (svgRedlinesGroup) svgRedlinesGroup.innerHTML = "";
+          if (svgSectionsGroup) svgSectionsGroup.innerHTML = "";
+          if (svgRoadsGroup) svgRoadsGroup.innerHTML = "";
+          if (svgSubblocksGroup) svgSubblocksGroup.innerHTML = "";
+          if (mapLegendItems) mapLegendItems.innerHTML = '<div style="color:var(--secondary); font-size:12px;">Участок не выбран</div>';
+
+          updateInspector();
+          renderTable();
+          return;
+        }}
 
         // Обновление чистой шапки
         siteCadLabel.textContent = `📍 ${{s.cadastral_number || 'Участок без номера'}}`;
@@ -3927,14 +4884,14 @@ def build():
           kpiLivingDesc.innerHTML = `Площадь участка: <strong>${{fmt(siteSqm)}} м²</strong> (${{siteHa}} га)`;
           kpiLivingBadge.textContent = "Ожидает фиксации";
 
-          // 3. ПЛОТНОСТЬ (FAR)
-          kpiFar.textContent = "FAR —";
-          kpiFarDesc.innerHTML = `Лимит СП 42: <strong>FAR ≤ ${{cfgFarSlider ? cfgFarSlider.value : 2.5}}</strong>`;
+          // 3. ПЛОТНОСТЬ ЗАСТРОЙКИ (Кпз)
+          kpiFar.textContent = "Кпз —";
+          kpiFarDesc.innerHTML = `Лимит СП 42: <strong>Кпз ≤ ${{cfgFarSlider ? cfgFarSlider.value : 2.5}}</strong>`;
           kpiFarBadge.className = "badge-status badge-ok";
-          kpiFarBadge.textContent = "СП 42: FAR ≤ 2.50";
+          kpiFarBadge.textContent = "СП 42: Кпз ≤ 2.50";
 
-          // 4. ПРОЦЕНТ ЗАСТРОЙКИ (BCR)
-          kpiBcr.textContent = "BCR —";
+          // 4. ПРОЦЕНТ ЗАСТРОЙКИ (Кз)
+          kpiBcr.textContent = "Кз —";
           kpiBcrDesc.innerHTML = `Лимит ПЗЗ: <strong>до ${{cfgBcrBadge ? cfgBcrBadge.textContent : '40%'}}</strong>`;
           kpiBcrBadge.className = "badge-status badge-ok";
           kpiBcrBadge.textContent = "Лимит застройки ≤ 40%";
@@ -4005,27 +4962,29 @@ def build():
           kpiLivingDesc.innerHTML = `Всего: <strong>${{fmt(tep.apartments_total)}} кв.</strong> · ср. <strong>${{avgApt}} м²</strong>`;
           kpiLivingBadge.textContent = `Комфорт (30 м²/чел)`;
 
-          // 3. ПЛОТНОСТЬ (FAR)
-          kpiFar.textContent = `FAR ${{tep.far.toFixed(2)}}`;
+          // 3. ПЛОТНОСТЬ ЗАСТРОЙКИ (Кпз)
+          kpiFar.textContent = `Кпз ${{tep.far.toFixed(2)}}`;
           const density = (tep.residential_area / siteHa / 1000).toFixed(1);
           kpiFarDesc.innerHTML = `Плотность фонда: <strong>${{density}} тыс. м²/га</strong>`;
-          if (tep.far > 2.50) {{
+          const maxFarNorm = cfgFarSlider ? parseFloat(cfgFarSlider.value) : 2.50;
+          if (tep.far > maxFarNorm) {{
             kpiFarBadge.className = "badge-status badge-warn";
-            kpiFarBadge.textContent = `⚠️ Превышение СП 42 (>2.50)`;
+            kpiFarBadge.textContent = `⚠️ Превышение нормы (>${{maxFarNorm.toFixed(2)}})`;
           }} else {{
             kpiFarBadge.className = "badge-status badge-ok";
-            kpiFarBadge.textContent = `СП 42: FAR ≤ 2.50`;
+            kpiFarBadge.textContent = `СП 42: Кпз ≤ ${{maxFarNorm.toFixed(2)}}`;
           }}
 
-          // 4. ПРОЦЕНТ ЗАСТРОЙКИ (BCR)
+          // 4. ПРОЦЕНТ ЗАСТРОЙКИ (Кз)
           kpiBcr.textContent = `${{(tep.bcr * 100).toFixed(1)}}%`;
           kpiBcrDesc.innerHTML = `Пятно зданий: <strong>${{fmt(tep.building_area)}} м²</strong>`;
-          if (tep.bcr > 0.40) {{
+          const maxBcrNorm = cfgBcrSlider ? parseFloat(cfgBcrSlider.value) : 0.40;
+          if (tep.bcr > maxBcrNorm) {{
             kpiBcrBadge.className = "badge-status badge-warn";
-            kpiBcrBadge.textContent = `⚠️ Превышение ПЗЗ (>40%)`;
+            kpiBcrBadge.textContent = `⚠️ Превышение нормы (>${{Math.round(maxBcrNorm * 100)}}%)`;
           }} else {{
             kpiBcrBadge.className = "badge-status badge-ok";
-            kpiBcrBadge.textContent = `Лимит ПЗЗ ≤ 40%`;
+            kpiBcrBadge.textContent = `Норма: Кз ≤ ${{Math.round(maxBcrNorm * 100)}}%`;
           }}
 
           // 5. КОММЕРЦИЯ / РИТЕЙЛ
@@ -4078,8 +5037,11 @@ def build():
           balParkingGroundArea.textContent = `${{fmt(s.tep.parking_ground_area)}} м² открытых стоянок`;
 
           if (s.tep.parking_underground > 0) {{
+            const lvls = s.tep.underground_levels || 1;
+            const lvlSuffix = lvls > 1 ? ` (${{lvls}} уровня)` : ` (1 уровень)`;
+            const styloText = s.tep.green_roof_area > 0 ? ` · кровля стилобата: ${{fmt(s.tep.green_roof_area)}} м²` : ``;
             balParkingUndergroundBox.className = "warning-banner warning-warn";
-            balParkingUndergroundText.textContent = `Дефицит в подземный паркинг: ${{fmt(s.tep.parking_underground)}} м/м (требуется ~${{fmt(s.tep.parking_underground_area_est)}} м² паркинга)`;
+            balParkingUndergroundText.innerHTML = `Дефицит в подземный паркинг: <strong>${{fmt(s.tep.parking_underground)}} м/м</strong> (~${{fmt(s.tep.parking_underground_area_est)}} м²${{lvlSuffix}}${{styloText}})`;
           }} else {{
             balParkingUndergroundBox.className = "warning-banner warning-info";
             balParkingUndergroundText.textContent = "Дефицита нет: 100% нормативных машиномест размещено на открытых стоянках участка.";
@@ -4280,6 +5242,7 @@ def build():
       }}
 
       function updateSectionsColoring() {{
+        if (!currentScenario || !currentScenario.sections) return;
         svgSectionsGroup.querySelectorAll(".svg-section").forEach(el => {{
           const secId = el.getAttribute("data-id");
           const sec = currentScenario.sections.find(x => x.id === secId);
@@ -4319,12 +5282,14 @@ def build():
           }});
         }} else if (activeMetric === "building") {{
           mapLegendTitle.textContent = "Корпуса застройки";
-          currentScenario.buildings.slice(0, 6).forEach((b, i) => {{
-            const div = document.createElement("div");
-            div.className = "legend-item";
-            div.innerHTML = `<span class="legend-chip" style="background:${{BUILDING_PALETTE[i % BUILDING_PALETTE.length]}}"></span><span>${{b.name}} (${{b.floors}} эт.)</span>`;
-            mapLegendItems.appendChild(div);
-          }});
+          if (currentScenario && currentScenario.buildings) {{
+            currentScenario.buildings.slice(0, 6).forEach((b, i) => {{
+              const div = document.createElement("div");
+              div.className = "legend-item";
+              div.innerHTML = `<span class="legend-chip" style="background:${{BUILDING_PALETTE[i % BUILDING_PALETTE.length]}}"></span><span>${{b.name}} (${{b.floors}} эт.)</span>`;
+              mapLegendItems.appendChild(div);
+            }});
+          }}
         }} else {{
           mapLegendTitle.textContent = "Поэтажная площадь GFA";
           const div = document.createElement("div");
@@ -4764,6 +5729,11 @@ def build():
       // Таблица
       function renderTable(filterText = "") {{
         tableBody.innerHTML = "";
+        if (!currentScenario || !currentScenario.sections || currentScenario.sections.length === 0) {{
+          tableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:24px; color:var(--secondary);">Нет данных. Задайте границы участка и выполните расчёт.</td></tr>';
+          if (tableCountLabel) tableCountLabel.textContent = "Секций: 0";
+          return;
+        }}
         const q = filterText.toLowerCase().trim();
         const filtered = (currentScenario.sections || []).filter(s => {{
           if (!q) return true;

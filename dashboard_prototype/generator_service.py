@@ -644,6 +644,59 @@ def _create_site_from_params(
     chosen_norm_id = params.get("regional_norm_id") or norm_id or "russia_sp42"
     selected_norm = get_regional_norm(chosen_norm_id) or get_regional_norm("russia_sp42")
 
+    custom_norm_data = params.get("custom_regional_norm")
+    if custom_norm_data and isinstance(custom_norm_data, dict):
+        try:
+            from src.core.regional_norms import (
+                RegionalNorm,
+                DensityNormConfig,
+                ParkingNormConfig,
+                PlaygroundNormConfig,
+                ParkingCalculationMethod,
+            )
+            p_method_str = custom_norm_data.get("parking_method", "per_1000_people")
+            try:
+                p_method = ParkingCalculationMethod(p_method_str)
+            except Exception:
+                p_method = ParkingCalculationMethod.PER_1000_PEOPLE
+
+            g_ratio = float(custom_norm_data.get("green_ratio_min", selected_norm.density.green_ratio_min))
+            if g_ratio > 1.0:
+                g_ratio /= 100.0
+            g_share = float(custom_norm_data.get("guest_share", selected_norm.parking.guest_share))
+            if g_share > 1.0:
+                g_share /= 100.0
+            bcr_val = float(params.get("max_bcr") or custom_norm_data.get("max_bcr", selected_norm.density.max_bcr))
+            if bcr_val > 1.0:
+                bcr_val /= 100.0
+
+            selected_norm = RegionalNorm(
+                id="custom",
+                name=custom_norm_data.get("name", "Пользовательский норматив"),
+                description="Индивидуальные параметры под ГПЗУ",
+                density=DensityNormConfig(
+                    max_far=float(params.get("max_far") or custom_norm_data.get("max_far", selected_norm.density.max_far)),
+                    max_bcr=bcr_val,
+                    green_ratio_min=g_ratio,
+                ),
+                parking=ParkingNormConfig(
+                    method=p_method,
+                    ratio=float(custom_norm_data.get("parking_ratio", selected_norm.parking.ratio)),
+                    guest_share=g_share,
+                    area_per_car=float(custom_norm_data.get("area_per_car", 25.0)),
+                ),
+                playgrounds=PlaygroundNormConfig(
+                    children=float(custom_norm_data.get("play_children", selected_norm.playgrounds.children)),
+                    sport=float(custom_norm_data.get("play_sport", selected_norm.playgrounds.sport)),
+                    relax=float(custom_norm_data.get("play_relax", selected_norm.playgrounds.relax)),
+                    utility=float(custom_norm_data.get("play_utility", selected_norm.playgrounds.utility)),
+                    waste=float(custom_norm_data.get("play_waste", selected_norm.playgrounds.waste)),
+                ),
+                living_area_per_person=float(custom_norm_data.get("living_area_per_person", getattr(selected_norm, "living_area_per_person", 28.2))),
+            )
+        except Exception as ex:
+            print(f"Ошибка применения пользовательского норматива: {ex}")
+
     max_bcr = float(params.get("max_bcr") or selected_norm.density.max_bcr)
     max_far = float(params.get("max_far") or selected_norm.density.max_far)
     green_ratio_min = float(params.get("green_ratio_min") or selected_norm.density.green_ratio_min)
@@ -1011,6 +1064,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         tep.residential_area,
         tep.apartments_total,
         selected_norm,
+        buildings=buildings,
     )
     checks = check_normatives(tep, config)
 
@@ -1054,7 +1108,15 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     try:
         v2_buildings = _generate_buildings_for_site(site, v2_cfg)
         v2_tep = calculate_tep(site, v2_buildings, config)
-        v2_balance = calculate_territory_balance(site.area, v2_tep.building_area, v2_tep.population, v2_tep.residential_area, v2_tep.apartments_total, selected_norm)
+        v2_balance = calculate_territory_balance(
+            site.area,
+            v2_tep.building_area,
+            v2_tep.population,
+            v2_tep.residential_area,
+            v2_tep.apartments_total,
+            selected_norm,
+            buildings=v2_buildings,
+        )
         v2_checks = check_normatives(v2_tep, config)
         var2 = _package_single_variant(
             site, v2_buildings, v2_tep, v2_balance, v2_checks, selected_norm,
@@ -1365,10 +1427,18 @@ def _package_single_variant(
             "population": tep.population,
             "parking_required": balance.parking.required_total,
             "parking_required_guest": balance.parking.required_guest,
+            "parking_required_resident": balance.parking.required_resident,
             "parking_ground": balance.parking.ground_capacity,
+            "parking_guest_ground": balance.parking.guest_ground_placed,
+            "parking_resident_ground": balance.parking.resident_ground_placed,
             "parking_ground_area": round(balance.parking.ground_area),
             "parking_underground": balance.parking.underground_deficit,
             "parking_underground_area_est": round(balance.parking.underground_area_est),
+            "underground_levels": getattr(balance.parking, "underground_levels", 1),
+            "stylobate_area": round(getattr(balance, "stylobate_area", 0.0)),
+            "green_roof_area": round(getattr(balance, "green_roof_area", 0.0)),
+            "effective_green_area": round(getattr(balance, "effective_green_area", 0.0)),
+            "effective_green_ratio": round(getattr(balance, "effective_green_ratio", 0.0), 3),
             "playgrounds_total": round(balance.playgrounds.total),
             "playgrounds_children": round(balance.playgrounds.children),
             "playgrounds_sport": round(balance.playgrounds.sport),
@@ -1376,6 +1446,7 @@ def _package_single_variant(
             "playgrounds_utility": round(balance.playgrounds.utility + balance.playgrounds.waste),
             "green_area": round(getattr(tep, "green_area", site.area * 0.25)),
         },
+        "regional_norm_details": selected_norm.to_dict() if hasattr(selected_norm, "to_dict") else None,
         "balance_shares": {k: round(v, 1) for k, v in balance.get_structure_shares().items()},
         "warnings": balance.warnings,
         "norm_checks": {

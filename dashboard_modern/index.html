@@ -2577,7 +2577,7 @@
           typology: cfgTypology.value,
           courtyard_orientation: cfgCourtOrient.value,
           allow_towers_in_mixed: cfgTowersMixed.checked,
-          variable_insolation: cfgVarInsolation.checked,
+          variable_insolation: cfgVarInsolation ? cfgVarInsolation.checked : true,
           fire_gap_end_to_end: parseFloat(cfgFireGapEnd ? cfgFireGapEnd.value : 10) || 10,
           fire_gap_parallel: parseFloat(cfgFireGapParallel ? cfgFireGapParallel.value : 18) || 18,
           gen_mode: cfgGenMode.value,

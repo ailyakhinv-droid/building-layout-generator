@@ -164,17 +164,13 @@ def import_sections_from_excel(
         width_small_m = round(parse_num(width_small_raw) / 1000.0, 2) if width_small_raw else None
 
         # Для угловых Г-образных секций:
-        # width_small = толщина бокового крыла (~13.2-13.6м)
-        # depth_small = толщина верхнего крыла (~16.9-17.0м, стык со стандартными 17м корпусами)
+        # Толщина обоих крыльев должна соответствовать стандартной глубине корпусов (17.0м),
+        # чтобы стык со смежными рядовыми и торцевыми секциями был гладким без выступов и разрывов.
         width_small = None
         depth_small = None
         if len_small_m and width_small_m:
-            if abs(len_small_m - 17.0) < abs(width_small_m - 17.0):
-                depth_small = len_small_m
-                width_small = width_small_m
-            else:
-                depth_small = width_small_m
-                width_small = len_small_m
+            width_small = 17.0
+            depth_small = 17.0
 
         # В градостроительной модели: width = фасадный шаг, depth = глубина корпуса
         facade_width = length_m

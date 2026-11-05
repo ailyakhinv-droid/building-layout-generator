@@ -69,6 +69,7 @@ class RegionalNorm:
     density: DensityNormConfig
     parking: ParkingNormConfig
     playgrounds: PlaygroundNormConfig
+    living_area_per_person: float = 28.2
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> RegionalNorm:
@@ -105,7 +106,36 @@ class RegionalNorm:
                 utility=float(playgrounds_data.get("utility", 0.1)),
                 waste=float(playgrounds_data.get("waste", 0.05)),
             ),
+            living_area_per_person=float(data.get("living_area_per_person", 28.2)),
         )
+
+    def to_dict(self) -> dict[str, Any]:
+        """Сериализовать объект норматива в словарь для API и фронтенда."""
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "density": {
+                "max_far": self.density.max_far,
+                "max_bcr": self.density.max_bcr,
+                "green_ratio_min": self.density.green_ratio_min,
+            },
+            "parking": {
+                "method": self.parking.method.value if hasattr(self.parking.method, "value") else str(self.parking.method),
+                "ratio": self.parking.ratio,
+                "guest_share": self.parking.guest_share,
+                "area_per_car": self.parking.area_per_car,
+            },
+            "playgrounds": {
+                "children": self.playgrounds.children,
+                "sport": self.playgrounds.sport,
+                "relax": self.playgrounds.relax,
+                "utility": self.playgrounds.utility,
+                "waste": self.playgrounds.waste,
+                "total_per_person": self.playgrounds.total_per_person,
+            },
+            "living_area_per_person": self.living_area_per_person,
+        }
 
     def calculate_parking_demand(
         self,

@@ -413,14 +413,14 @@ class PerimeterPlacementEngine:
                 w_court = north_total_w - 2 * end_sec.depth
                 max_wing_depth = min((maxy - we) - (y_bot + dc), max(35.0, min(75.0, w_court * 1.0)))
 
-                # SW угол
-                sections.append(PlacedSection(corner_sec, x_start + wc / 2.0, y_bot + dc / 2.0, 180.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                # SW угол (наружный угол на юго-западе, вырез на северо-востоке)
+                sections.append(PlacedSection(corner_sec, x_start + wc / 2.0, y_bot + dc / 2.0, 180.0, fl_low, is_flipped=True, floor_height=floor_height, ground_floor_height=ground_floor_height))
                 curr_x = x_start + wc
                 for sec in mid_x_secs:
                     sections.append(PlacedSection(sec, curr_x + sec.width / 2.0, y_bot + sec.depth / 2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
                     curr_x += sec.width
-                # SE угол
-                sections.append(PlacedSection(corner_sec, curr_x + wc / 2.0, y_bot + dc / 2.0, 180.0, fl_low, is_flipped=True, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                # SE угол (наружный угол на юго-востоке, вырез на северо-западе)
+                sections.append(PlacedSection(corner_sec, curr_x + wc / 2.0, y_bot + dc / 2.0, 180.0, fl_low, is_flipped=False, floor_height=floor_height, ground_floor_height=ground_floor_height))
 
                 # Западное крыло (идет на север)
                 mid_y_l = self._find_best_combo(middle_pool, max_wing_depth) if max_wing_depth >= 20.0 else []
@@ -454,14 +454,17 @@ class PerimeterPlacementEngine:
                 max_wing_x = min(len_x - dc - we, max(35.0, min(75.0, w_court * 1.0)))
                 mids_top = self._find_best_combo(middle_pool, max_wing_x) if max_wing_x >= 20.0 else []
 
-                # Углы и несущая стена
+                # Углы и несущая стена: при повороте 90°/270° глубина секции dc ориентирована по X, а wc — по Y
                 xb = minx + dc / 2.0 if is_open_east else maxx - dc / 2.0
-                sections.append(PlacedSection(corner_sec, minx + wc / 2.0 if is_open_east else maxx - wc / 2.0, y_start + wc / 2.0, 90.0, fl_back, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                ang_bot, flip_bot = (90.0, False) if is_open_east else (270.0, True)
+                ang_top, flip_top = (90.0, True) if is_open_east else (270.0, False)
+
+                sections.append(PlacedSection(corner_sec, xb, y_start + wc / 2.0, ang_bot, fl_back, is_flipped=flip_bot, floor_height=floor_height, ground_floor_height=ground_floor_height))
                 curr_y = y_start + wc
                 for s in mids_y:
                     sections.append(PlacedSection(s, xb, curr_y + s.width / 2.0, 90.0, fl_back, floor_height=floor_height, ground_floor_height=ground_floor_height))
                     curr_y += s.width
-                sections.append(PlacedSection(corner_sec, minx + wc / 2.0 if is_open_east else maxx - wc / 2.0, curr_y + wc / 2.0, 90.0, fl_back, is_flipped=True, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                sections.append(PlacedSection(corner_sec, xb, curr_y + wc / 2.0, ang_top, fl_back, is_flipped=flip_top, floor_height=floor_height, ground_floor_height=ground_floor_height))
 
                 # Верхнее крыло
                 curr_x = minx + dc if is_open_east else maxx - dc
