@@ -873,6 +873,12 @@
     .data-table td { padding: 10px 14px; border-top: 1px solid var(--border); color: var(--text); }
     .data-table tbody tr:hover { background: var(--muted); }
     .data-table tbody tr.selected-row { background: rgba(245, 158, 11, 0.12) !important; }
+    .data-table tbody tr.clickable-row { cursor: pointer; transition: all 0.15s ease; }
+    .data-table tbody tr.clickable-row:hover { background: rgba(59, 130, 246, 0.08) !important; }
+    .data-table tbody tr.active-scenario-row {
+      background: rgba(59, 130, 246, 0.14) !important;
+      box-shadow: inset 4px 0 0 var(--accent);
+    }
 
     .btn {
       font-family: inherit; font-size: 12px; font-weight: 600; padding: 6px 12px;
@@ -2122,14 +2128,20 @@
         </div>
 
         <div class="card">
-          <div class="card-header">
-            <h3 class="card-title">📋 Матрица вариантов этажности</h3>
-            <button class="btn btn-primary" id="btn-calc-variants">⚡ Рассчитать варианты</button>
+          <div class="card-header" style="flex-wrap:wrap; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <h3 class="card-title">📋 Матрица вариантов этажности</h3>
+              <span style="font-size:12px; color:var(--secondary);">· Сценарный анализ</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+              <span style="font-size:11px; color:var(--secondary); background:var(--muted); padding:4px 8px; border-radius:4px;">💡 Кликните по строке для применения сценария</span>
+              <button class="btn btn-primary" id="btn-calc-variants">⚡ Рассчитать варианты</button>
+            </div>
           </div>
           <div class="card-body">
-            <p style="font-size:12px; color:var(--secondary);">Сравнение сценариев высотности от 8 до 24 этажей с проверкой коэффициента плотности (Кпз) и процента застройки (Кз):</p>
+            <p style="font-size:12px; color:var(--secondary); margin-bottom:12px;">Сравнение сценариев высотности от 8 до 24 этажей с проверкой коэффициента плотности (Кпз) и процента застройки (Кз). Выберите любой вариант, чтобы мгновенно перестроить 3D-модель и пересчитать ТЭП:</p>
             <div class="table-wrapper">
-              <table class="data-table">
+              <table class="data-table" id="variants-data-table">
                 <thead>
                   <tr>
                     <th>Этажность</th>
@@ -2139,10 +2151,11 @@
                     <th>Кз (%)</th>
                     <th>Кпз</th>
                     <th>Нормы</th>
+                    <th style="text-align:right;">Сценарий</th>
                   </tr>
                 </thead>
                 <tbody id="variants-table-body">
-                  <tr><td colspan="7" style="text-align:center; color:var(--secondary); padding:24px;">Нажмите кнопку «Рассчитать варианты», чтобы сформировать сравнение.</td></tr>
+                  <tr><td colspan="8" style="text-align:center; color:var(--secondary); padding:24px;">Нажмите кнопку «Рассчитать варианты», чтобы сформировать сравнение.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -6056,24 +6069,60 @@
         }
       });
 
+      let activeVariantsList = [];
+
       function renderVariantsTable(variants) {
+        if (variants && variants.length) {
+          activeVariantsList = variants;
+        } else {
+          variants = activeVariantsList;
+        }
         variantsTableBody.innerHTML = "";
-        if (!variants.length) {
-          variantsTableBody.innerHTML = `<tr><td colspan="7" style="text-align:center;">Нет вариантов</td></tr>`;
+        if (!variants || !variants.length) {
+          variantsTableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding:24px; color:var(--secondary);">Нажмите кнопку «Рассчитать варианты», чтобы сформировать сравнение.</td></tr>`;
           return;
         }
+        const currentFloors = (cfgFloorsSlider && cfgFloorsSlider.value) ? parseInt(cfgFloorsSlider.value, 10) : 14;
         variants.forEach(v => {
           const tr = document.createElement("tr");
-          const okBadge = v.normative_ok ? `<span class="badge-status badge-ok">✅ В норме</span>` : `<span class="badge-status badge-warn">⚠️ Превышение</span>`;
+          const isActive = (v.floors === currentFloors);
+          tr.className = `clickable-row ${isActive ? "active-scenario-row" : ""}`;
+          tr.title = `Нажмите, чтобы применить сценарий ${v.floors} эт. к 3D-модели и расчётам`;
+
+          const okBadge = v.normative_ok 
+            ? `<span class="badge-status badge-ok">✅ В норме</span>` 
+            : `<span class="badge-status badge-warn">⚠️ Превышение</span>`;
+
+          const actionHtml = isActive
+            ? `<span class="badge-status" style="background:#10b981; color:#ffffff; font-size:11px; font-weight:600; padding:4px 10px; border-radius:4px; display:inline-flex; align-items:center; gap:4px;">🎯 Выбран</span>`
+            : `<button class="btn btn-outline btn-select-scenario" style="padding:3px 10px; font-size:11px;" type="button">Выбрать</button>`;
+
           tr.innerHTML = `
-            <td><strong>${v.floors} эт.</strong></td>
+            <td><strong style="${isActive ? 'color:var(--accent); font-size:14px;' : ''}">${v.floors} эт.</strong></td>
             <td>${fmt(v.gfa)}</td>
             <td>${fmt(v.residential_area)}</td>
             <td>${v.apartments_total}</td>
             <td>${v.bcr}%</td>
             <td>${v.far}</td>
             <td>${okBadge}</td>
+            <td style="text-align:right;">${actionHtml}</td>
           `;
+
+          tr.addEventListener("click", async () => {
+            if (cfgFloorsSlider) {
+              cfgFloorsSlider.value = v.floors;
+              if (cfgFloorsBadge) cfgFloorsBadge.textContent = `${v.floors} эт.`;
+            }
+            if (cfgGenMode) {
+              cfgGenMode.value = "fixed";
+              if (cfgTargetContainer) cfgTargetContainer.style.display = "none";
+              if (cfgMaximizeContainer) cfgMaximizeContainer.style.display = "none";
+            }
+            showToast(`🎯 Применяем сценарий: ${v.floors} эт. (GFA: ${fmt(v.gfa)} м²)...`);
+            await lockSiteAndGenerate();
+            renderVariantsTable(activeVariantsList);
+          });
+
           variantsTableBody.appendChild(tr);
         });
       }
@@ -6724,6 +6773,11 @@
           try {
             iframe3d.contentWindow.postMessage({ type: "loadData", data: s.viewer_3d_data, basemap: "osm" }, "*");
           } catch (_) {}
+        }
+
+        // Обновление выделения активного сценария в таблице вариантов этажности
+        if (typeof activeVariantsList !== "undefined" && activeVariantsList && activeVariantsList.length > 0) {
+          renderVariantsTable(activeVariantsList);
         }
       }
 
