@@ -23,7 +23,11 @@ from src.core.geo_utils import (
 from src.models.building import Building
 from src.models.site import Site
 from src.models.tep import TEP
-import streamlit.components.v1 as components
+
+try:
+    import streamlit.components.v1 as components
+except ImportError:
+    components = None
 
 # Палитра цветов для корпусов на карте
 BUILDING_MAP_COLORS = [
@@ -47,7 +51,10 @@ else:
 # Streamlit Custom Component для бесконфликтной передачи трансформации без перезагрузки страницы
 _MAP_COMP_DIR = Path(__file__).parent / "map_component"
 try:
-    _osm_map_comp = components.declare_component("osm_map_component", path=str(_MAP_COMP_DIR.resolve()))
+    if components is not None:
+        _osm_map_comp = components.declare_component("osm_map_component", path=str(_MAP_COMP_DIR.resolve()))
+    else:
+        _osm_map_comp = None
 except Exception:
     _osm_map_comp = None
 
@@ -74,9 +81,10 @@ def render_interactive_map(
     )
     if _osm_map_comp is not None:
         return _osm_map_comp(html=html_code, height=height + 20, key=key)
-    else:
+    elif components is not None:
         components.html(html_code, height=height + 20)
         return None
+    return None
 
 
 def generate_leaflet_map_html(

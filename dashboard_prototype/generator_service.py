@@ -867,11 +867,19 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
             for cl in getattr(roads_result, "centerlines", [])
             if not cl.is_empty
         ]
-        sub_blocks_paths = [
-            geom_to_svg_path(sb, minx, miny, maxx, maxy, svg_w, svg_h)
-            for sb in getattr(roads_result, "sub_blocks", [])
+        sub_blocks_data = [
+            {
+                "index": idx + 1,
+                "area_sqm": round(sb.area, 1),
+                "area_ha": round(sb.area / 10000.0, 2),
+                "path": geom_to_svg_path(sb, minx, miny, maxx, maxy, svg_w, svg_h),
+                "centroid_svg": list(geom_centroid_svg(sb, minx, miny, maxx, maxy, svg_w, svg_h)),
+                "centroid": [round(sb.centroid.x, 2), round(sb.centroid.y, 2)],
+            }
+            for idx, sb in enumerate(getattr(roads_result, "sub_blocks", []))
             if not sb.is_empty
         ]
+        sub_blocks_paths = [b["path"] for b in sub_blocks_data]
 
     # Leaflet HTML с interactive_transform=True и БЕЗ зданий
     try:
@@ -942,6 +950,7 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
             "height": svg_h,
         },
         "site_path": site_path,
+        "boundary_coords": list(site.boundary.exterior.coords) if hasattr(site.boundary, "exterior") else [],
         "buildable_path": buildable_path,
         "red_lines_paths": red_lines,
         "zouit_paths": zouit_paths,
@@ -951,11 +960,13 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
             "buffer_path": roads_buffer_path,
             "centerlines_paths": roads_centerlines,
             "sub_blocks_paths": sub_blocks_paths,
+            "sub_blocks_data": sub_blocks_data if roads_result else [],
             "sub_blocks_count": len(sub_blocks_paths),
             "area_sqm": roads_result.roads_area_sqm if roads_result else 0.0,
             "buffer_area_sqm": getattr(roads_result, "buffer_area_sqm", 0.0) if roads_result else 0.0,
             "length_m": roads_result.roads_length_m if roads_result else 0.0,
             "road_setback": getattr(roads_result, "road_setback", 4.0) if roads_result else 4.0,
+            "roads_items": getattr(roads_result, "roads_items", []) if roads_result else [],
         },
         "optimization_note": "",
         "leaflet_html": leaflet_html,
@@ -1014,6 +1025,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     fire_gap_end_to_end = float(params.get("fire_gap_end_to_end", config.get("fire_gap_end_to_end", 10.0)))
     fire_gap_parallel = float(params.get("fire_gap_parallel", config.get("fire_gap_parallel", 18.0)))
     only_ground_parking = bool(params.get("only_ground_parking", False))
+    car_free_courtyard = bool(params.get("car_free_courtyard", True))
+    allow_parking_in_zouit = bool(params.get("allow_parking_in_zouit", False))
 
     placement_cfg = PlacementConfig(
         target_floors=target_floors,
@@ -1175,6 +1188,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         selected_norm,
         buildings=buildings,
         only_ground_parking=only_ground_parking,
+        car_free_courtyard=car_free_courtyard,
     )
     checks = check_normatives(tep, config)
 
@@ -1185,7 +1199,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         site, buildings, tep, balance, checks, selected_norm,
         parcel_region_name, parcel_district_name, parcel_address,
         opt_note, typology, target_floors,
-        variant_id="var_1", variant_name=v1_name, variant_tag=v1_tag
+        variant_id="var_1", variant_name=v1_name, variant_tag=v1_tag,
+        allow_parking_in_zouit=allow_parking_in_zouit,
     )
 
     # Вариант 2 (Максимум GFA)
@@ -1228,13 +1243,15 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
             selected_norm,
             buildings=v2_buildings,
             only_ground_parking=only_ground_parking,
+            car_free_courtyard=car_free_courtyard,
         )
         v2_checks = check_normatives(v2_tep, config)
         var2 = _package_single_variant(
             site, v2_buildings, v2_tep, v2_balance, v2_checks, selected_norm,
             parcel_region_name, parcel_district_name, parcel_address,
             "Максимум полезного выхода GFA при нормативном соблюдении BCR и FAR", typology, v2_floors,
-            variant_id="var_2", variant_name="Максимум GFA", variant_tag="Инвестиционный"
+            variant_id="var_2", variant_name="Максимум GFA", variant_tag="Инвестиционный",
+            allow_parking_in_zouit=allow_parking_in_zouit,
         )
     except Exception as e:
         print(f"Ошибка расчета Варианта 2: {e}")
@@ -1282,13 +1299,15 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
             selected_norm,
             buildings=v3_buildings,
             only_ground_parking=only_ground_parking,
+            car_free_courtyard=car_free_courtyard,
         )
         v3_checks = check_normatives(v3_tep, config)
         var3 = _package_single_variant(
             site, v3_buildings, v3_tep, v3_balance, v3_checks, selected_norm,
             parcel_region_name, parcel_district_name, parcel_address,
             "Комфортная среда: умеренная этажность, увеличенные дворы, высокая доля озеленения", typology, v3_floors,
-            variant_id="var_3", variant_name="Комфорт-класс", variant_tag="Экологичный"
+            variant_id="var_3", variant_name="Комфорт-класс", variant_tag="Экологичный",
+            allow_parking_in_zouit=allow_parking_in_zouit,
         )
     except Exception as e:
         print(f"Ошибка расчета Варианта 3: {e}")
@@ -1334,6 +1353,7 @@ def _package_single_variant(
     variant_id: str = "var_1",
     variant_name: str = "Сбалансированный",
     variant_tag: str = "Целевой",
+    allow_parking_in_zouit: bool = False,
 ) -> dict[str, Any]:
     """Сформировать сериализуемый словарь данных для конкретного варианта застройки."""
     b_minx, b_miny, b_maxx, b_maxy = site.boundary.bounds
@@ -1376,11 +1396,19 @@ def _package_single_variant(
             for cl in getattr(roads_result, "centerlines", [])
             if not cl.is_empty
         ]
-        sub_blocks_paths = [
-            geom_to_svg_path(sb, minx, miny, maxx, maxy, svg_w, svg_h)
-            for sb in getattr(roads_result, "sub_blocks", [])
+        sub_blocks_data = [
+            {
+                "index": idx + 1,
+                "area_sqm": round(sb.area, 1),
+                "area_ha": round(sb.area / 10000.0, 2),
+                "path": geom_to_svg_path(sb, minx, miny, maxx, maxy, svg_w, svg_h),
+                "centroid_svg": list(geom_centroid_svg(sb, minx, miny, maxx, maxy, svg_w, svg_h)),
+                "centroid": [round(sb.centroid.x, 2), round(sb.centroid.y, 2)],
+            }
+            for idx, sb in enumerate(getattr(roads_result, "sub_blocks", []))
             if not sb.is_empty
         ]
+        sub_blocks_paths = [b["path"] for b in sub_blocks_data]
         roads_area_sqm = roads_result.roads_area_sqm
         roads_buffer_area_sqm = getattr(roads_result, "buffer_area_sqm", 0.0)
         roads_length_m = roads_result.roads_length_m
@@ -1406,11 +1434,40 @@ def _package_single_variant(
     except Exception as ex:
         print(f"Ошибка трассировки пожарных проездов: {ex}")
 
+    # ── Трассировка парковочных пространств (СП 113.13330 / «Двор без машин») ──
+    parking_bays_path = ""
+    parking_slots_paths = []
+    parking_res = None
+    try:
+        from src.core.parking_layout import generate_parking_layout
+        ground_target = getattr(balance.parking, "ground_capacity", 0) if balance and balance.parking else 0
+        is_car_free = getattr(balance.parking, "car_free_courtyard", True) if balance and balance.parking else True
+        parking_res = generate_parking_layout(
+            site=site,
+            buildings=buildings,
+            target_spaces=ground_target,
+            car_free_courtyard=is_car_free,
+            fire_lanes_poly=fire_res.fire_lanes_polygon if fire_res else None,
+            allow_parking_in_zouit=allow_parking_in_zouit,
+            roads_poly=roads_result.roads_polygon if roads_result else None,
+            road_centerlines=roads_result.centerlines if roads_result else None,
+            roads_buffer=roads_result.buffer_polygon if roads_result else None,
+        )
+        if parking_res.bays_polygon and not parking_res.bays_polygon.is_empty:
+            parking_bays_path = geom_to_svg_path(parking_res.bays_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+        for s in parking_res.slots:
+            slot_p = geom_to_svg_path(s.polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+            if slot_p:
+                parking_slots_paths.append(slot_p)
+    except Exception as ex:
+        print(f"Ошибка генерации парковок: {ex}")
+
     # ── Санитарные разрывы стоянок и площадки ТКО (СанПиН 2.2 и 2.1) ──────────
     waste_sites_data = []
     waste_radius_paths = []
+    parking_buffer_10m_path = ""
     parking_buffer_15m_path = ""
-    parking_buffer_25m_path = ""
+    parking_impact_path = ""
     san_res = None
     try:
         from src.core.sanitary_norms import SanitaryNormsEngine
@@ -1422,6 +1479,7 @@ def _package_single_variant(
             buildings=buildings,
             population=pop_num,
             fire_lanes=fire_poly,
+            parking_bays_poly=parking_res.bays_polygon if parking_res else None,
         )
         for ws in san_res.waste_sites:
             ws_path = geom_to_svg_path(ws.polygon, minx, miny, maxx, maxy, svg_w, svg_h)
@@ -1436,10 +1494,12 @@ def _package_single_variant(
                 "is_compliant": ws.is_compliant,
                 "note": ws.note,
             })
+        if san_res.parking_forbidden_buffer_10m and not san_res.parking_forbidden_buffer_10m.is_empty:
+            parking_buffer_10m_path = geom_to_svg_path(san_res.parking_forbidden_buffer_10m, minx, miny, maxx, maxy, svg_w, svg_h)
         if san_res.parking_forbidden_buffer_15m and not san_res.parking_forbidden_buffer_15m.is_empty:
             parking_buffer_15m_path = geom_to_svg_path(san_res.parking_forbidden_buffer_15m, minx, miny, maxx, maxy, svg_w, svg_h)
-        if san_res.parking_forbidden_buffer_25m and not san_res.parking_forbidden_buffer_25m.is_empty:
-            parking_buffer_25m_path = geom_to_svg_path(san_res.parking_forbidden_buffer_25m, minx, miny, maxx, maxy, svg_w, svg_h)
+        if getattr(san_res, "parking_impact_buffer_10m", None) and not san_res.parking_impact_buffer_10m.is_empty:
+            parking_impact_path = geom_to_svg_path(san_res.parking_impact_buffer_10m, minx, miny, maxx, maxy, svg_w, svg_h)
     except Exception as ex:
         print(f"Ошибка санитарного анализа: {ex}")
 
@@ -1523,7 +1583,9 @@ def _package_single_variant(
         leaflet_html = f"<!-- Leaflet: {e} -->"
 
     try:
-        viewer_3d_data = build_3d_geojson_data(site, buildings, tep)
+        viewer_3d_data = build_3d_geojson_data(
+            site, buildings, tep, parking_slots=parking_res.slots if parking_res else None
+        )
         viewer_3d_html = generate_3d_viewer_html(site, buildings, tep, height="640px", default_basemap="osm", standalone=False)
     except Exception as e:
         viewer_3d_data = None
@@ -1578,6 +1640,7 @@ def _package_single_variant(
             "height": svg_h,
         },
         "site_path": site_path,
+        "boundary_coords": list(site.boundary.exterior.coords) if hasattr(site.boundary, "exterior") else [],
         "buildable_path": buildable_path,
         "red_lines_paths": red_lines,
         "zouit_paths": zouit_paths,
@@ -1587,11 +1650,13 @@ def _package_single_variant(
             "buffer_path": roads_buffer_path,
             "centerlines_paths": roads_centerlines,
             "sub_blocks_paths": sub_blocks_paths,
+            "sub_blocks_data": sub_blocks_data if roads_result else [],
             "sub_blocks_count": len(sub_blocks_paths),
             "area_sqm": roads_area_sqm,
             "buffer_area_sqm": roads_buffer_area_sqm,
             "length_m": roads_length_m,
             "road_setback": getattr(roads_result, "road_setback", 4.0) if roads_result else 4.0,
+            "roads_items": getattr(roads_result, "roads_items", []) if roads_result else [],
         },
         "fire_safety": {
             "fire_roads_path": fire_roads_path,
@@ -1607,8 +1672,10 @@ def _package_single_variant(
         "sanitary": {
             "waste_sites": waste_sites_data,
             "waste_radius_paths": waste_radius_paths,
+            "parking_buffer_10m_path": parking_buffer_10m_path,
             "parking_buffer_15m_path": parking_buffer_15m_path,
-            "parking_buffer_25m_path": parking_buffer_25m_path,
+            "parking_impact_path": parking_impact_path,
+            "min_parking_distance_to_windows_m": getattr(san_res, "min_parking_distance_to_windows_m", 10.5) if san_res else 10.5,
             "total_containers": san_res.total_containers_count if san_res else 0,
             "waste_coverage_pct": san_res.waste_coverage_pct if san_res else 100.0,
             "waste_is_compliant": san_res.waste_is_compliant if san_res else True,
@@ -1616,6 +1683,14 @@ def _package_single_variant(
             "parking_is_compliant": san_res.parking_is_compliant if san_res else True,
             "parking_issues": san_res.parking_issues if san_res else [],
             "summary_notes": san_res.summary_notes if san_res else [],
+        },
+        "parking_layout": {
+            "bays_path": parking_bays_path,
+            "slots_paths": parking_slots_paths,
+            "slots_count": parking_res.slots_count if parking_res else 0,
+            "car_free_courtyard": parking_res.car_free_courtyard if parking_res else True,
+            "courtyard_slots_count": parking_res.courtyard_slots_count if parking_res else 0,
+            "perimeter_slots_count": parking_res.perimeter_slots_count if parking_res else 0,
         },
         "optimization_note": opt_note,
         "viewer_3d_html": viewer_3d_html,
@@ -1647,6 +1722,7 @@ def _package_single_variant(
             "parking_underground_area_est": round(balance.parking.underground_area_est),
             "underground_levels": getattr(balance.parking, "underground_levels", 1),
             "only_ground_parking": getattr(balance.parking, "only_ground_parking", False),
+            "car_free_courtyard": getattr(balance.parking, "car_free_courtyard", True),
             "parking_norm_met": getattr(balance.parking, "parking_norm_met", True),
             "stylobate_area": round(getattr(balance, "stylobate_area", 0.0)),
             "green_roof_area": round(getattr(balance, "green_roof_area", 0.0)),

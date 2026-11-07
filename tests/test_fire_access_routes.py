@@ -86,6 +86,16 @@ class TestFireAccessRoutes(unittest.TestCase):
         self.assertGreater(len(res.issues), 0)
         self.assertTrue(any("выходит за границу участка" in issue for issue in res.issues))
 
+    def test_single_side_courtyard_access_low_rise(self):
+        """Для H <= 28 м при обеспеченности дворовым проездом выход за межу не блокирует СП 4.13130."""
+        site = create_rectangular_site(150, 150)
+        # Корпус 8 этажей с отступом 6 м от границы (правый край x=144)
+        b_low = Building([PlacedSection(self.sec_mid, 128.425, 75, floors=8)])
+
+        res = self.engine.generate_fire_routes(site, [b_low])
+        self.assertTrue(res.is_compliant)
+        self.assertEqual(len(res.issues), 0)
+
     def test_geojson_features_structure(self):
         """GeoJSON экспортирует слои FIRE_ROADS и FIRE_CENTERLINE."""
         site = create_rectangular_site(150, 150)

@@ -44,6 +44,7 @@ class ParkingBalance:
     guest_ground_placed: int = 0 # Фактически размещено гостевых мест открыто
     resident_ground_placed: int = 0 # Фактически размещено постоянных мест открыто
     only_ground_parking: bool = False # Флаг: только наземные парковки (без подземного)
+    car_free_courtyard: bool = False  # Концепция «Двор без машин»
     parking_norm_met: bool = True # Обеспечен ли норматив автостоянок на участке
 
 
@@ -135,6 +136,7 @@ def calculate_territory_balance(
     underground_area_per_car: float = 35.0,
     buildings: list[Any] | None = None,
     only_ground_parking: bool = False,
+    car_free_courtyard: bool = False,
 ) -> TerritoryBalanceResult:
     """Рассчитать полный градостроительный баланс территории земельного участка.
 
@@ -226,12 +228,23 @@ def calculate_territory_balance(
     #   а при дефиците земли направляются в подземный/стилобатный паркинг.
     if land_for_parking > 0:
         max_possible_ground = int(land_for_parking / area_per_car)
-        # 1. Сначала гостевые
+        # 1. Сначала гостевые (на внешнем периметре)
         actual_guest_ground = min(req_guest, max_possible_ground)
         rem_ground = max_possible_ground - actual_guest_ground
-        # 2. Затем постоянные жители
-        actual_resident_ground = min(req_resident, rem_ground)
-        actual_ground_spaces = actual_guest_ground + actual_resident_ground
+
+        # 2. Затем постоянные жители: при «Двор без машин» места жителей направляются
+        # в подземный/стилобатный паркинг (если не включен жесткий режим только наземных стоянок)
+        if car_free_courtyard and not only_ground_parking:
+            actual_resident_ground = 0
+            actual_ground_spaces = actual_guest_ground
+            warnings.append(
+                f"Концепция «Двор без машин»: открытые стоянки ({actual_ground_spaces} м/м) размещены "
+                f"исключительно по внешнему периметру. Двор свободен от личного автотранспорта."
+            )
+        else:
+            actual_resident_ground = min(req_resident, rem_ground)
+            actual_ground_spaces = actual_guest_ground + actual_resident_ground
+
         actual_ground_area = round(actual_ground_spaces * area_per_car, 1)
 
         actual_green_area = round(
@@ -340,6 +353,7 @@ def calculate_territory_balance(
         guest_ground_placed=actual_guest_ground,
         resident_ground_placed=actual_resident_ground,
         only_ground_parking=only_ground_parking,
+        car_free_courtyard=car_free_courtyard,
         parking_norm_met=parking_norm_met,
     )
 

@@ -91,6 +91,7 @@ def build_3d_geojson_data(
     tep: TEP | None = None,
     include_surroundings: bool = True,
     surroundings_radius: float = 400.0,
+    parking_slots: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Сформировать словарь GeoJSON-слоев для 3D-визуализации."""
     center_lat, center_lon = _get_site_geo_center(site)
@@ -254,6 +255,23 @@ def build_3d_geojson_data(
                     },
                 })
 
+    # 5.5. Наземные автостоянки и машиноместа (СП 113.13330)
+    parking_features = []
+    if parking_slots:
+        for idx, ps in enumerate(parking_slots):
+            poly_to_convert = getattr(ps, "polygon", ps)
+            if poly_to_convert and not poly_to_convert.is_empty:
+                ps_wgs = _to_wgs84(poly_to_convert, center_lat, center_lon)
+                parking_features.append({
+                    "type": "Feature",
+                    "geometry": mapping(ps_wgs),
+                    "properties": {
+                        "type": "parking_slot",
+                        "name": f"Машиноместо {idx + 1}",
+                        "id": idx + 1,
+                    },
+                })
+
     # 6. Окружающая застройка из OpenStreetMap (OSM)
     surroundings_data = {"type": "FeatureCollection", "features": []}
     if include_surroundings and abs(center_lat) > 1.0 and abs(center_lon) > 1.0:
@@ -274,6 +292,7 @@ def build_3d_geojson_data(
         "zouit": {"type": "FeatureCollection", "features": zouit_features},
         "red_lines": {"type": "FeatureCollection", "features": red_line_features},
         "roads": {"type": "FeatureCollection", "features": road_features},
+        "parking": {"type": "FeatureCollection", "features": parking_features},
         "buildings": {"type": "FeatureCollection", "features": building_features},
         "surroundings": surroundings_data,
     }

@@ -376,7 +376,33 @@ class PlacementEngine:
         if max_floors_from_h is not None:
             floors = min(floors, max_floors_from_h)
 
-        # 4. Выбор стратегии в зависимости от типологии
+        # 4. Проверка нарезки улично-дорожной сетью на кварталы (Roads First workflow)
+        roads_res = getattr(self.site, "roads_result", None)
+        sub_blocks = [
+            b for b in getattr(roads_res, "sub_blocks", [])
+            if b and not b.is_empty and b.area >= 600.0
+        ] if roads_res else []
+
+        if not sub_blocks and isinstance(buildable, MultiPolygon) and len(buildable.geoms) > 1:
+            sub_blocks = [p for p in buildable.geoms if p.area >= 600.0]
+
+        # Если кварталов несколько (>= 2): генерируем застройку внутри КАЖДОГО квартала
+        if len(sub_blocks) >= 2:
+            all_buildings: list[Building] = []
+            for b_idx, block_poly in enumerate(sub_blocks):
+                block_b = self._generate_for_sub_block(
+                    block_poly=block_poly,
+                    placement_config=placement_config,
+                    sections=sections,
+                    floors=floors,
+                    max_floors_from_h=max_floors_from_h,
+                    block_index=b_idx,
+                    total_blocks=len(sub_blocks),
+                )
+                all_buildings.extend(block_b)
+            return self._enforce_normative_limits(all_buildings, placement_config)
+
+        # 5. Выбор стратегии в зависимости от типологии (для единого квартала)
         typology = placement_config.typology.upper()
 
         if typology in ("TOWER", "TOWERS", "POINT"):
@@ -421,8 +447,127 @@ class PlacementEngine:
                 buildable, primary_angle, middle, corner, end, floors, placement_config
             )
 
-        # 5. Строгое соблюдение нормативных ограничений (BCR, FAR, Height)
+        # 6. Строгое соблюдение нормативных ограничений (BCR, FAR, Height)
         return self._enforce_normative_limits(buildings, placement_config)
+
+    def _generate_for_sub_block(
+        self,
+        block_poly: Polygon,
+        placement_config: PlacementConfig,
+        sections: dict[str, Any],
+        floors: int,
+        max_floors_from_h: int | None = None,
+        block_index: int = 0,
+        total_blocks: int = 1,
+    ) -> list[Building]:
+        """Сгенерировать застройку внутри отдельного урбан-блока (квартала).
+
+        Обеспечивает независимую гармоничную композицию для каждого квартала
+        (П-образная со своим двором, линейная, башни, смешанная) с соблюдением
+        всех отступов от дорог и красных линий.
+        """
+        if not block_poly or block_poly.is_empty or block_poly.area < 500.0:
+            return []
+
+        # 1. Индивидуальная ось ориентации для этого конкретного квартала
+        if placement_config.placement_angle is not None:
+            primary_angle = placement_config.placement_angle
+        else:
+            block_angle, perp_angle = get_primary_axes(block_poly)
+            ah = angle_to_horizontal(block_angle)
+            if ah < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+                if angle_to_horizontal(perp_angle) >= MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+                    primary_angle = perp_angle
+                else:
+                    primary_angle = RECOMMENDED_MERIDIAN_ANGLE_DEG
+            else:
+                primary_angle = block_angle
+
+        middle = sections["middle"]
+        end = sections.get("end", middle)
+        corner = sections.get("corner", middle)
+        tower = sections.get("tower", middle)
+
+        typology = placement_config.typology.upper()
+
+        # Для AUTO определяем оптимальную форму застройки под пропорции конкретного квартала
+        if typology in ("AUTO", "MIXED"):
+            b_len, b_w, b_aspect = get_obb_dimensions(block_poly)
+            b_area = block_poly.area
+            if b_area >= 3500.0 and b_w >= 48.0 and b_aspect <= 2.2:
+                # Просторный квадратный/прямоугольный квартал — П-образный двор
+                effective_typology = "U_SHAPE"
+            elif b_aspect >= 2.0 or b_w < 45.0:
+                # Вытянутый или узкий квартал — строчная (линейная) посадка
+                effective_typology = "LINEAR"
+            elif b_area < 1800.0:
+                # Компактный квартал — точечные башни
+                effective_typology = "TOWER"
+            else:
+                effective_typology = "MIXED"
+        else:
+            effective_typology = typology
+
+        # Активируем контекст текущего блока: _fits_in_buildable проверяет попадание строго в этот квартал
+        old_block_poly = getattr(self, "_active_block_poly", None)
+        self._active_block_poly = block_poly
+        try:
+            if effective_typology in ("TOWER", "TOWERS", "POINT"):
+                tower_sec = sections.get("tower", middle)
+                t_floors = placement_config.target_floors or tower_sec.default_floors
+                if max_floors_from_h is not None:
+                    t_floors = min(t_floors, max_floors_from_h)
+                t_floors = self._clamp_floors(tower_sec, t_floors)
+                b_res = self._generate_tower_layout(
+                    block_poly, primary_angle, tower_sec, t_floors, placement_config
+                )
+            elif effective_typology == "LINEAR":
+                b_res = self._generate_linear(
+                    block_poly, primary_angle, middle, end, floors, placement_config
+                )
+            elif effective_typology == "U_SHAPE":
+                b_res = self._generate_u_shape_layout(
+                    block_poly, primary_angle, middle, corner, end, floors, placement_config
+                )
+                if not b_res:
+                    b_res = self._generate_l_shape_layout(
+                        block_poly, primary_angle, middle, corner, end, floors, placement_config
+                    )
+                if not b_res:
+                    b_res = self._generate_linear(
+                        block_poly, primary_angle, middle, end, floors, placement_config
+                    )
+            elif effective_typology == "L_SHAPE":
+                b_res = self._generate_l_shape_layout(
+                    block_poly, primary_angle, middle, corner, end, floors, placement_config
+                )
+            elif effective_typology in ("PERIMETER", "URBAN_BLOCK", "COURTYARD"):
+                from src.core.perimeter_placement import PerimeterPlacementEngine
+                engine = PerimeterPlacementEngine(self.site, self.library, self.config)
+                b_res = engine.generate(
+                    block_poly,
+                    primary_angle,
+                    self._middle_pool,
+                    self._corner_pool,
+                    self._end_pool,
+                    floors,
+                    placement_config,
+                )
+                if not b_res:
+                    b_res = self._generate_u_shape_layout(
+                        block_poly, primary_angle, middle, corner, end, floors, placement_config
+                    )
+            else:  # MIXED
+                b_res = self._generate_mixed_layout(
+                    block_poly, primary_angle, middle, corner, end, floors, placement_config
+                )
+                if not b_res:
+                    b_res = self._generate_linear(
+                        block_poly, primary_angle, middle, end, floors, placement_config
+                    )
+            return b_res
+        finally:
+            self._active_block_poly = old_block_poly
 
     def _enforce_normative_limits(
         self,
@@ -2074,9 +2219,9 @@ class PlacementEngine:
         """Проверить, что здание строго помещается в зону допустимой застройки."""
         try:
             footprint = building.footprint
-            buildable = self.site.buildable_area
+            target = getattr(self, "_active_block_poly", None) or self.site.buildable_area
             # Строгое вхождение без наезда на нормативный отступ
-            return buildable.contains(footprint)
+            return target.contains(footprint)
         except Exception:
             return False
 

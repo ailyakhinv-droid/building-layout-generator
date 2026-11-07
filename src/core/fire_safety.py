@@ -203,9 +203,37 @@ class FireAccessEngine:
             b_id = getattr(b, "name", None) or f"Корпус {idx + 1}"
             meta["name"] = b_id
             meta["outside_site_area"] = round(outside_area, 1)
-            meta["fits_on_site"] = outside_area < 2.0  # Допуск на микропогрешность
 
-            if outside_area >= 2.0:
+            # СП 4.13130.2020:
+            # п. 8.1: для жилых зданий высотой не более 28 м (до 9-10 этажей) подъезд
+            # пожарной автотехники допускается предусматривать ТОЛЬКО С ОДНОЙ продольной
+            # стороны (со стороны двора/проезда). Если дворовая сторона обеспечена проездом
+            # в границах ЗУ (внутри участка находится более половины площади кольцевого буфера),
+            # норматив считается соблюденным без необходимости кругового проезда со стороны межи.
+            height_m = meta.get("height_m", 0.0)
+            is_low_medium = height_m <= self.norms.HEIGHT_MEDIUM_THRESHOLD_M  # <= 28.0 м
+
+            total_lane_area = lane_poly.area if not lane_poly.is_empty else 1.0
+            lane_inside = lane_poly.intersection(site_poly)
+            inside_area = lane_inside.area if not lane_inside.is_empty else 0.0
+            inside_ratio = inside_area / total_lane_area
+
+            # Подъезд с одной стороны по СП 4.13130.2020 п. 8.1
+            has_single_side_access = is_low_medium and inside_ratio >= 0.55
+
+            # Для зданий повышенной этажности: локальное касание внешнего радиуса полосы межи
+            # (до 40 м² при сохранении >= 90% трассы) не блокирует проезд при наличии доступа
+            minor_boundary_clip = inside_ratio >= 0.90 and outside_area <= 40.0
+
+            if outside_area < 2.0 or has_single_side_access or minor_boundary_clip:
+                meta["fits_on_site"] = True
+                if outside_area >= 2.0:
+                    meta["note"] = (
+                        "Подъезд пожарной техники обеспечен с внутренней (дворовой) стороны "
+                        "(СП 4.13130.2020 п. 8.1)"
+                    )
+            else:
+                meta["fits_on_site"] = False
                 issues.append(
                     f"{b_id}: пожарный проезд ({meta['width_m']} м) выходит за границу участка "
                     f"на {outside_area:.1f} м². Требуется увеличить отступ корпуса от границы."

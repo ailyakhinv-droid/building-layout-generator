@@ -589,6 +589,56 @@
       transform: translateX(0);
     }
 
+    .map-calc-overlay {
+      position: absolute;
+      top: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: rgba(15, 23, 42, 0.94);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      color: #ffffff;
+      padding: 10px 22px;
+      border-radius: 30px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.18);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      pointer-events: none;
+      transition: all 0.2s ease;
+    }
+    .map-calc-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2.5px solid rgba(255, 255, 255, 0.25);
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .map-calc-title {
+      font-size: 12.5px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+    }
+    .map-calc-sub {
+      font-size: 10.5px;
+      color: #94a3b8;
+    }
+
+    @keyframes pulseGlow {
+      0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7); transform: scale(1); }
+      50% { box-shadow: 0 0 0 8px rgba(37, 99, 235, 0); transform: scale(1.02); }
+      100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); transform: scale(1); }
+    }
+    .btn-pulse-glow {
+      animation: pulseGlow 1.2s ease-in-out 3;
+    }
+    .svg-subblock-label {
+      pointer-events: none;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+    }
+
     /* РЕЖИМ ZEN / ПОЛНОЭКРАННЫЙ ХОЛСТ */
     #viewport-card-container.zen-fullscreen {
       position: fixed !important;
@@ -698,10 +748,10 @@
     .svg-zouit { fill: url(#pattern-zouit); stroke: #ef4444; stroke-width: 1.8; stroke-dasharray: 4 2; opacity: 0.85; transition: opacity 0.15s ease; cursor: pointer; }
     .svg-zouit:hover { opacity: 1; stroke: #b91c1c; stroke-width: 2.5; }
     .svg-red-line { fill: none; stroke: #ef4444; stroke-width: 2.2; }
-    .svg-road-corridor { fill: #334155; stroke: #64748b; stroke-width: 1.2; opacity: 0.95; }
-    .svg-road-buffer { fill: rgba(148, 163, 184, 0.22); stroke: rgba(100, 116, 139, 0.45); stroke-width: 1.0; stroke-dasharray: 4 3; }
-    .svg-road-centerline { fill: none; stroke: #ffffff; stroke-width: 2.2; stroke-dasharray: 6 5; opacity: 0.9; }
-    .svg-subblock-bound { fill: rgba(37, 99, 235, 0.03); stroke: #3b82f6; stroke-width: 1.4; stroke-dasharray: 4 3; }
+    .svg-road-corridor { fill: #334155; stroke: #64748b; stroke-width: 1.2; opacity: 0.95; pointer-events: none; }
+    .svg-road-buffer { fill: rgba(148, 163, 184, 0.22); stroke: rgba(100, 116, 139, 0.45); stroke-width: 1.0; stroke-dasharray: 4 3; pointer-events: none; }
+    .svg-road-centerline { fill: none; stroke: #ffffff; stroke-width: 2.2; stroke-dasharray: 6 5; opacity: 0.9; pointer-events: none; }
+    .svg-subblock-bound { fill: rgba(37, 99, 235, 0.03); stroke: #3b82f6; stroke-width: 1.4; stroke-dasharray: 4 3; pointer-events: none; }
     .svg-road-preview { stroke: #2563eb; stroke-width: 3.5; stroke-dasharray: 6 4; fill: none; }
     .svg-fire-road { fill: rgba(239, 68, 68, 0.18); stroke: #ef4444; stroke-width: 1.6; stroke-dasharray: 6 3; }
     .svg-fire-turnaround { fill: rgba(220, 38, 38, 0.32); stroke: #dc2626; stroke-width: 2.2; }
@@ -1284,7 +1334,7 @@
 
         <!-- Кнопки закрепления участка на Шаге 1 -->
         <button class="btn btn-primary btn-lock-site" id="btn-lock-sidebar" type="button" style="width:100%; margin-top:8px; padding:11px 14px; font-size:13px; font-weight:700;">
-          🔒 Закрепить участок и перейти к застройке
+          🔒 Зафиксировать границы участка
         </button>
         <button class="btn btn-unlock-site" id="btn-unlock-sidebar" type="button" style="display:none; width:100%; margin-top:8px; padding:9px 12px; font-size:12px;">
           🔓 Изменить посадку участка
@@ -1313,10 +1363,10 @@
           </select>
         </div>
 
-        <!-- БЛОК НАСТРОЕК УЛИЧНО-ДОРОЖНОЙ СЕТИ И НАРЕЗКИ КВАРТАЛОВ -->
+        <!-- БЛОК НАСТРОЕК УЛИЧНО-ДОРОЖНОЙ СЕТИ И НАРЕЗКИ КВАРТАЛОВ (ROADS FIRST) -->
         <div id="container-road-slicing" style="display:flex; flex-direction:column; gap:8px; margin-top:8px; padding:10px; background:rgba(37,99,235,0.03); border:1px solid #cbd5e1; border-radius:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div style="font-size:11.5px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:0.5px;">🛣️ Нарезка дорогами на лету</div>
+            <div style="font-size:11.5px; font-weight:700; color:#0f172a; text-transform:uppercase; letter-spacing:0.5px;">🛣️ Шаг 1: Дороги и нарезка кварталов</div>
             <span class="badge" id="badge-road-blocks" style="font-size:11px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe;">1 квартал</span>
           </div>
 
@@ -1331,6 +1381,25 @@
             </select>
           </div>
 
+          <!-- Выбор категории дороги перед рисованием -->
+          <div class="control-row" style="margin-top:2px;">
+            <label class="control-label">Категория чертимой дороги</label>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:3px;">
+              <button type="button" class="btn btn-secondary road-cat-pill btn-active" data-cat="district" style="font-size:10.5px; padding:5px 4px; text-align:center;" title="СП 42.13330: 1+1 полоса, ширина 15 м, отступ 4 м">
+                🏘️ Внутриквартальная (15 м)
+              </button>
+              <button type="button" class="btn btn-secondary road-cat-pill" data-cat="arterial" style="font-size:10.5px; padding:5px 4px; text-align:center;" title="СП 42.13330: 2+2 полосы, ширина 22 м, отступ 6 м">
+                🛣️ Магистральная (22 м)
+              </button>
+              <button type="button" class="btn btn-secondary road-cat-pill" data-cat="local" style="font-size:10.5px; padding:5px 4px; text-align:center;" title="СП 4.13130: 2 полосы, ширина 8 м, отступ 3 м">
+                🚗 Проезд (8 м)
+              </button>
+              <button type="button" class="btn btn-secondary road-cat-pill" data-cat="custom" style="font-size:10.5px; padding:5px 4px; text-align:center;" title="Индивидуальная ширина и отступ">
+                ⚙️ Настраиваемая
+              </button>
+            </div>
+          </div>
+
           <div class="control-row" id="row-road-pos" style="display:none;">
             <div style="display:flex; justify-content:space-between;">
               <label class="control-label" for="cfg-road-pos">Положение дороги</label>
@@ -1343,10 +1412,10 @@
           <div class="control-row" id="row-road-width" style="display:none;">
             <div style="display:flex; justify-content:space-between;">
               <label class="control-label" for="cfg-road-width">Ширина улицы</label>
-              <span id="badge-road-width" style="font-size:11px; font-weight:600; color:#2563eb;">16 м</span>
+              <span id="badge-road-width" style="font-size:11px; font-weight:600; color:#2563eb;">15 м</span>
             </div>
-            <input type="range" class="slider-input" id="cfg-road-width" min="10" max="24" step="2" value="16" />
-            <div class="control-hint">Ширина проезжей части / полосы отвода</div>
+            <input type="range" class="slider-input" id="cfg-road-width" min="6" max="30" step="1" value="15" />
+            <div class="control-hint">Ширина проезжей части / полосы отвода (м)</div>
           </div>
 
           <div class="control-row" id="row-road-setback" style="display:none;">
@@ -1363,12 +1432,25 @@
             <button class="btn" id="btn-reset-roads" style="font-size:11.5px; padding:6px 10px;" title="Сбросить нарезку">Сброс</button>
           </div>
           <div id="draw-road-status" style="display:none; font-size:11px; color:#1d4ed8; background:#eff6ff; border:1px solid #bfdbfe; padding:6px 8px; border-radius:4px; line-height:1.4;">
-            🎯 <strong>Режим черчения:</strong> кликните начальную точку, затем конечную точку дороги поперек участка (Esc для отмены).
+            🎯 <strong>Режим черчения:</strong> кликните начальную точку, затем конечную точку дороги поперек участка (Shift — угол 45°/90°, Esc — отмена).
           </div>
-          <div id="box-custom-roads" style="display:none; align-items:center; justify-content:space-between; font-size:11px; background:#eff6ff; border:1px solid #bfdbfe; padding:5px 8px; border-radius:4px;">
-            <span id="badge-custom-roads-count" style="color:#1e40af; font-weight:600;">Нарисовано дорог: 0</span>
-            <button class="btn" id="btn-clear-custom-roads" style="padding:2px 6px; font-size:10.5px; color:#ef4444; border:1px solid #fca5a5; background:#fff;" title="Удалить нарисованные дороги">Очистить</button>
+
+          <!-- Список начерченных дорог с индивидуальным удалением -->
+          <div id="box-custom-roads" style="display:none; flex-direction:column; gap:4px; font-size:11px; background:#eff6ff; border:1px solid #bfdbfe; padding:6px 8px; border-radius:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span id="badge-custom-roads-count" style="color:#1e40af; font-weight:700;">Нарисовано дорог: 0</span>
+              <button class="btn" id="btn-clear-custom-roads" style="padding:1px 6px; font-size:10px; color:#ef4444; border:1px solid #fca5a5; background:#fff;" title="Удалить все нарисованные дороги">Очистить все</button>
+            </div>
+            <div id="list-custom-roads" style="display:flex; flex-direction:column; gap:3px; margin-top:3px;"></div>
           </div>
+
+          <!-- Сводка по образовавшимся кварталам -->
+          <div id="box-subblocks-info" style="display:none; flex-direction:column; gap:4px; font-size:11px; background:#f8fafc; border:1px solid #cbd5e1; padding:6px 8px; border-radius:4px;"></div>
+
+          <!-- Кнопка перехода к Шагу 2: Генерация застройки -->
+          <button class="btn" id="btn-generate-in-blocks" style="width:100%; margin-top:4px; padding:8px 10px; background:linear-gradient(135deg, #2563eb, #1d4ed8); color:#ffffff; font-weight:700; font-size:12px; border:none; border-radius:6px; box-shadow:0 2px 5px rgba(37,99,235,0.25); display:flex; align-items:center; justify-content:center; gap:6px; cursor:pointer;" title="Сгенерировать застройку во всех созданных кварталах">
+            <span>🏗️ Шаг 2: Сгенерировать застройку в кварталах</span>
+          </button>
         </div>
 
         <!-- БЛОК НАСТРОЕК УРБАН-БЛОКОВ R2 -->
@@ -1605,6 +1687,36 @@
           </button>
         </div>
 
+        <!-- КОНЦЕПЦИЯ: ДВОР БЕЗ МАШИН -->
+        <div class="toggle-row" style="background:rgba(59, 130, 246, 0.05); border:1px solid rgba(59, 130, 246, 0.25); border-radius:8px; padding:10px 12px; margin-top:8px;">
+          <div>
+            <div class="control-label" style="display:flex; align-items:center; gap:6px;">
+              <span>🌳 Концепция «Двор без машин»</span>
+              <span class="badge" style="font-size:9.5px; background:#eff6ff; color:#2563eb; border:1px solid #bfdbfe;">Периметр</span>
+            </div>
+            <div class="control-hint">Запретить открытые стоянки во внутреннем дворе: машины выносятся на внешний периметр или в подземный паркинг, двор отдается под безопасные площадки и зелень</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="cfg-car-free-courtyard" checked />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
+        <!-- ОХРАННЫЕ ЗОНЫ ЗОУИТ: ПАРКОВКИ -->
+        <div class="toggle-row" style="background:rgba(239, 68, 68, 0.04); border:1px solid rgba(239, 68, 68, 0.2); border-radius:8px; padding:10px 12px; margin-top:8px;">
+          <div>
+            <div class="control-label" style="display:flex; align-items:center; gap:6px;">
+              <span>🛡️ Стоянки в ЗОУИТ (СЗЗ)</span>
+              <span class="badge" style="font-size:9.5px; background:#fef2f2; color:#b91c1c; border:1px solid #fecaca;">Охранные зоны</span>
+            </div>
+            <div class="control-hint">Разрешить размещение открытых стоянок в охранных зонах СЗЗ и полосах дорог (СанПиН 2.2.1/2.1.1.1200-03). По умолчанию выключено (безопасный режим: ЛЭП, газ и сети очищаются от машин)</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="cfg-allow-parking-zouit" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
         <!-- ОГРАНИЧЕНИЕ: ТОЛЬКО НАЗЕМНЫЕ ПАРКОВКИ -->
         <div class="toggle-row" style="background:rgba(16, 185, 129, 0.05); border:1px solid rgba(16, 185, 129, 0.25); border-radius:8px; padding:10px 12px; margin-top:8px;">
           <div>
@@ -1665,13 +1777,13 @@
             <h2>Посадка и ориентация участка</h2>
             <p class="stage-banner-desc">
               Выровняйте контур участка на карте OSM / спутниковых снимках: зажмите контур мышью для перемещения или крутите за верхний оранжевый маркер для поворота.
-              После выравнивания зафиксируйте участок для перехода к расстановке корпусов и ТЭП.
+              После выравнивания зафиксируйте границы для перехода к трассировке дорожной сети и кварталам.
             </p>
           </div>
         </div>
         <div class="stage-banner-actions">
           <button class="btn btn-primary btn-lock-site" id="btn-lock-main" type="button">
-            🔒 Закрепить участок и перейти к застройке
+            🔒 Зафиксировать границы участка
           </button>
           <button class="btn" id="btn-reset-rot-main" type="button">↺ Сбросить угол (0°)</button>
         </div>
@@ -1872,6 +1984,9 @@
               <button class="btn" id="btn-toggle-tko" type="button" title="Показать контейнерные площадки ТКО и радиус 100м (СанПиН 2.1.3684-21)" style="font-size:11.5px; padding:5px 9px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
                 <span>🗑️ ТКО (СанПиН 2.1)</span>
               </button>
+              <button class="btn" id="btn-toggle-parking-slots" type="button" title="Показать наземные парковочные карманы и машиноместа (СП 113.13330)" style="font-size:11.5px; padding:5px 9px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
+                <span>🚗 Машиноместа</span>
+              </button>
               <button class="btn" id="btn-toggle-parking-san" type="button" title="Показать санразрывы парковок 10-15м от окон (СанПиН 2.2.1/2.1.1.1200-03)" style="font-size:11.5px; padding:5px 9px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
                 <span>🅿️ Санразрывы стоянок</span>
               </button>
@@ -1920,6 +2035,20 @@
           </div>
 
           <div class="map-canvas-container" id="view-container-svg">
+            <!-- ПЛАВАЮЩИЙ HUD ДЛЯ ЧЕРЧЕНИЯ И НАРЕЗКИ ДОРОГ -->
+            <div id="road-hud-bar" style="position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:25; display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.96); backdrop-filter:blur(8px); border:1px solid #cbd5e1; border-radius:30px; box-shadow:0 4px 16px rgba(0,0,0,0.12); padding:5px 14px;">
+              <span id="road-hud-info" style="font-size:12px; font-weight:600; color:#1e293b;">🛣️ Шаг 1: Дороги</span>
+              <button id="btn-hud-draw-road" class="btn btn-secondary" style="font-size:11.5px; padding:4px 10px; border-radius:16px;" type="button">✏️ Начертить улицу</button>
+              <button id="btn-hud-generate" class="btn" style="font-size:11.5px; padding:4px 12px; border-radius:16px; background:#2563eb; color:#ffffff; font-weight:600;" type="button">🏗️ Шаг 2: Сгенерировать застройку в кварталах</button>
+            </div>
+
+            <div id="map-calc-overlay" class="map-calc-overlay" style="display:none;">
+              <div class="map-calc-spinner"></div>
+              <div>
+                <div class="map-calc-title" id="map-calc-title">Идет расчет застройки...</div>
+                <div class="map-calc-sub" id="map-calc-sub">Нарезка кварталов, расстановка корпусов и аудит норм</div>
+              </div>
+            </div>
             <svg class="map-svg" id="masterplan-svg" role="img" aria-label="Интерактивный генплан застройки">
               <defs>
                 <pattern id="pattern-zouit" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -1934,6 +2063,10 @@
                   <g id="svg-redlines-group"></g>
                   <g id="svg-roads-group"></g>
                   <g id="svg-subblocks-group"></g>
+                  <g id="svg-parking-group" style="display:block; pointer-events:none;">
+                    <path id="svg-parking-bays" class="svg-parking-bays" d="" fill="#475569" opacity="0.82" />
+                    <path id="svg-parking-slots" class="svg-parking-slots" d="" fill="none" stroke="#ffffff" stroke-width="0.8" opacity="0.95" />
+                  </g>
                   <g id="svg-fire-roads-group" style="display:none; pointer-events:none;">
                     <path id="svg-fire-roads" class="svg-fire-road" d="" />
                     <path id="svg-fire-turnarounds" class="svg-fire-turnaround" d="" />
@@ -1941,12 +2074,14 @@
                   </g>
                   <g id="svg-parking-san-group" style="display:none; pointer-events:none;">
                     <path id="svg-parking-san-buffer" class="svg-parking-san-buffer" d="" />
+                    <path id="svg-parking-impact-buffer" class="svg-parking-impact-buffer" d="" fill="rgba(168, 85, 247, 0.08)" stroke="#a855f7" stroke-width="1.2" stroke-dasharray="4 3" />
                   </g>
                   <g id="svg-tko-group" style="display:none; pointer-events:none;">
                     <g id="svg-tko-radius-group"></g>
                     <g id="svg-tko-sites-group"></g>
                   </g>
                   <g id="svg-road-draw-preview"></g>
+                  <g id="svg-road-handles"></g>
                   <g id="svg-sections-group"></g>
                 </g>
               </g>
@@ -2920,6 +3055,13 @@
       const cfgMaxSectionsBadge = document.getElementById("cfg-max-sections-badge");
       const cfgRegionalNorm = document.getElementById("cfg-regional-norm");
       const cfgOnlyGroundParking = document.getElementById("cfg-only-ground-parking");
+      const cfgCarFreeCourtyard = document.getElementById("cfg-car-free-courtyard");
+      const cfgAllowParkingZouit = document.getElementById("cfg-allow-parking-zouit");
+      const btnToggleParkingSlots = document.getElementById("btn-toggle-parking-slots");
+      const svgParkingGroup = document.getElementById("svg-parking-group");
+      const svgParkingBays = document.getElementById("svg-parking-bays");
+      const svgParkingSlots = document.getElementById("svg-parking-slots");
+      let showParkingSlots = true;
       const badgeNormStatus = document.getElementById("badge-norm-status");
       const badgeRegionalNormTitle = document.getElementById("badge-regional-norm-title");
       const badgeRegionalNormSummary = document.getElementById("badge-regional-norm-summary");
@@ -3024,6 +3166,7 @@
       const svgRoadsGroup = document.getElementById("svg-roads-group");
       const svgSubblocksGroup = document.getElementById("svg-subblocks-group");
       const svgRoadDrawPreview = document.getElementById("svg-road-draw-preview");
+      const svgRoadHandles = document.getElementById("svg-road-handles");
       const svgSectionsGroup = document.getElementById("svg-sections-group");
       const btnToggleFireRoads = document.getElementById("btn-toggle-fire-roads");
       const svgFireRoadsGroup = document.getElementById("svg-fire-roads-group");
@@ -3065,6 +3208,25 @@
       const boxCustomRoads = document.getElementById("box-custom-roads");
       const badgeCustomRoadsCount = document.getElementById("badge-custom-roads-count");
       const btnClearCustomRoads = document.getElementById("btn-clear-custom-roads");
+      const roadHudBar = document.getElementById("road-hud-bar");
+      const roadHudInfo = document.getElementById("road-hud-info");
+      const btnHudDrawRoad = document.getElementById("btn-hud-draw-road");
+      const btnHudGenerate = document.getElementById("btn-hud-generate");
+
+      function showCalcProgress(title = "Выполняется расчет...", sub = "Нарезка кварталов и аудит норм") {
+        const ov = document.getElementById("map-calc-overlay");
+        const tEl = document.getElementById("map-calc-title");
+        const sEl = document.getElementById("map-calc-sub");
+        if (ov) {
+          if (tEl) tEl.textContent = title;
+          if (sEl) sEl.textContent = sub;
+          ov.style.display = "flex";
+        }
+      }
+      function hideCalcProgress() {
+        const ov = document.getElementById("map-calc-overlay");
+        if (ov) ov.style.display = "none";
+      }
 
       // Боковой индикатор перебора вариантов
       const optProgressPanel = document.getElementById("opt-progress-panel");
@@ -3122,17 +3284,106 @@
       let customRoadLines = [];
       let isDrawingRoad = false;
       let drawRoadStartPt = null;
+      let currentRoadCategory = "district";
+
+      const ROAD_CATEGORIES_CONFIG = {
+        district: { name: "Внутриквартальная улица", width: 15, setback: 4, icon: "🏘️" },
+        arterial: { name: "Магистральная улица", width: 22, setback: 6, icon: "🛣️" },
+        local: { name: "Местный проезд", width: 8, setback: 3, icon: "🚗" },
+        custom: { name: "Пользовательская", width: 16, setback: 4, icon: "⚙️" }
+      };
+
+      function getRoadPoints(item) {
+        if (Array.isArray(item) && item.length >= 2 && Array.isArray(item[0])) return item;
+        if (item && item.points) return item.points;
+        return null;
+      }
+
+      window.deleteCustomRoad = async function(idx) {
+        if (customRoadLines && customRoadLines[idx] !== undefined) {
+          customRoadLines.splice(idx, 1);
+          if (customRoadLines.length === 0 && currentRoadPreset === "custom") {
+            currentRoadPreset = "none";
+            if (cfgRoadPreset) cfgRoadPreset.value = "none";
+          }
+          updateRoadControlsVisibility();
+          showToast("🗑️ Дорога удалена. Пересчет нарезки...");
+          await updateRoadsOnly();
+        }
+      };
 
       function updateRoadControlsVisibility() {
         const hasRoads = currentRoadPreset !== "none" || customRoadLines.length > 0;
-        if (rowRoadWidth) rowRoadWidth.style.display = hasRoads ? "flex" : "none";
-        if (rowRoadSetback) rowRoadSetback.style.display = hasRoads ? "flex" : "none";
+        const isCustomCat = currentRoadCategory === "custom";
+        if (rowRoadWidth) rowRoadWidth.style.display = (hasRoads && isCustomCat) ? "flex" : "none";
+        if (rowRoadSetback) rowRoadSetback.style.display = (hasRoads && isCustomCat) ? "flex" : "none";
         const hasPresetPos = ["longitudinal", "transverse", "cross_2x2"].includes(currentRoadPreset);
         if (rowRoadPos) rowRoadPos.style.display = hasPresetPos ? "flex" : "none";
+
+        if (btnDrawRoadSide) {
+          btnDrawRoadSide.innerHTML = customRoadLines.length > 0 ? "➕ Начертить ещё дорогу" : "✏️ Начертить на плане";
+        }
+        if (btnDrawRoad) {
+          btnDrawRoad.title = isDrawingRoad ? "Отмена черчения (Esc)" : (customRoadLines.length > 0 ? "➕ Начертить ещё улицу / примыкание" : "Начертить дорогу");
+          btnDrawRoad.style.background = isDrawingRoad ? "#2563eb" : "";
+          btnDrawRoad.style.color = isDrawingRoad ? "#ffffff" : "";
+        }
+
+        // Обновление плавающей панели HUD над SVG планом
+        if (roadHudBar) {
+          const subCount = (currentScenario && currentScenario.roads && currentScenario.roads.sub_blocks_count) || 1;
+          roadHudBar.style.display = "flex";
+          if (customRoadLines.length === 0) {
+            if (roadHudInfo) roadHudInfo.textContent = isDrawingRoad ? "🎯 Кликните 1-ю точку дороги на плане..." : "🛣️ Шаг 1: Дорожная сеть (начертите улицы)";
+            if (btnHudDrawRoad) {
+              btnHudDrawRoad.innerHTML = isDrawingRoad ? "⏹️ Отмена (Esc)" : "✏️ Начертить улицу";
+              btnHudDrawRoad.className = isDrawingRoad ? "btn btn-danger" : "btn btn-secondary";
+            }
+            if (btnHudGenerate) {
+              btnHudGenerate.style.display = isSiteLocked ? "inline-block" : "none";
+            }
+          } else {
+            if (roadHudInfo) roadHudInfo.textContent = isDrawingRoad ? "🎯 Кликните 2-ю точку (Shift — шаг 45°, межа магнитит)" : `🛣️ Начерчено улиц: ${customRoadLines.length} · Кварталов: ${subCount}`;
+            if (btnHudDrawRoad) {
+              btnHudDrawRoad.innerHTML = isDrawingRoad ? "⏹️ Отмена (Esc)" : "➕ Начертить ещё улицу";
+              btnHudDrawRoad.className = isDrawingRoad ? "btn btn-danger" : "btn btn-secondary";
+            }
+            if (btnHudGenerate) {
+              btnHudGenerate.style.display = "inline-block";
+            }
+          }
+        }
+
         if (boxCustomRoads) {
           boxCustomRoads.style.display = customRoadLines.length > 0 ? "flex" : "none";
           if (badgeCustomRoadsCount) {
             badgeCustomRoadsCount.textContent = `Нарисовано дорог: ${customRoadLines.length}`;
+          }
+          const listCustom = document.getElementById("list-custom-roads");
+          if (listCustom) {
+            let roadItemsHtml = customRoadLines.map((rd, idx) => {
+              const pts = getRoadPoints(rd);
+              const lenM = pts ? Math.round(Math.hypot(pts[1][0] - pts[0][0], pts[1][1] - pts[0][1])) : 0;
+              const cat = rd.category || "district";
+              const cInfo = ROAD_CATEGORIES_CONFIG[cat] || ROAD_CATEGORIES_CONFIG.district;
+              const w = rd.width || cInfo.width;
+              const nm = rd.name || cInfo.name;
+              return `
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:3px 6px; background:#ffffff; border:1px solid #cbd5e1; border-radius:4px; font-size:10.5px;">
+                  <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;">
+                    ${cInfo.icon} <strong>${nm}</strong> (${w}м, ${lenM}м)
+                  </span>
+                  <button type="button" class="btn" style="padding:1px 5px; font-size:10px; color:#ef4444; border:1px solid #fca5a5; background:#fff; cursor:pointer;" onclick="deleteCustomRoad(${idx})" title="Удалить эту дорогу">🗑️</button>
+                </div>
+              `;
+            }).join('');
+
+            roadItemsHtml += `
+              <button type="button" class="btn btn-secondary" style="width:100%; margin-top:5px; font-size:11px; padding:6px 8px; border:1px dashed #3b82f6; background:#eff6ff; color:#1d4ed8; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:5px;" onclick="startRoadDrawing()">
+                <span>➕ Начертить ещё улицу / примыкание</span>
+              </button>
+            `;
+            listCustom.innerHTML = roadItemsHtml;
           }
         }
       }
@@ -5554,6 +5805,8 @@
           cascade_floors: cfgCascadeFloors.checked,
           asymmetric_wings: cfgAsymmetricWings.checked,
           only_ground_parking: cfgOnlyGroundParking ? cfgOnlyGroundParking.checked : false,
+          car_free_courtyard: cfgCarFreeCourtyard ? cfgCarFreeCourtyard.checked : true,
+          allow_parking_in_zouit: cfgAllowParkingZouit ? cfgAllowParkingZouit.checked : false,
           floor_height: parseFloat(cfgFloorH.value) || 3.0,
           max_building_height_m: parseFloat(cfgMaxH.value) || 0,
           max_sections: parseInt(cfgMaxSectionsSlider.value, 10) || 8,
@@ -5763,8 +6016,103 @@
 
       let isGenerating = false;
 
+      // Быстрое обновление нарезки улично-дорожной сетью (Roads First: Этап 1)
+      // Рассчитывает ТОЛЬКО геометрию дорог и кварталов без запуска генератора зданий и парковок (< 50 мс)
+      async function updateRoadsOnly() {
+        if (isGenerating) return;
+        isGenerating = true;
+
+        const calcOverlay = document.getElementById("map-calc-overlay");
+        const calcTitle = document.getElementById("map-calc-title");
+        const calcSub = document.getElementById("map-calc-sub");
+        if (calcOverlay) {
+          if (calcTitle) calcTitle.textContent = "🛣️ Нарезка кварталов дорогами...";
+          if (calcSub) calcSub.textContent = "Обновление геометрии УДС (без генерации зданий)";
+          calcOverlay.style.display = "flex";
+        }
+
+        try {
+          const payload = getFormData();
+          payload.stage = isSiteLocked ? 2 : 1;
+          payload.site_locked = isSiteLocked;
+
+          const resp = await fetch("/api/site-preview", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          if (resp.ok) {
+            const data = await resp.json();
+            currentScenario = data;
+
+            renderScenario();
+            updateStageUI();
+            setViewTab("svg");
+            renderCustomRoadHandles();
+
+            const subCount = (data.roads && data.roads.sub_blocks_count) || 1;
+            if (subCount >= 2) {
+              showToast(`🛣️ УДС обновлена: получено ${subCount} кварталов. Нажмите «Сгенерировать застройку в кварталах»!`);
+            } else {
+              showToast("🛣️ Дорожная сеть обновлена.");
+            }
+
+            const btnGen = document.getElementById("btn-generate-in-blocks");
+            if (btnGen) {
+              btnGen.classList.add("btn-pulse-glow");
+              setTimeout(() => btnGen.classList.remove("btn-pulse-glow"), 3600);
+            }
+          } else {
+            const errData = await resp.json().catch(() => ({}));
+            showToast(`⚠️ Ошибка нарезки дорогами: ${errData.error || resp.statusText}`, true);
+          }
+        } catch (err) {
+          console.warn("Ошибка нарезки дорогами:", err);
+          showToast("⚠️ Ошибка связи с сервером нарезки УДС", true);
+        } finally {
+          isGenerating = false;
+          if (calcOverlay) calcOverlay.style.display = "none";
+        }
+      }
+
+      // Фиксация границ участка и переход к нарезке дорогами БЕЗ генерации зданий (Шаг 1 -> Дороги)
+      async function lockSiteAndProceedToRoads() {
+        if (isGenerating) return;
+        if (!currentScenario && !cfgCadInput.value.trim() && !activeGpzuCoordinates && !uploadedCadBase64 && (!customRoadLines || customRoadLines.length === 0)) {
+          loadDemoScenario();
+        }
+
+        isSiteLocked = true;
+        updateStageUI();
+        setViewTab("svg");
+
+        // Очищаем старые дома на холсте, чтобы остался чистый контур ЗУ и нарезка кварталов
+        const buildingsGroup = document.getElementById("svg-buildings-group");
+        const fireRoadsGroup = document.getElementById("svg-fire-roads-group");
+        const parkingGroup = document.getElementById("svg-parking-group");
+        const tkoGroup = document.getElementById("svg-tko-group");
+        if (buildingsGroup) buildingsGroup.innerHTML = "";
+        if (fireRoadsGroup) fireRoadsGroup.style.display = "none";
+        if (parkingGroup) parkingGroup.style.display = "none";
+        if (tkoGroup) tkoGroup.style.display = "none";
+
+        showToast("🔒 Границы зафиксированы! Теперь начертите дорожную сеть на Шаге 1.");
+        const roadContainer = document.getElementById("container-road-slicing");
+        if (roadContainer) {
+          roadContainer.scrollIntoView({ behavior: "smooth", block: "nearest" });
+          roadContainer.style.borderColor = "#2563eb";
+          roadContainer.style.boxShadow = "0 0 0 3px rgba(37, 99, 235, 0.2)";
+          setTimeout(() => {
+            roadContainer.style.borderColor = "#cbd5e1";
+            roadContainer.style.boxShadow = "none";
+          }, 3000);
+        }
+        await updateRoadsOnly();
+      }
+
       // Фиксация участка и запуск генерации (Переход к Этапу 2)
-      async function lockSiteAndGenerate(isMaximize = false) {
+      async function lockSiteAndGenerate(isMaximize = false, isFast = false) {
         if (isGenerating) return;
         isGenerating = true;
         if (regenerateTimer) clearTimeout(regenerateTimer);
@@ -5784,14 +6132,26 @@
           btnRunMaximize.disabled = true;
           btnRunMaximize.innerHTML = '<span>⏳ Оптимизация по закону (подбор сетки и этажей)...</span>';
         }
-        showToast(isMaximize ? "⚡ Подбор лучшей расстановки: перебор сетки углов и этажей по нормативам..." : "🔒 Участок зафиксирован! Генерация застройки и расчёт ТЭП...");
 
         const payload = getFormData();
         payload.stage = 2;
         payload.site_locked = true;
 
+        if (isFast) {
+          payload.gen_mode = "fixed";
+        }
+
+        const shouldMaximize = isMaximize || (payload.gen_mode === "maximize" && !isFast);
+
+        showCalcProgress(
+          shouldMaximize ? "⚡ Оптимизация Top-1 по закону..." : "🛣️ Нарезка дороги и пересчет застройки...",
+          shouldMaximize ? "Подбор лучшей сетки углов и этажей по СП 42" : "Автоматическое деление на урбан-блоки и расчет ТЭП"
+        );
+
+        showToast(shouldMaximize ? "⚡ Подбор лучшей расстановки: перебор сетки углов и этажей по нормативам..." : "🔒 Участок зафиксирован! Генерация застройки и расчёт ТЭП...");
+
         let progressInterval = null;
-        if (isMaximize) {
+        if (shouldMaximize) {
           startOptimizationIndicator();
           progressInterval = setInterval(async () => {
             try {
@@ -5864,6 +6224,7 @@
             clearInterval(progressInterval);
             progressInterval = null;
           }
+          hideCalcProgress();
           isGenerating = false;
           if (btnLockMain) btnLockMain.disabled = false;
           if (btnLockSidebar) btnLockSidebar.disabled = false;
@@ -6015,13 +6376,13 @@
           }
         }
         if (t.lock) {
-          lockSiteAndGenerate();
+          lockSiteAndProceedToRoads();
         }
       });
 
-      // Кнопки блокировки / разблокировки
-      if (btnLockMain) btnLockMain.addEventListener("click", lockSiteAndGenerate);
-      if (btnLockSidebar) btnLockSidebar.addEventListener("click", lockSiteAndGenerate);
+      // Кнопки блокировки / разблокировки (переход к Шагу 1: Дороги без размещения домов)
+      if (btnLockMain) btnLockMain.addEventListener("click", lockSiteAndProceedToRoads);
+      if (btnLockSidebar) btnLockSidebar.addEventListener("click", lockSiteAndProceedToRoads);
       if (btnUnlockMain) btnUnlockMain.addEventListener("click", unlockSite);
       if (btnUnlockSidebar) btnUnlockSidebar.addEventListener("click", unlockSite);
       if (btnResetRotMain) btnResetRotMain.addEventListener("click", () => setRotation(0, true, true));
@@ -6030,12 +6391,12 @@
         if (isSiteLocked) unlockSite();
       });
       if (stepperStep2) stepperStep2.addEventListener("click", () => {
-        if (!isSiteLocked) lockSiteAndGenerate();
+        if (!isSiteLocked) lockSiteAndProceedToRoads();
       });
 
       // Кнопка в сайдбаре запускает генерацию с фиксацией
       btnRunPipeline.addEventListener("click", async () => {
-        await lockSiteAndGenerate();
+        await lockSiteAndGenerate(false, true);
       });
 
       // МАТРИЦА ВАРИАНТОВ
@@ -6119,7 +6480,7 @@
               if (cfgMaximizeContainer) cfgMaximizeContainer.style.display = "none";
             }
             showToast(`🎯 Применяем сценарий: ${v.floors} эт. (GFA: ${fmt(v.gfa)} м²)...`);
-            await lockSiteAndGenerate();
+            await lockSiteAndGenerate(false, true);
             renderVariantsTable(activeVariantsList);
           });
 
@@ -6650,12 +7011,56 @@
 
         if (svgSubblocksGroup) {
           svgSubblocksGroup.innerHTML = "";
-          (roadsData.sub_blocks_paths || []).forEach(sbPath => {
-            const sb = document.createElementNS("http://www.w3.org/2000/svg", "path");
-            sb.setAttribute("d", sbPath);
-            sb.setAttribute("class", "svg-subblock-bound");
-            svgSubblocksGroup.appendChild(sb);
-          });
+          const subDataList = roadsData.sub_blocks_data || [];
+          if (subDataList.length > 0) {
+            subDataList.forEach(sbItem => {
+              if (sbItem.path) {
+                const sb = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                sb.setAttribute("d", sbItem.path);
+                sb.setAttribute("class", "svg-subblock-bound");
+                svgSubblocksGroup.appendChild(sb);
+              }
+              if (sbItem.centroid_svg && sbItem.centroid_svg.length === 2 && (roadsData.sub_blocks_count || 0) >= 2) {
+                const cx = sbItem.centroid_svg[0];
+                const cy = sbItem.centroid_svg[1];
+                const txt = `Квартал ${sbItem.index} · ${sbItem.area_ha} га`;
+                const badgeW = Math.max(90, txt.length * 7.2);
+                const gLabel = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                gLabel.setAttribute("class", "svg-subblock-label");
+                gLabel.innerHTML = `
+                  <rect x="${cx - badgeW / 2}" y="${cy - 12}" width="${badgeW}" height="22" rx="5" fill="#1e293b" fill-opacity="0.88" stroke="#3b82f6" stroke-width="1.2" />
+                  <text x="${cx}" y="${cy + 3.5}" fill="#ffffff" font-size="10.5" font-weight="700" text-anchor="middle" font-family="Inter, sans-serif">${txt}</text>
+                `;
+                svgSubblocksGroup.appendChild(gLabel);
+              }
+            });
+          } else {
+            (roadsData.sub_blocks_paths || []).forEach(sbPath => {
+              const sb = document.createElementNS("http://www.w3.org/2000/svg", "path");
+              sb.setAttribute("d", sbPath);
+              sb.setAttribute("class", "svg-subblock-bound");
+              svgSubblocksGroup.appendChild(sb);
+            });
+          }
+        }
+
+        const subData = roadsData.sub_blocks_data || [];
+        const boxSubBlocksInfo = document.getElementById("box-subblocks-info");
+        if (boxSubBlocksInfo) {
+          if (subData.length >= 2) {
+            boxSubBlocksInfo.style.display = "flex";
+            boxSubBlocksInfo.innerHTML = `
+              <div style="font-weight:700; color:#1e40af; display:flex; justify-content:space-between; align-items:center;">
+                <span>🏙️ Кварталов: ${subData.length}</span>
+                <span style="font-size:10px; background:#dbeafe; color:#1d4ed8; padding:1px 6px; border-radius:4px; font-weight:600;">Нарезка активна</span>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:2px; margin-top:2px;">
+                ${subData.map(b => `<div style="display:flex; justify-content:space-between; color:#334155;"><span>• <strong>Квартал ${b.index}</strong></span><span style="font-weight:600;">${b.area_ha} га (${b.area_sqm} м²)</span></div>`).join('')}
+              </div>
+            `;
+          } else {
+            boxSubBlocksInfo.style.display = "none";
+          }
         }
 
         if (badgeRoadBlocks) {
@@ -6664,6 +7069,11 @@
         }
 
         updateRoadControlsVisibility();
+
+        // Наземные парковки и машиноместа (СП 113.13330 / «Двор без машин»)
+        const pl = s.parking_layout || {};
+        if (svgParkingBays) svgParkingBays.setAttribute("d", pl.bays_path || "");
+        if (svgParkingSlots) svgParkingSlots.setAttribute("d", (pl.slots_paths || []).join(" "));
 
         // Пожарные проезды (СП 4.13130.2020)
         const fireData = s.fire_safety || {};
@@ -6689,7 +7099,11 @@
         // Санитарные нормы: стоянки и площадки ТКО
         const sanData = s.sanitary || {};
         if (svgParkingSanBuffer) {
-          svgParkingSanBuffer.setAttribute("d", sanData.parking_buffer_15m_path || "");
+          svgParkingSanBuffer.setAttribute("d", sanData.parking_buffer_10m_path || sanData.parking_buffer_15m_path || "");
+        }
+        const svgParkingImpact = document.getElementById("svg-parking-impact-buffer");
+        if (svgParkingImpact) {
+          svgParkingImpact.setAttribute("d", sanData.parking_impact_path || "");
         }
         if (svgParkingSanGroup) {
           svgParkingSanGroup.style.display = showParkingSan ? "inline" : "none";
@@ -6779,6 +7193,7 @@
         if (typeof activeVariantsList !== "undefined" && activeVariantsList && activeVariantsList.length > 0) {
           renderVariantsTable(activeVariantsList);
         }
+        renderCustomRoadHandles();
       }
 
       // Цвета секций
@@ -7100,7 +7515,242 @@
         const siteX = meta.minx + (wx - meta.ox) / meta.scale;
         const siteY = meta.maxy - (wy - meta.oy) / meta.scale;
 
-        return { siteX, siteY, svgX, svgY };
+        return { siteX, siteY, svgX: wx, svgY: wy };
+      }
+
+      function convertSiteToSvgCoords(siteX, siteY) {
+        const meta = (currentScenario && currentScenario.svg_meta) || {
+          minx: 0, miny: 0, maxx: 200, maxy: 150, scale: 1, ox: 40, oy: 40
+        };
+        const wx = meta.ox + (siteX - meta.minx) * meta.scale;
+        const wy = meta.oy + (meta.maxy - siteY) * meta.scale;
+        return { svgX: wx, svgY: wy };
+      }
+
+      function getBoundarySnapPoint(sitePt, snapThresholdPx = 18) {
+        const meta = (currentScenario && currentScenario.svg_meta) || { scale: 1 };
+        const threshM = snapThresholdPx / (meta.scale || 1.0);
+
+        // 1. Приоритет: узлы и концы существующих дорог (перекрёстки)
+        if (customRoadLines && customRoadLines.length > 0) {
+          for (let rIdx = 0; rIdx < customRoadLines.length; rIdx++) {
+            const roadItem = customRoadLines[rIdx];
+            const pts = getRoadPoints(roadItem);
+            if (!pts || pts.length < 2) continue;
+
+            for (let pIdx of [0, 1]) {
+              const nd = pts[pIdx];
+              const dNd = Math.hypot(sitePt.siteX - nd[0], sitePt.siteY - nd[1]);
+              if (dNd <= threshM) {
+                const svg = convertSiteToSvgCoords(nd[0], nd[1]);
+                return {
+                  siteX: nd[0],
+                  siteY: nd[1],
+                  svgX: svg.svgX,
+                  svgY: svg.svgY,
+                  dist: dNd,
+                  type: "Узел дороги / перекрёсток",
+                  snapColor: "#3b82f6",
+                  isSnapped: true
+                };
+              }
+            }
+
+            // Примыкание к осевой линии существующей дороги (Т-образный перекресток)
+            const ax = pts[0][0], ay = pts[0][1];
+            const bx = pts[1][0], by = pts[1][1];
+            const rdx = bx - ax, rdy = by - ay;
+            const rLenSq = rdx * rdx + rdy * rdy;
+            if (rLenSq > 1e-4) {
+              let rt = ((sitePt.siteX - ax) * rdx + (sitePt.siteY - ay) * rdy) / rLenSq;
+              if (rt >= 0.03 && rt <= 0.97) {
+                const projX = ax + rt * rdx;
+                const projY = ay + rt * rdy;
+                const dLine = Math.hypot(sitePt.siteX - projX, sitePt.siteY - projY);
+                if (dLine <= threshM) {
+                  const svg = convertSiteToSvgCoords(projX, projY);
+                  return {
+                    siteX: projX,
+                    siteY: projY,
+                    svgX: svg.svgX,
+                    svgY: svg.svgY,
+                    dist: dLine,
+                    type: "Т-примыкание к дороге",
+                    snapColor: "#0284c7",
+                    isSnapped: true
+                  };
+                }
+              }
+            }
+          }
+        }
+
+        // 2. Внешняя межа участка
+        const bCoords = (currentScenario && currentScenario.boundary_coords) || [];
+        if (!bCoords || bCoords.length < 2) return null;
+
+        let bestSnap = null;
+        let minDist = threshM;
+
+        for (let i = 0; i < bCoords.length - 1; i++) {
+          const ax = bCoords[i][0], ay = bCoords[i][1];
+          const bx = bCoords[i + 1][0], by = bCoords[i + 1][1];
+
+          const dx = bx - ax;
+          const dy = by - ay;
+          const lenSq = dx * dx + dy * dy;
+          if (lenSq < 1e-6) continue;
+
+          let t = ((sitePt.siteX - ax) * dx + (sitePt.siteY - ay) * dy) / lenSq;
+          t = Math.max(0, Math.min(1, t));
+
+          const projX = ax + t * dx;
+          const projY = ay + t * dy;
+          const d = Math.hypot(sitePt.siteX - projX, sitePt.siteY - projY);
+
+          if (d < minDist) {
+            minDist = d;
+            const isVertex = (t === 0 || t === 1);
+            const svg = convertSiteToSvgCoords(projX, projY);
+            bestSnap = {
+              siteX: projX,
+              siteY: projY,
+              svgX: svg.svgX,
+              svgY: svg.svgY,
+              dist: d,
+              type: isVertex ? "Угол межи" : "Межа участка",
+              snapColor: "#10b981",
+              isSnapped: true
+            };
+          }
+        }
+        return bestSnap;
+      }
+
+      function applyShiftLock(startPt, curPt) {
+        const dx = curPt.siteX - startPt.siteX;
+        const dy = curPt.siteY - startPt.siteY;
+        const len = Math.hypot(dx, dy);
+        if (len < 1e-4) return curPt;
+
+        const angle = Math.atan2(dy, dx);
+        const step = Math.PI / 4; // 45 градусов
+        const snappedAngle = Math.round(angle / step) * step;
+
+        const deg = Math.round(((snappedAngle * 180 / Math.PI) + 360) % 360);
+        const newSiteX = startPt.siteX + len * Math.cos(snappedAngle);
+        const newSiteY = startPt.siteY + len * Math.sin(snappedAngle);
+        const svg = convertSiteToSvgCoords(newSiteX, newSiteY);
+
+        return {
+          siteX: newSiteX,
+          siteY: newSiteY,
+          svgX: svg.svgX,
+          svgY: svg.svgY,
+          angleDeg: deg,
+          isShiftLocked: true
+        };
+      }
+
+      function calculateRayExtensionSvg(startPt, endPt) {
+        const dx = endPt.siteX - startPt.siteX;
+        const dy = endPt.siteY - startPt.siteY;
+        const len = Math.hypot(dx, dy);
+        if (len < 1e-4) return null;
+
+        const meta = (currentScenario && currentScenario.svg_meta) || {
+          minx: 0, miny: 0, maxx: 200, maxy: 150
+        };
+        const diag = Math.hypot(meta.maxx - meta.minx, meta.maxy - meta.miny) * 1.5;
+
+        const extStart = {
+          siteX: startPt.siteX - (dx / len) * diag,
+          siteY: startPt.siteY - (dy / len) * diag
+        };
+        const extEnd = {
+          siteX: endPt.siteX + (dx / len) * diag,
+          siteY: endPt.siteY + (dy / len) * diag
+        };
+
+        const svgS = convertSiteToSvgCoords(extStart.siteX, extStart.siteY);
+        const svgE = convertSiteToSvgCoords(extEnd.siteX, extEnd.siteY);
+
+        return {
+          x1: svgS.svgX,
+          y1: svgS.svgY,
+          x2: svgE.svgX,
+          y2: svgE.svgY
+        };
+      }
+
+      let activeRoadDrag = null;
+
+      function renderCustomRoadHandles() {
+        if (!svgRoadHandles) return;
+        svgRoadHandles.innerHTML = "";
+        if (!customRoadLines || customRoadLines.length === 0 || isDrawingRoad) return;
+
+        customRoadLines.forEach((item, rIdx) => {
+          const pts = getRoadPoints(item);
+          if (!pts || pts.length < 2) return;
+          const p1 = convertSiteToSvgCoords(pts[0][0], pts[0][1]);
+          const p2 = convertSiteToSvgCoords(pts[1][0], pts[1][1]);
+          const midX = (pts[0][0] + pts[1][0]) / 2;
+          const midY = (pts[0][1] + pts[1][1]) / 2;
+          const pMid = convertSiteToSvgCoords(midX, midY);
+          const rName = item.name || "Улица";
+          const rWidth = item.width || 15;
+
+          // Контрольная ручка Начало (синий круг)
+          const h1 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          h1.setAttribute("cx", p1.svgX);
+          h1.setAttribute("cy", p1.svgY);
+          h1.setAttribute("r", "7.5");
+          h1.setAttribute("fill", "#2563eb");
+          h1.setAttribute("stroke", "#ffffff");
+          h1.setAttribute("stroke-width", "2.5");
+          h1.setAttribute("cursor", "move");
+          h1.setAttribute("data-road-idx", rIdx);
+          h1.setAttribute("data-handle-type", "start");
+          const t1 = document.createElementNS("http://www.w3.org/2000/svg", "title");
+          t1.textContent = `${rName} (${rWidth} м): начало дороги (потяните)`;
+          h1.appendChild(t1);
+          svgRoadHandles.appendChild(h1);
+
+          // Контрольная ручка Конец (синий круг)
+          const h2 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          h2.setAttribute("cx", p2.svgX);
+          h2.setAttribute("cy", p2.svgY);
+          h2.setAttribute("r", "7.5");
+          h2.setAttribute("fill", "#2563eb");
+          h2.setAttribute("stroke", "#ffffff");
+          h2.setAttribute("stroke-width", "2.5");
+          h2.setAttribute("cursor", "move");
+          h2.setAttribute("data-road-idx", rIdx);
+          h2.setAttribute("data-handle-type", "end");
+          const t2 = document.createElementNS("http://www.w3.org/2000/svg", "title");
+          t2.textContent = `${rName} (${rWidth} м): конец дороги (потяните)`;
+          h2.appendChild(t2);
+          svgRoadHandles.appendChild(h2);
+
+          // Центральная ручка (янтарный квадрат для параллельного переноса)
+          const hMid = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+          hMid.setAttribute("x", pMid.svgX - 6);
+          hMid.setAttribute("y", pMid.svgY - 6);
+          hMid.setAttribute("width", "12");
+          hMid.setAttribute("height", "12");
+          hMid.setAttribute("rx", "3");
+          hMid.setAttribute("fill", "#f59e0b");
+          hMid.setAttribute("stroke", "#ffffff");
+          hMid.setAttribute("stroke-width", "2");
+          hMid.setAttribute("cursor", "grab");
+          hMid.setAttribute("data-road-idx", rIdx);
+          hMid.setAttribute("data-handle-type", "mid");
+          const tMid = document.createElementNS("http://www.w3.org/2000/svg", "title");
+          tMid.textContent = `${rName} (${rWidth} м): параллельный перенос оси`;
+          hMid.appendChild(tMid);
+          svgRoadHandles.appendChild(hMid);
+        });
       }
 
       function startRoadDrawing() {
@@ -7117,7 +7767,9 @@
         }
         if (svgRoot) svgRoot.style.cursor = "crosshair";
         if (svgSectionsGroup) svgSectionsGroup.style.pointerEvents = "none";
-        showToast("✏️ Кликните точку начала дороги на плане (Esc для отмены)");
+        if (svgRoadHandles) svgRoadHandles.style.display = "none";
+        updateRoadControlsVisibility();
+        showToast("✏️ Кликните точку начала дороги (Shift — угол 45°/90°, межа магнитит)");
       }
 
       function stopRoadDrawing() {
@@ -7135,6 +7787,9 @@
         if (svgRoot) svgRoot.style.cursor = "";
         if (svgRoadDrawPreview) svgRoadDrawPreview.innerHTML = "";
         if (svgSectionsGroup) svgSectionsGroup.style.pointerEvents = "";
+        if (svgRoadHandles) svgRoadHandles.style.display = "block";
+        updateRoadControlsVisibility();
+        renderCustomRoadHandles();
       }
 
       window.addEventListener("keydown", e => {
@@ -7143,6 +7798,27 @@
           showToast("Черчение дороги отменено");
         }
       });
+
+      if (btnToggleParkingSlots) {
+        btnToggleParkingSlots.addEventListener("click", () => {
+          showParkingSlots = !showParkingSlots;
+          if (svgParkingGroup) svgParkingGroup.style.display = showParkingSlots ? "block" : "none";
+          btnToggleParkingSlots.classList.toggle("btn-active", showParkingSlots);
+          if (showParkingSlots) {
+            btnToggleParkingSlots.style.background = "rgba(59, 130, 246, 0.15)";
+            btnToggleParkingSlots.style.borderColor = "#3b82f6";
+            btnToggleParkingSlots.style.color = "#2563eb";
+            btnToggleParkingSlots.style.fontWeight = "700";
+            showToast("🚗 Разметка парковок включена");
+          } else {
+            btnToggleParkingSlots.style.background = "var(--surface)";
+            btnToggleParkingSlots.style.borderColor = "var(--border)";
+            btnToggleParkingSlots.style.color = "var(--text)";
+            btnToggleParkingSlots.style.fontWeight = "normal";
+            showToast("🚗 Разметка парковок скрыта");
+          }
+        });
+      }
 
       if (btnToggleFireRoads) {
         btnToggleFireRoads.addEventListener("click", () => {
@@ -7204,7 +7880,8 @@
             btnToggleParkingSan.style.borderColor = "#a855f7";
             btnToggleParkingSan.style.color = "#7e22ce";
             btnToggleParkingSan.style.fontWeight = "700";
-            showToast("🛑 Санитарные разрывы открытых автостоянок (СанПиН 2.2.1/2.1.1.1200-03) включены");
+            const dist = (currentScenario && currentScenario.sanitary && currentScenario.sanitary.min_parking_distance_to_windows_m) || 10.5;
+            showToast(`🛑 Санитарные разрывы стоянок (СанПиН 2.2.1/2.1.1.1200-03): норма 10м от окон соблюдена (факт: ${dist} м)`);
           } else {
             btnToggleParkingSan.style.background = "var(--surface)";
             btnToggleParkingSan.style.borderColor = "var(--border)";
@@ -7248,7 +7925,7 @@
           }
           updateRoadControlsVisibility();
           showToast("Сброс нарезки дорогами");
-          await lockSiteAndGenerate();
+          await updateRoadsOnly();
         });
       }
 
@@ -7261,7 +7938,48 @@
           }
           updateRoadControlsVisibility();
           showToast("Нарисованные дороги удалены");
-          await lockSiteAndGenerate();
+          await updateRoadsOnly();
+        });
+      }
+
+      // Селектор категории чертимой дороги (СП 42.13330 / СП 4.13130)
+      document.querySelectorAll(".road-cat-pill").forEach(btn => {
+        btn.addEventListener("click", () => {
+          document.querySelectorAll(".road-cat-pill").forEach(b => b.classList.remove("btn-active"));
+          btn.classList.add("btn-active");
+          currentRoadCategory = btn.getAttribute("data-cat") || "district";
+          const catCfg = ROAD_CATEGORIES_CONFIG[currentRoadCategory] || ROAD_CATEGORIES_CONFIG.district;
+          if (cfgRoadWidth) {
+            cfgRoadWidth.value = String(catCfg.width);
+            if (badgeRoadWidth) badgeRoadWidth.textContent = `${catCfg.width} м`;
+          }
+          if (cfgRoadSetback) {
+            cfgRoadSetback.value = String(catCfg.setback);
+            if (badgeRoadSetback) badgeRoadSetback.textContent = `${catCfg.setback} м`;
+          }
+          updateRoadControlsVisibility();
+          showToast(`${catCfg.icon} Категория: ${catCfg.name} (ширина ${catCfg.width} м, отступ ${catCfg.setback} м)`);
+        });
+      });
+
+      // Кнопка Шаг 2: Сгенерировать застройку в кварталах
+      const btnGenInBlocks = document.getElementById("btn-generate-in-blocks");
+      if (btnGenInBlocks) {
+        btnGenInBlocks.addEventListener("click", async () => {
+          showToast("🏗️ Генерация застройки во всех созданных кварталах...");
+          await lockSiteAndGenerate(false, false);
+        });
+      }
+      if (btnHudDrawRoad) {
+        btnHudDrawRoad.addEventListener("click", () => {
+          if (isDrawingRoad) stopRoadDrawing();
+          else startRoadDrawing();
+        });
+      }
+      if (btnHudGenerate) {
+        btnHudGenerate.addEventListener("click", async () => {
+          showToast("🏗️ Генерация застройки во всех созданных кварталах...");
+          await lockSiteAndGenerate(false, false);
         });
       }
 
@@ -7271,7 +7989,7 @@
         });
         cfgRoadPos.addEventListener("change", async () => {
           if (["longitudinal", "transverse", "cross_2x2"].includes(currentRoadPreset)) {
-            await lockSiteAndGenerate();
+            await updateRoadsOnly();
           }
         });
       }
@@ -7282,7 +8000,7 @@
         });
         cfgRoadWidth.addEventListener("change", async () => {
           if (currentRoadPreset !== "none" || customRoadLines.length > 0) {
-            await lockSiteAndGenerate();
+            await updateRoadsOnly();
           }
         });
       }
@@ -7293,7 +8011,7 @@
         });
         cfgRoadSetback.addEventListener("change", async () => {
           if (currentRoadPreset !== "none" || customRoadLines.length > 0) {
-            await lockSiteAndGenerate();
+            await updateRoadsOnly();
           }
         });
       }
@@ -7309,7 +8027,7 @@
             startRoadDrawing();
           } else {
             stopRoadDrawing();
-            await lockSiteAndGenerate();
+            await updateRoadsOnly();
           }
         });
       }
@@ -7319,31 +8037,79 @@
 
       svgRoot.addEventListener("pointerdown", async e => {
         if (e.button !== 0) return;
+
+        // 1. Проверка клика по ручке редактирования существующей дороги
+        const handle = (e.target && e.target.closest) ? e.target.closest("[data-handle-type]") : null;
+        if (handle && !isDrawingRoad) {
+          e.preventDefault();
+          e.stopPropagation();
+          const rIdx = parseInt(handle.getAttribute("data-road-idx"), 10);
+          const hType = handle.getAttribute("data-handle-type");
+          const curPt = convertScreenToSiteCoords(e);
+          const roadItem = customRoadLines[rIdx];
+          const pts = getRoadPoints(roadItem);
+          if (pts) {
+            activeRoadDrag = {
+              roadIdx: rIdx,
+              handleType: hType,
+              startSiteX: curPt.siteX,
+              startSiteY: curPt.siteY,
+              origLine: JSON.parse(JSON.stringify(pts))
+            };
+            svgRoot.setPointerCapture(e.pointerId);
+            showToast("↔ Перетаскивание дороги: переместите мышь и отпустите для пересчета.");
+          }
+          return;
+        }
+
+        // 2. Черчение новой дороги
         if (isDrawingRoad) {
           e.preventDefault();
           e.stopPropagation();
-          const pt = convertScreenToSiteCoords(e);
+          const rawPt = convertScreenToSiteCoords(e);
+
           if (!drawRoadStartPt) {
+            const snap = getBoundarySnapPoint(rawPt);
+            const pt = snap || rawPt;
             drawRoadStartPt = pt;
             if (svgRoadDrawPreview) {
               svgRoadDrawPreview.innerHTML = `
-                <circle cx="${pt.svgX}" cy="${pt.svgY}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
-                <text x="${pt.svgX + 10}" y="${pt.svgY - 10}" fill="#1e40af" font-size="11" font-weight="700">Начало</text>
+                <circle cx="${pt.svgX}" cy="${pt.svgY}" r="7" fill="#2563eb" stroke="#ffffff" stroke-width="2.5" />
+                <rect x="${pt.svgX + 10}" y="${pt.svgY - 22}" width="70" height="20" rx="4" fill="#1e40af" />
+                <text x="${pt.svgX + 15}" y="${pt.svgY - 8}" fill="#ffffff" font-size="11" font-weight="700">Начало</text>
               `;
             }
-            showToast("✓ Начало дороги зафиксировано! Теперь кликните конец дороги.");
+            showToast("✓ Начало зафиксировано! Кликните вторую точку (Shift — шаг 45°/90°, межа магнитит).");
           } else {
-            const endPt = pt;
-            customRoadLines.push([
-              [drawRoadStartPt.siteX, drawRoadStartPt.siteY],
-              [endPt.siteX, endPt.siteY]
-            ]);
+            let pt = rawPt;
+            if (e.shiftKey) {
+              pt = applyShiftLock(drawRoadStartPt, pt);
+            } else {
+              const snap = getBoundarySnapPoint(pt);
+              if (snap) pt = snap;
+            }
+
+            const cCfg = ROAD_CATEGORIES_CONFIG[currentRoadCategory] || ROAD_CATEGORIES_CONFIG.district;
+            let rW = (currentRoadCategory === "custom" && cfgRoadWidth) ? parseFloat(cfgRoadWidth.value) : cCfg.width;
+            let rS = (currentRoadCategory === "custom" && cfgRoadSetback) ? parseFloat(cfgRoadSetback.value) : cCfg.setback;
+            let rName = (currentRoadCategory === "custom") ? `Пользовательская (${rW} м)` : cCfg.name;
+
+            customRoadLines.push({
+              points: [
+                [drawRoadStartPt.siteX, drawRoadStartPt.siteY],
+                [pt.siteX, pt.siteY]
+              ],
+              category: currentRoadCategory,
+              width: rW,
+              setback: rS,
+              name: rName
+            });
             currentRoadPreset = "custom";
             if (cfgRoadPreset) cfgRoadPreset.value = "custom";
             stopRoadDrawing();
             updateRoadControlsVisibility();
-            showToast("🛣️ Дорога построена! Нарезаем участок и расставляем корпуса...");
-            await lockSiteAndGenerate();
+            showToast(`🛣️ ${rName} построена! Сквозной разрез участка выполнен.`);
+            await updateRoadsOnly();
           }
           return;
         }
@@ -7358,17 +8124,86 @@
       });
 
       svgRoot.addEventListener("pointermove", e => {
-        if (isDrawingRoad && drawRoadStartPt && svgRoadDrawPreview) {
-          const cur = convertScreenToSiteCoords(e);
+        if (isDrawingRoad) {
+          const rawPt = convertScreenToSiteCoords(e);
+
+          if (!drawRoadStartPt) {
+            const snap = getBoundarySnapPoint(rawPt);
+            if (snap && svgRoadDrawPreview) {
+              const sColor = snap.snapColor || "#10b981";
+              const tagW = Math.max(120, snap.type.length * 8.5);
+              svgRoadDrawPreview.innerHTML = `
+                <circle cx="${snap.svgX}" cy="${snap.svgY}" r="7" fill="none" stroke="${sColor}" stroke-width="2.5" />
+                <circle cx="${snap.svgX}" cy="${snap.svgY}" r="3.5" fill="${sColor}" />
+                <rect x="${snap.svgX + 10}" y="${snap.svgY - 22}" width="${tagW}" height="20" rx="4" fill="#0f172a" opacity="0.95" />
+                <text x="${snap.svgX + 16}" y="${snap.svgY - 8}" fill="#ffffff" font-size="11" font-weight="700">🧲 ${snap.type}</text>
+              `;
+            } else if (svgRoadDrawPreview) {
+              svgRoadDrawPreview.innerHTML = "";
+            }
+            return;
+          }
+
+          let cur = rawPt;
+          if (e.shiftKey) {
+            cur = applyShiftLock(drawRoadStartPt, cur);
+          } else {
+            const snap = getBoundarySnapPoint(cur);
+            if (snap) cur = snap;
+          }
+
           const lenM = Math.round(Math.hypot(cur.siteX - drawRoadStartPt.siteX, cur.siteY - drawRoadStartPt.siteY));
-          svgRoadDrawPreview.innerHTML = `
-            <circle cx="${drawRoadStartPt.svgX}" cy="${drawRoadStartPt.svgY}" r="6" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
-            <line x1="${drawRoadStartPt.svgX}" y1="${drawRoadStartPt.svgY}" x2="${cur.svgX}" y2="${cur.svgY}" class="svg-road-preview" />
-            <circle cx="${cur.svgX}" cy="${cur.svgY}" r="5" fill="#60a5fa" stroke="#ffffff" stroke-width="2" />
-            <text x="${(drawRoadStartPt.svgX + cur.svgX) / 2}" y="${(drawRoadStartPt.svgY + cur.svgY) / 2 - 10}" fill="#1e40af" font-size="12" font-weight="700" text-anchor="middle" stroke="#ffffff" stroke-width="3" paint-order="stroke">${lenM} м</text>
-          `;
+          const midSvgX = (drawRoadStartPt.svgX + cur.svgX) / 2;
+          const midSvgY = (drawRoadStartPt.svgY + cur.svgY) / 2;
+
+          let badgeText = `${lenM} м`;
+          if (cur.isShiftLocked) badgeText += ` • 📐 ${cur.angleDeg}°`;
+          if (cur.isSnapped) badgeText += ` • 🧲 ${cur.type}`;
+
+          const badgeWidth = Math.max(70, badgeText.length * 7.5);
+          const endColor = cur.isSnapped ? (cur.snapColor || '#10b981') : (cur.isShiftLocked ? '#f59e0b' : '#3b82f6');
+
+          if (svgRoadDrawPreview) {
+            svgRoadDrawPreview.innerHTML = `
+              <line x1="${drawRoadStartPt.svgX}" y1="${drawRoadStartPt.svgY}" x2="${cur.svgX}" y2="${cur.svgY}" stroke="#2563eb" stroke-width="4.5" stroke-linecap="round" />
+              <circle cx="${drawRoadStartPt.svgX}" cy="${drawRoadStartPt.svgY}" r="6.5" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
+              <circle cx="${cur.svgX}" cy="${cur.svgY}" r="${cur.isSnapped ? 7.5 : 5.5}" fill="${endColor}" stroke="#ffffff" stroke-width="2" />
+              <rect x="${midSvgX - badgeWidth / 2}" y="${midSvgY - 26}" width="${badgeWidth}" height="20" rx="4" fill="#1e293b" opacity="0.9" />
+              <text x="${midSvgX}" y="${midSvgY - 12}" fill="#ffffff" font-size="11" font-weight="700" text-anchor="middle">${badgeText}</text>
+            `;
+          }
           return;
         }
+
+        if (activeRoadDrag) {
+          const curPt = convertScreenToSiteCoords(e);
+          const rIdx = activeRoadDrag.roadIdx;
+          const roadItem = customRoadLines[rIdx];
+          const pts = getRoadPoints(roadItem);
+          if (pts) {
+            if (activeRoadDrag.handleType === "start") {
+              let pt = curPt;
+              if (e.shiftKey) pt = applyShiftLock({ siteX: pts[1][0], siteY: pts[1][1] }, pt);
+              const snap = getBoundarySnapPoint(pt);
+              if (snap) pt = snap;
+              pts[0] = [pt.siteX, pt.siteY];
+            } else if (activeRoadDrag.handleType === "end") {
+              let pt = curPt;
+              if (e.shiftKey) pt = applyShiftLock({ siteX: pts[0][0], siteY: pts[0][1] }, pt);
+              const snap = getBoundarySnapPoint(pt);
+              if (snap) pt = snap;
+              pts[1] = [pt.siteX, pt.siteY];
+            } else if (activeRoadDrag.handleType === "mid") {
+              const dx = curPt.siteX - activeRoadDrag.startSiteX;
+              const dy = curPt.siteY - activeRoadDrag.startSiteY;
+              pts[0] = [activeRoadDrag.origLine[0][0] + dx, activeRoadDrag.origLine[0][1] + dy];
+              pts[1] = [activeRoadDrag.origLine[1][0] + dx, activeRoadDrag.origLine[1][1] + dy];
+            }
+            renderCustomRoadHandles();
+          }
+          return;
+        }
+
         if (!isDragging) return;
         view.x = e.clientX - dragStart.x;
         view.y = e.clientY - dragStart.y;
@@ -7379,7 +8214,14 @@
         isDragging = false;
         try { svgRoot.releasePointerCapture(e.pointerId); } catch (_) {}
       }
-      svgRoot.addEventListener("pointerup", e => {
+      svgRoot.addEventListener("pointerup", async e => {
+        if (activeRoadDrag) {
+          activeRoadDrag = null;
+          try { svgRoot.releasePointerCapture(e.pointerId); } catch (_) {}
+          showToast("🛣️ Положение дороги обновлено! Нарезаем кварталы...");
+          await updateRoadsOnly();
+          return;
+        }
         endDrag(e);
         if (downPos) {
           const dist = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);

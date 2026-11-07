@@ -1,0 +1,922 @@
+/* ==========================================================================
+   URBAN / TEP STUDIO — ШАГ 1: ПОСАДКА И ПРОВЕРКА УЧАСТКА
+   Craft standard: Impeccable (Tool-grade precision, Autodesk Forma / TestFit)
+   ========================================================================== */
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+
+  /* Dark CAD Slate Palette */
+  --bg-app: #080c14;
+  --bg-panel: #0f172a;
+  --bg-panel-subtle: #141e33;
+  --bg-surface: #1e293b;
+  --bg-surface-hover: #27354d;
+  --bg-surface-active: #334155;
+  --bg-input: #0a0f1d;
+
+  --border-muted: #1e293b;
+  --border-default: #283548;
+  --border-strong: #3b4e6d;
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-on-accent: #020617;
+
+  --accent: #38bdf8;          /* Electric Sky */
+  --accent-hover: #7dd3fc;
+  --accent-muted: rgba(56, 189, 248, 0.12);
+  --accent-border: rgba(56, 189, 248, 0.35);
+
+  --success: #34d399;
+  --success-bg: rgba(52, 211, 153, 0.12);
+  --success-border: rgba(52, 211, 153, 0.3);
+
+  --warning: #fbbf24;
+  --warning-bg: rgba(251, 191, 36, 0.12);
+  --warning-border: rgba(251, 191, 36, 0.3);
+
+  --danger: #f87171;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --header-height: 48px;
+  --sidebar-width: 360px;
+  --right-panel-width: 340px;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+.num, .val-tag, .stat-value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  font-family: var(--font-mono);
+}
+
+/* ==========================================================================
+   APP HEADER
+   ========================================================================== */
+.studio-header {
+  height: var(--header-height);
+  background-color: var(--bg-panel);
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  z-index: 50;
+  user-select: none;
+}
+
+.brand-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  text-decoration: none;
+}
+
+.brand-logo svg {
+  color: var(--accent);
+}
+
+.parcel-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+}
+
+/* Stepper */
+.stepper-container {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 3px 6px;
+}
+
+.stepper-step {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.stepper-step.active {
+  background: var(--bg-surface-active);
+  color: #fff;
+  font-weight: 600;
+}
+
+.stepper-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--border-default);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.stepper-step.active .stepper-circle {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.stepper-arrow {
+  color: var(--border-strong);
+  font-size: 12px;
+}
+
+/* Header Actions */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success);
+}
+
+/* ==========================================================================
+   3-COLUMN WORKSPACE
+   ========================================================================== */
+.studio-workspace {
+  display: flex;
+  width: 100vw;
+  height: calc(100vh - var(--header-height));
+  position: relative;
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   LEFT PANEL (360px): ШАГ 1 — ВЫБОР РЕЖИМА И ПОСАДКА
+   ========================================================================== */
+.left-panel {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  height: 100%;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  overflow: hidden;
+}
+
+.panel-scroll-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Slim scrollbar */
+.panel-scroll-content::-webkit-scrollbar,
+.right-panel-content::-webkit-scrollbar {
+  width: 5px;
+}
+.panel-scroll-content::-webkit-scrollbar-thumb,
+.right-panel-content::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 3px;
+}
+
+.panel-hero {
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: 12px;
+}
+
+.panel-hero-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.panel-hero-desc {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  line-height: 1.4;
+}
+
+/* Segmented Control для 3 режимов */
+.mode-segmented-control {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  gap: 3px;
+}
+
+.mode-btn {
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 7px 4px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.mode-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+}
+
+.mode-btn.active {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* Tool Sections & Form Elements */
+.tool-section {
+  background: var(--bg-panel-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tool-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+.mode-pane {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mode-pane.active {
+  display: flex;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.form-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.form-label .val-tag {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Form Inputs */
+input[type="text"],
+input[type="number"],
+select,
+textarea {
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 6px 9px;
+  font-size: 12px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease;
+  width: 100%;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--accent);
+}
+
+/* Custom Range Slider */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--border-default);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--bg-app);
+  box-shadow: 0 0 2px rgba(0,0,0,0.5);
+  transition: transform 0.1s;
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+/* Quick Angle Snap Buttons */
+.angle-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.angle-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 5px 8px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.angle-btn:hover {
+  color: #fff;
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+}
+
+/* Dropzone for CAD / GPZU */
+.file-dropzone {
+  border: 1px dashed var(--border-strong);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-md);
+  padding: 16px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.file-dropzone:hover {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.file-dropzone-text {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.file-dropzone-hint {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+/* Checkbox */
+.switch-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch-label input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
+/* Lock Site Button Footer */
+.panel-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-panel);
+}
+
+.btn-lock-site {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  border: none;
+  color: var(--text-on-accent);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-lock-site:hover {
+  background: var(--accent-hover);
+}
+
+.btn-lock-site.locked {
+  background: var(--success);
+  color: #064e3b;
+}
+
+/* ==========================================================================
+   CENTER CANVAS: 2D ВЕКТОР CAD И СПУТНИК OSM
+   ========================================================================== */
+.center-canvas {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  background-color: var(--bg-app);
+  overflow: hidden;
+}
+
+/* Переключатель видов в левом верхнем углу холста */
+.canvas-view-toggle {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  z-index: 30;
+  display: flex;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 3px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.canvas-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.canvas-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.canvas-tab-btn.active {
+  background: var(--bg-surface-active);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Кнопка главного действия */
+.btn-primary-action {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-primary-action:hover {
+  background: var(--accent-hover);
+}
+
+.btn-primary-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Подсказки быстрого ввода КН */
+.cad-quick-hints {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.cad-hint-label {
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+
+.cad-hint-chip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cad-hint-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+/* Пустое состояние центрального холста */
+.canvas-empty-state {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at center, #0e1726 0%, #080c14 100%);
+  z-index: 10;
+  padding: 24px;
+}
+
+.empty-state-card {
+  max-width: 440px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 32px 28px;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.empty-state-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px auto;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+}
+
+.empty-state-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.empty-state-desc {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* Panes */
+.canvas-pane {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: none;
+}
+
+.canvas-pane.active {
+  display: block;
+}
+
+#pane-osm {
+  background: #0b1120;
+}
+
+#iframe-osm {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+#pane-svg {
+  cursor: grab;
+}
+
+#pane-svg:active {
+  cursor: grabbing;
+}
+
+#svg-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Floating Zoom Buttons (Bottom Right) */
+.canvas-zoom-buttons {
+  position: absolute;
+  bottom: 24px;
+  right: 16px;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.zoom-tool-btn {
+  width: 30px;
+  height: 30px;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.zoom-tool-btn:hover {
+  background: var(--bg-surface-hover);
+  color: #fff;
+}
+
+.zoom-tool-btn + .zoom-tool-btn {
+  border-top: 1px solid var(--border-default);
+}
+
+/* Bottom Left Status Chip (WGS-84, Scale, Dimensions) */
+.canvas-status-bar {
+  position: absolute;
+  bottom: 24px;
+  left: 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid var(--border-default);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.compass-tag {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   RIGHT PANEL (340px): ПАСПОРТ УЧАСТКА И ПРОВЕРКА ПОСАДКИ
+   ========================================================================== */
+.right-panel {
+  width: var(--right-panel-width);
+  min-width: var(--right-panel-width);
+  height: 100%;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  overflow: hidden;
+}
+
+.right-panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.right-panel-head {
+  border-bottom: 1px solid var(--border-muted);
+  padding-bottom: 12px;
+}
+
+.right-panel-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.right-panel-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 3px;
+}
+
+/* Verification Status Banner */
+.verification-card {
+  border-radius: var(--radius-md);
+  padding: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  transition: all 0.2s ease;
+}
+
+.verification-card.verified {
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: var(--success);
+}
+
+.verification-card.unverified {
+  background: rgba(148, 163, 184, 0.05);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+}
+
+.verification-card.checking {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  color: var(--warning);
+}
+
+/* Land Passport Table — Строгая CAD верстка без вылезания текста */
+.passport-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  box-sizing: border-box;
+}
+
+.passport-table tr {
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.passport-table tr:last-child {
+  border-bottom: none;
+}
+
+.passport-table td {
+  padding: 6px 2px;
+  font-size: 11.5px;
+  line-height: 1.35;
+  vertical-align: top;
+  box-sizing: border-box;
+}
+
+.passport-table td:first-child {
+  width: 44%;
+  color: var(--text-secondary);
+  font-weight: 400;
+  text-align: left;
+  padding-right: 6px;
+  word-break: normal;
+}
+
+.passport-table td:last-child {
+  width: 56%;
+  color: var(--text-primary);
+  font-weight: 600;
+  text-align: right;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+}
+
+.passport-table td.cell-accent {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.passport-table tr:hover td {
+  background: var(--bg-panel-subtle);
+}
+
+/* Кнопки геопорталов в паспорте ЗУ */
+.passport-geo-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.geo-action-link {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all 0.15s;
+}
+
+.geo-action-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-muted);
+}

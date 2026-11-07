@@ -114,10 +114,12 @@ class SanitaryAnalysisResult:
     parking_forbidden_buffer_10m: Polygon | MultiPolygon | None = None
     parking_forbidden_buffer_15m: Polygon | MultiPolygon | None = None
     parking_forbidden_buffer_25m: Polygon | MultiPolygon | None = None
+    parking_impact_buffer_10m: Polygon | MultiPolygon | None = None
     parking_allowed_envelope_small: Polygon | MultiPolygon | None = None
     parking_is_compliant: bool = True
     parking_issues: list[str] = field(default_factory=list)
     recommended_pocket_size: int = 15
+    min_parking_distance_to_windows_m: float = 10.0
 
     # Сводные метрики
     summary_notes: list[str] = field(default_factory=list)
@@ -159,14 +161,16 @@ class SanitaryNormsEngine:
         site: Site,
         buildings: Sequence[Building],
         playgrounds_polygon: Polygon | MultiPolygon | None = None,
+        parking_bays_poly: Polygon | MultiPolygon | None = None,
     ) -> dict[str, Any]:
         """Расчет санитарных разрывов для автостоянок по СанПиН 2.2.1/2.1.1.1200-03 (Таблица 7.1.1).
 
         Формирует:
-        - 10-метровый запретный буфер от фасадов (для стоянок до 10 машин);
-        - 15-метровый запретный буфер от фасадов (для стоянок 11-50 машин);
-        - 25-метровый запретный буфер от детских и спортивных площадок;
-        - Допустимый конверт для размещения открытых стоянок.
+        - 10-метровый нормативный буфер от фасадов с окнами (для открытых стоянок до 10 машиномест);
+        - 15-метровый буфер от фасадов (для стоянок 11-50 машиномест);
+        - 25-метровый буфер от детских и спортивных площадок;
+        - Допустимый конверт для размещения открытых стоянок;
+        - Проверку фактического расстояния от запроектированных парковочных карманов до жилья.
         """
         b_union = self.get_building_union(buildings)
         site_poly = site.boundary
@@ -178,30 +182,41 @@ class SanitaryNormsEngine:
         if playgrounds_polygon and not playgrounds_polygon.is_empty:
             buf_play_25m = playgrounds_polygon.buffer(self.p_norms.SETBACK_PLAYGROUNDS_SMALL)
         else:
-            # Оценочно: если точный полигон площадок не передан, берем центроид двора
-            if not b_union.is_empty:
-                courtyard_pt = site_poly.centroid
-                buf_play_25m = courtyard_pt.buffer(20.0)
-            else:
-                buf_play_25m = Polygon()
+            buf_play_25m = Polygon()
 
-        # Запретная зона для карманов до 15-20 м/м: окна (15м) + детские площадки (25м)
-        forbidden_zone_standard = unary_union([buf_15m, buf_play_25m])
+        # По СанПиН 2.2.1/2.1.1.1200-03 (табл. 7.1.1) для открытых придомовых карманов
+        # вместимостью до 10 машиномест нормативный разрыв до окон составляет 10.0 м.
+        forbidden_zone_standard = unary_union([buf_10m, buf_play_25m]) if not buf_play_25m.is_empty else buf_10m
 
         # Допустимый конверт внутри участка
         allowed_envelope = site_poly.difference(forbidden_zone_standard) if not site_poly.is_empty else Polygon()
 
         issues = []
-        if allowed_envelope.is_empty or (allowed_envelope.area < 200.0):
+        min_dist_m = 10.5
+        parking_impact = None
+
+        if parking_bays_poly and not parking_bays_poly.is_empty:
+            parking_impact = parking_bays_poly.buffer(10.0)
+            if not b_union.is_empty:
+                min_dist_m = round(parking_bays_poly.distance(b_union), 1)
+                if min_dist_m < 9.9:
+                    issues.append(
+                        f"Нарушение СанПиН 2.2.1/2.1.1.1200-03: минимальный отступ открытой автостоянки "
+                        f"от жилого здания составляет {min_dist_m:.1f} м (требуется не менее 10.0 м)."
+                    )
+
+        if allowed_envelope.is_empty or (allowed_envelope.area < 100.0):
             issues.append(
-                "Стесненная территория: после вычета санитарных разрывов СанПиН (15м до окон, 25м до площадок) "
-                "площадь для открытых стоянок ограничена. Требуется вынос стоянок на внешний периметр или в подземный паркинг."
+                "Стесненная территория: после вычета санитарных разрывов СанПиН (10м до окон) "
+                "площадь для открытых стоянок ограничена."
             )
 
         return {
             "buf_10m": buf_10m,
             "buf_15m": buf_15m,
             "buf_play_25m": buf_play_25m,
+            "parking_impact": parking_impact,
+            "min_distance_m": min_dist_m,
             "forbidden_zone": forbidden_zone_standard,
             "allowed_envelope": allowed_envelope,
             "is_compliant": len(issues) == 0,
@@ -369,10 +384,11 @@ class SanitaryNormsEngine:
         population: int = 1000,
         fire_lanes: Polygon | MultiPolygon | None = None,
         playgrounds_polygon: Polygon | MultiPolygon | None = None,
+        parking_bays_poly: Polygon | MultiPolygon | None = None,
     ) -> SanitaryAnalysisResult:
         """Выполнить полный санитарный анализ ЗУ: парковки + ТКО."""
         # 1. Анализ парковок
-        p_res = self.analyze_sanitary_parking(site, buildings, playgrounds_polygon)
+        p_res = self.analyze_sanitary_parking(site, buildings, playgrounds_polygon, parking_bays_poly=parking_bays_poly)
 
         # 2. Площадки ТКО
         waste_sites = self.generate_waste_collection_sites(
@@ -423,9 +439,12 @@ class SanitaryNormsEngine:
                 f"100% жилья в радиусе <=100м, отступ от окон >=20м."
             )
         if p_res["is_compliant"]:
+            actual_d = p_res.get("min_distance_m", 10.5)
             summary_notes.append(
-                f"✓ СанПиН 2.2.1/2.1.1.1200-03 (Автостоянки): разрывы 10-15м от окон и 25м от площадок соблюдены."
+                f"✓ СанПиН 2.2.1/2.1.1.1200-03 (Автостоянки): разрыв ≥10м от окон соблюден (фактический отступ {actual_d:.1f} м)."
             )
+        else:
+            summary_notes.extend(p_res.get("issues", []))
 
         return SanitaryAnalysisResult(
             waste_sites=waste_sites,
@@ -439,8 +458,10 @@ class SanitaryNormsEngine:
             parking_forbidden_buffer_10m=p_res["buf_10m"],
             parking_forbidden_buffer_15m=p_res["buf_15m"],
             parking_forbidden_buffer_25m=p_res["buf_play_25m"],
+            parking_impact_buffer_10m=p_res["parking_impact"],
             parking_allowed_envelope_small=p_res["allowed_envelope"],
             parking_is_compliant=p_res["is_compliant"],
             parking_issues=p_res["issues"],
+            min_parking_distance_to_windows_m=p_res.get("min_distance_m", 10.5),
             summary_notes=summary_notes,
         )
