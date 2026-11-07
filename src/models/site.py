@@ -25,6 +25,8 @@ class Site:
 
     boundary: Polygon
     red_lines: list[LineString] = field(default_factory=list)
+    zouit_polygons: list[Polygon] = field(default_factory=list)
+    zouit_info: list[dict[str, Any]] = field(default_factory=list)
     setbacks: dict[str, float] = field(default_factory=dict)
     base_offset: tuple[float, float] = (0.0, 0.0)
     geo_center: tuple[float, float] | None = None  # (latitude, longitude)
@@ -55,6 +57,11 @@ class Site:
             self.red_lines = [
                 shapely.affinity.rotate(rl, -angle_deg, origin=c)
                 for rl in self.red_lines
+            ]
+        if getattr(self, "zouit_polygons", None):
+            self.zouit_polygons = [
+                shapely.affinity.rotate(zp, -angle_deg, origin=c)
+                for zp in self.zouit_polygons
             ]
         new_rot = (self.rotation_deg + angle_deg) % 360.0
         while new_rot > 180.0:
@@ -123,9 +130,17 @@ class Site:
             red_line_union = unary_union(red_line_buffers)
             buildable = buildable.difference(red_line_union)
 
+        # Вычитание охранных зон ЗОУИТ (инженерные сети, ЛЭП, газопровод и др.)
+        if getattr(self, "zouit_polygons", None):
+            valid_z = [zp for zp in self.zouit_polygons if zp and not zp.is_empty and zp.is_valid]
+            if valid_z:
+                zouit_union = unary_union(valid_z)
+                if not zouit_union.is_empty:
+                    buildable = buildable.difference(zouit_union)
+
         if buildable.is_empty:
             raise ValueError(
-                "После применения отступов от красных линий "
+                "После применения отступов и зон ЗОУИТ "
                 "зона застройки оказалась пустой."
             )
 

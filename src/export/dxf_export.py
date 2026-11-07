@@ -161,5 +161,61 @@ def export_dxf(
             )
             t.set_placement((table_x, table_y - idx * 3.5), align=ezdxf.enums.TextEntityAlignment.LEFT)
 
+    # 6. Экспорт пожарных проездов (СП 4.13130.2020)
+    try:
+        from src.core.fire_safety import FireAccessEngine
+        fire_res = FireAccessEngine().generate_fire_routes(site, buildings)
+        if fire_res.all_fire_infrastructure and not fire_res.all_fire_infrastructure.is_empty:
+            fire_layer = "ГП_ПОЖАРНЫЙ_ПРОЕЗД_СП4"
+            if fire_layer not in doc.layers:
+                doc.layers.add(fire_layer, color=1)  # 1 = Red
+            if isinstance(fire_res.all_fire_infrastructure, MultiPolygon):
+                for part in fire_res.all_fire_infrastructure.geoms:
+                    _export_polygon(part, fire_layer)
+            elif isinstance(fire_res.all_fire_infrastructure, Polygon):
+                _export_polygon(fire_res.all_fire_infrastructure, fire_layer)
+    except Exception:
+        pass
+
+    # 7. Экспорт зон ЗОУИТ (охранные зоны инженерных сетей, ЛЭП и др.)
+    if getattr(site, "zouit_polygons", None):
+        try:
+            zouit_layer = "ГП_ЗОУИТ_ОХРАННЫЕ_ЗОНЫ"
+            if zouit_layer not in doc.layers:
+                doc.layers.add(zouit_layer, color=30)  # 30 = Orange
+            for zp in site.zouit_polygons:
+                if isinstance(zp, Polygon) and not zp.is_empty and zp.is_valid:
+                    _export_polygon(zp, zouit_layer)
+                elif isinstance(zp, MultiPolygon):
+                    for part in zp.geoms:
+                        if not part.is_empty and part.is_valid:
+                            _export_polygon(part, zouit_layer)
+        except Exception:
+            pass
+
+    # 8. Экспорт площадок ТКО и санитарных зон (СанПиН 2.1.3684-21 и СанПиН 2.2.1/2.1.1.1200-03)
+    try:
+        from src.core.sanitary_norms import SanitaryNormsEngine
+        pop_est = getattr(tep, "population", 1000) if tep else 1000
+        san_res = SanitaryNormsEngine().analyze_site(site, buildings, population=pop_est)
+
+        tko_layer = "ГП_ПЛОЩАДКА_ТКО_САНПИН"
+        if tko_layer not in doc.layers:
+            doc.layers.add(tko_layer, color=3)  # 3 = Green
+        for ws in san_res.waste_sites:
+            _export_polygon(ws.polygon, tko_layer)
+
+        if san_res.parking_forbidden_buffer_15m and not san_res.parking_forbidden_buffer_15m.is_empty:
+            san_park_layer = "ГП_САНЗОНА_ПАРКОВОК_САНПИН"
+            if san_park_layer not in doc.layers:
+                doc.layers.add(san_park_layer, color=6)  # 6 = Magenta
+            if isinstance(san_res.parking_forbidden_buffer_15m, MultiPolygon):
+                for part in san_res.parking_forbidden_buffer_15m.geoms:
+                    _export_polygon(part, san_park_layer)
+            elif isinstance(san_res.parking_forbidden_buffer_15m, Polygon):
+                _export_polygon(san_res.parking_forbidden_buffer_15m, san_park_layer)
+    except Exception:
+        pass
+
     doc.saveas(str(path))
     return path

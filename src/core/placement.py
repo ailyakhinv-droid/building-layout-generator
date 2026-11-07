@@ -114,6 +114,7 @@ class PlacementConfig:
     max_far: float | None = None
     fire_gap_end_to_end: float = 10.0
     fire_gap_parallel: float = 18.0
+    only_ground_parking: bool = False
 
 
 class PlacementEngine:
@@ -448,6 +449,10 @@ class PlacementEngine:
                         s.floors = max_fl
 
         # 1. Ограничение по BCR (процент застройки / пятно подошвы)
+        if placement_config.only_ground_parking:
+            # Для обеспечения 100% наземных парковок пятно застройки не должно вытеснять открытые стоянки
+            max_bcr = min(max_bcr or 0.35, 0.35)
+
         if max_bcr is not None:
             allowed_footprint = site_area * max_bcr
             cur_footprint = sum(b.total_building_area for b in buildings)
@@ -476,9 +481,23 @@ class PlacementEngine:
                 else:
                     buildings = kept
 
-        # 2. Ограничение по FAR (суммарная общая площадь / GFA)
-        if max_far is not None and buildings:
-            allowed_gfa = site_area * max_far
+        # 2. Ограничение по FAR (суммарная общая площадь / GFA) и вместимости наземных парковок
+        allowed_gfa = site_area * max_far if max_far is not None else None
+
+        if placement_config.only_ground_parking and buildings:
+            # Расчет физического лимита GFA по вместимости открытых наземных автостоянок
+            cur_fp = sum(b.total_building_area for b in buildings)
+            free_l = max(0.0, site_area - cur_fp)
+            drv_est = free_l * 0.18
+            green_min = site_area * 0.25
+            avail_park_m2 = max(0.0, free_l - drv_est - green_min)
+            max_ground_stalls = int(avail_park_m2 / 22.5)
+            # Оценочный выход GFA на 1 открытое м/м (~115 м² GFA на 1 м/м по СП 42)
+            gfa_cap_by_parking = max(100.0, max_ground_stalls * 115.0)
+            if allowed_gfa is None or gfa_cap_by_parking < allowed_gfa:
+                allowed_gfa = gfa_cap_by_parking
+
+        if allowed_gfa is not None and buildings:
             cur_gfa = sum(b.total_gfa for b in buildings)
             if cur_gfa > allowed_gfa * 1.005:
                 # Сначала пробуем убрать лишние корпуса, сохраняя целевую этажность остальных

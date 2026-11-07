@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -158,12 +159,22 @@ ALL_REGIONS: dict[str, tuple[str, str, float, float]] = {
     "77": ("г. Москва", "moscow_mngp", 55.7512, 37.6184),
     "78": ("г. Санкт-Петербург", "spb_rngp", 59.9386, 30.3141),
     "79": ("Еврейская АО (Биробиджан)", "russia_sp42", 48.7946, 132.9218),
+    "80": ("Забайкальский край / Агинский округ (Агинское)", "russia_sp42", 51.1065, 114.5303),
+    "81": ("Пермский край / Коми-Пермяцкий округ (Кудымкар)", "russia_sp42", 59.0177, 54.6560),
     "82": ("Республика Крым (Симферополь)", "russia_sp42", 44.9521, 34.1024),
     "83": ("Ненецкий АО (Нарьян-Мар)", "russia_sp42", 67.6381, 53.0040),
+    "84": ("Красноярский край / Таймырский Долгано-Ненецкий район (Дудинка)", "russia_sp42", 69.4058, 86.1778),
+    "85": ("Иркутская область / Усть-Ордынский Бурятский округ (Усть-Ордынский)", "russia_sp42", 52.8122, 104.7561),
     "86": ("Ханты-Мансийский АО - Югра (Сургут)", "russia_sp42", 61.2540, 73.3962),
     "87": ("Чукотский АО (Анадырь)", "russia_sp42", 64.7334, 177.5084),
+    "88": ("Красноярский край / Эвенкийский район (Тура)", "russia_sp42", 64.2783, 100.2181),
     "89": ("Ямало-Ненецкий АО (Салехард)", "russia_sp42", 66.5299, 66.6019),
+    "90": ("Запорожская область (Мелитополь)", "russia_sp42", 46.8489, 35.3653),
+    "91": ("Республика Крым (Севастополь / Симферополь)", "russia_sp42", 44.9521, 34.1024),
     "92": ("г. Севастополь", "russia_sp42", 44.6166, 33.5254),
+    "93": ("Донецкая Народная Республика (Донецк)", "russia_sp42", 48.0159, 37.8028),
+    "94": ("Луганская Народная Республика (Луганск)", "russia_sp42", 48.5740, 39.3078),
+    "95": ("Херсонская область (Геническ)", "russia_sp42", 46.1751, 34.8058),
 }
 
 
@@ -770,7 +781,7 @@ def smart_resolve_location(query: str) -> tuple[str, str, str, float, float]:
     """
     q = query.strip()
     if not q:
-        return resolve_cadastral_location("63:01:0709002:2320")
+        return ("Российская Федерация", "Федеральный норматив", "russia_sp42", 55.7512, 37.6184)
 
     # 0. Если введены точные координаты WGS-84 напрямую (например, "57.1754, 65.5810" или "57.1754 65.5810")
     coord_match = re.search(r"^(\d{2}[\.,]\d+)[,\s;]+(\d{2,3}[\.,]\d+)$", q)
@@ -778,20 +789,16 @@ def smart_resolve_location(query: str) -> tuple[str, str, str, float, float]:
         c1 = float(coord_match.group(1).replace(",", "."))
         c2 = float(coord_match.group(2).replace(",", "."))
         # Проверяем порядок: в РФ широта обычно 41..75°N, долгота 19..180°E
-        # Если c1 похожа на долготу Самары (48..53), а c2 - на широту (52..55), меняем местами
         if (48.0 <= c1 <= 52.0 and 52.0 <= c2 <= 55.0) or (c1 > 65.0 and 40.0 <= c2 <= 70.0):
             lat, lon = c2, c1
         else:
             lat, lon = c1, c2
-        reg_name, norm_id = "Тюменская область", "russia_sp42"
-        if 52.0 <= lat <= 55.0 and 48.0 <= lon <= 53.0:
-            reg_name, norm_id = "Самарская область", "russia_sp42"
-        elif 55.0 <= lat <= 56.5 and 36.5 <= lon <= 38.5:
-            reg_name, norm_id = "г. Москва", "moscow_mngp"
-        elif 59.5 <= lat <= 60.5 and 29.5 <= lon <= 31.0:
-            reg_name, norm_id = "г. Санкт-Петербург", "spb_rngp"
-        elif 44.0 <= lat <= 46.5 and 37.0 <= lon <= 41.0:
-            reg_name, norm_id = "Краснодарский край", "krasnodar_rngp"
+        # Автоматический пространственный поиск ближайшего субъекта РФ среди всех 89 регионов
+        best_code, (r_name, r_norm, r_lat, r_lon) = min(
+            ALL_REGIONS.items(),
+            key=lambda item: (item[1][2] - lat) ** 2 + ((item[1][3] - lon) * math.cos(math.radians(lat))) ** 2
+        )
+        reg_name, norm_id = r_name.split(" (")[0], r_norm
         return (reg_name, f"Координаты [{lat:.5f}, {lon:.5f}]", norm_id, lat, lon)
 
     # 1. Если строка содержит формат кадастрового номера (двоеточия, точки, код региона)
@@ -929,6 +936,9 @@ def parse_coordinate_table(text: str) -> list[tuple[float, float]]:
         line = line.strip()
         if not line or line.startswith("#"):
             continue
+        # Исключаем маркеры страниц типа "Страница 1 из 17", "=== PAGE 1 ===", "1 из 17"
+        if re.search(r"^(?:страница|\s*стр\.?|\s*=== page|\d+\s+из\s+\d+)", line, re.IGNORECASE):
+            continue
         # Исключаем строки описаний, примечаний и названий разделов (содержащие 2 и более слов текста)
         words = re.findall(r"[а-яА-Яa-zA-Z]{2,}", line)
         if len(words) >= 2:
@@ -938,7 +948,7 @@ def parse_coordinate_table(text: str) -> list[tuple[float, float]]:
         parts = re.split(r"[,;\t|\s]+", line_norm)
         nums = []
         for p in parts:
-            p_clean = p.strip("(),[]{}:X=Y=x=y=").strip()
+            p_clean = p.strip("(),[]{}:X=Y=x=y=Х=У=х=у=").strip()
             if not p_clean:
                 continue
             try:
@@ -947,11 +957,26 @@ def parse_coordinate_table(text: str) -> list[tuple[float, float]]:
             except ValueError:
                 pass
         if len(nums) >= 2:
+            # Если 5 чисел (номер точки + 2 существующие + 2 образуемые): берем образуемые!
+            if len(nums) >= 5 and nums[0].is_integer() and nums[0] < 5000:
+                p1, p2 = nums[3], nums[4]
+            # Если 4 числа (2 существующие + 2 образуемые): берем образуемые!
+            elif len(nums) == 4:
+                p1, p2 = nums[2], nums[3]
             # Если 3 числа и первое — целое число < 5000 (номер поворотной точки 1, 2...)
-            if len(nums) >= 3 and nums[0].is_integer() and nums[0] < 5000:
+            elif len(nums) >= 3 and nums[0].is_integer() and nums[0] < 5000:
                 p1, p2 = nums[1], nums[2]
             else:
                 p1, p2 = nums[0], nums[1]
+
+            # Фильтрация колоночных номеров типа (1, 2), (3, 4) или годов (1950..2050)
+            if p1.is_integer() and p2.is_integer() and 1 <= p1 <= 10 and 1 <= p2 <= 10:
+                continue
+            if 1950 <= p1 <= 2050 and 1950 <= p2 <= 2050:
+                continue
+            if abs(p1) < 100.0 and abs(p2) < 100.0 and (p1.is_integer() and p2.is_integer() and p1 < 20 and p2 < 20):
+                continue
+
             points.append((p1, p2))
     return points
 
@@ -997,11 +1022,8 @@ def create_site_from_coordinate_table(
         if not raw_poly.is_valid:
             raw_poly = raw_poly.buffer(0)
 
-        min_x, min_y, _, _ = raw_poly.bounds
-        norm_poly = shapely.affinity.translate(raw_poly, -min_x, -min_y)
-
         site = Site(
-            boundary=norm_poly,
+            boundary=raw_poly,
             base_offset=(0.0, 0.0),
             geo_center=(center_lat, center_lon),
             cadastral_number=cad_num or "ГПЗУ (WGS-84)",
@@ -1014,6 +1036,7 @@ def create_site_from_coordinate_table(
             "area_sqm": round(site.area, 1),
             "area_ha": round(site.area / 10000.0, 2),
             "center": (center_lat, center_lon),
+            "calibrated_pkk": False,
         }
         return site, meta
 
@@ -1033,29 +1056,81 @@ def create_site_from_coordinate_table(
         if not raw_poly.is_valid:
             raw_poly = raw_poly.buffer(0)
 
-        min_x, min_y, _, _ = raw_poly.bounds
-        norm_poly = shapely.affinity.translate(raw_poly, -min_x, -min_y)
+        c = raw_poly.centroid
+        norm_poly = shapely.affinity.translate(raw_poly, -c.x, -c.y)
+
+        # Автоматическая защита от неверно переданной МСК (например, дефолт Тюмени при кадастре Удмуртии)
+        cad_reg = None
+        if cad_num and ":" in str(cad_num):
+            cad_reg = str(cad_num).strip().split(":")[0].zfill(2)
+        elif region_hint:
+            clean_rh = str(region_hint).strip()
+            if clean_rh.isdigit():
+                cad_reg = clean_rh.zfill(2)
+            else:
+                for k, (reg_n, _, _, _) in ALL_REGIONS.items():
+                    if k in clean_rh or reg_n.lower() in clean_rh.lower():
+                        cad_reg = k
+                        break
 
         det_msk = msk_zone
-        if not det_msk or det_msk not in MSK_PRESETS:
-            det_msk = detect_msk_by_coordinates(easting_sample, northing_sample, region_hint=region_hint)
-        if not det_msk or det_msk not in MSK_PRESETS:
-            det_msk = "МСК-72 Зона 1 (Тюмень)"
+        if det_msk and cad_reg:
+            # Проверяем, соответствует ли переданная МСК региону кадастра
+            msk_matches_cad = (f"-{cad_reg} " in det_msk) or (f"_{cad_reg}" in det_msk) or (f"-{int(cad_reg)} " in det_msk)
+            if not msk_matches_cad:
+                auto_cad_msk = detect_msk_by_coordinates(easting_sample, northing_sample, region_hint=cad_reg)
+                if auto_cad_msk:
+                    det_msk = auto_cad_msk
 
-        c = raw_poly.centroid
+        if not det_msk or det_msk not in MSK_PRESETS:
+            if cad_reg:
+                from src.geo.msk_converter import get_msk_key_for_region
+                det_msk = get_msk_key_for_region(cad_reg, easting_sample, northing_sample)
+            if not det_msk or det_msk not in MSK_PRESETS:
+                det_msk = detect_msk_by_coordinates(easting_sample, northing_sample, region_hint=region_hint or cad_reg)
+
         lat_c, lon_c = msk_to_wgs84_coords(
             c.x, c.y, det_msk,
             axis_order="auto",
             expected_center=expected_center
         )
 
+        # Автоматическая геодезическая калибровка по официальным данным ПКК Росреестра
+        # Устраняет систематическую невязку ~4-6 метров перехода СК-42/ГОСТ -> WGS-84 (без закрытых локальных ключей)
+        calibrated_with_pkk = False
+        pkk_shift_m = 0.0
+        georef_src = f"По каталогу координат ({det_msk})"
+        if cad_num and ":" in str(cad_num):
+            try:
+                pkk_data = fetch_pkk_parcel_data(str(cad_num).strip())
+                if pkk_data and pkk_data.get("coordinates_wgs84"):
+                    pwgs = pkk_data["coordinates_wgs84"]
+                    p0_pkk = pwgs[0]
+                    if abs(p0_pkk[0] - lat_c) < abs(p0_pkk[1] - lat_c):
+                        pkk_poly = Polygon([(p[1], p[0]) for p in pwgs])
+                    else:
+                        pkk_poly = Polygon([(p[0], p[1]) for p in pwgs])
+
+                    pkk_c = pkk_poly.centroid
+                    d_lat_m = (pkk_c.y - lat_c) * 111139.0
+                    d_lon_m = (pkk_c.x - lon_c) * 111139.0 * math.cos(math.radians(lat_c))
+                    dist_err = math.hypot(d_lat_m, d_lon_m)
+                    if dist_err < 150.0:
+                        lat_c = pkk_c.y
+                        lon_c = pkk_c.x
+                        calibrated_with_pkk = True
+                        pkk_shift_m = round(dist_err, 2)
+                        georef_src = f"ГПЗУ ({det_msk}) + привязка к ПКК (невязка {dist_err:.1f} м устранена)"
+            except Exception:
+                pass
+
         site = Site(
             boundary=norm_poly,
-            base_offset=(min_x, min_y),
+            base_offset=(c.x, c.y),
             geo_center=(lat_c, lon_c),
             cadastral_number=cad_num or f"ГПЗУ ({det_msk})",
             address=f"Каталог координат ГПЗУ / ЕГРН ({det_msk})",
-            georef_source=f"По каталогу координат ({det_msk})",
+            georef_source=georef_src,
         )
         meta = {
             "coordinate_system": det_msk,
@@ -1063,6 +1138,8 @@ def create_site_from_coordinate_table(
             "area_sqm": round(site.area, 1),
             "area_ha": round(site.area / 10000.0, 2),
             "center": (lat_c, lon_c),
+            "calibrated_pkk": calibrated_with_pkk,
+            "pkk_shift_m": pkk_shift_m,
         }
         return site, meta
 
@@ -1070,13 +1147,13 @@ def create_site_from_coordinate_table(
     raw_poly = Polygon(pts)
     if not raw_poly.is_valid:
         raw_poly = raw_poly.buffer(0)
-    min_x, min_y, _, _ = raw_poly.bounds
-    norm_poly = shapely.affinity.translate(raw_poly, -min_x, -min_y)
-    lat_c, lon_c = expected_center if expected_center else (57.161069, 65.674079)
+    c = raw_poly.centroid
+    norm_poly = shapely.affinity.translate(raw_poly, -c.x, -c.y)
+    lat_c, lon_c = expected_center if expected_center else (55.751244, 37.618423)
 
     site = Site(
         boundary=norm_poly,
-        base_offset=(0.0, 0.0),
+        base_offset=(c.x, c.y),
         geo_center=(lat_c, lon_c),
         cadastral_number=cad_num or "ГПЗУ (локальные метры)",
         address="Каталог координат (локальные метры)",
@@ -1088,6 +1165,7 @@ def create_site_from_coordinate_table(
         "area_sqm": round(site.area, 1),
         "area_ha": round(site.area / 10000.0, 2),
         "center": (lat_c, lon_c),
+        "calibrated_pkk": False,
     }
     return site, meta
 

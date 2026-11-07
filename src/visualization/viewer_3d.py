@@ -138,6 +138,24 @@ def build_3d_geojson_data(
             },
         })
 
+    # 3.5. ЗОУИТ (зоны с особыми условиями использования территорий)
+    zouit_features = []
+    for idx, zp in enumerate(getattr(site, "zouit_polygons", [])):
+        if zp and not zp.is_empty:
+            zp_wgs = _to_wgs84(zp, center_lat, center_lon)
+            info = site.zouit_info[idx] if idx < len(getattr(site, "zouit_info", [])) else {}
+            name = info.get("name") or f"ЗОУИТ / Охранная зона {idx + 1}"
+            zouit_features.append({
+                "type": "Feature",
+                "geometry": mapping(zp_wgs),
+                "properties": {
+                    "type": "zouit",
+                    "name": name,
+                    "id": idx + 1,
+                    "area": round(zp.area, 1),
+                },
+            })
+
     # 4. Секции зданий (3D экструзия)
     building_features = []
     if buildings:
@@ -253,6 +271,7 @@ def build_3d_geojson_data(
     return {
         "boundary": {"type": "FeatureCollection", "features": [boundary_feature]},
         "buildable": {"type": "FeatureCollection", "features": [buildable_feature] if buildable_feature else []},
+        "zouit": {"type": "FeatureCollection", "features": zouit_features},
         "red_lines": {"type": "FeatureCollection", "features": red_line_features},
         "roads": {"type": "FeatureCollection", "features": road_features},
         "buildings": {"type": "FeatureCollection", "features": building_features},
@@ -951,6 +970,12 @@ def generate_3d_viewer_html(
       map.getSource('buildable').setData(DATA.buildable);
     }}
 
+    if (!map.getSource('zouit')) {{
+      map.addSource('zouit', {{ type: 'geojson', data: DATA.zouit || emptyFC }});
+    }} else if (DATA.zouit) {{
+      map.getSource('zouit').setData(DATA.zouit);
+    }}
+
     if (!map.getSource('red_lines')) {{
       map.addSource('red_lines', {{ type: 'geojson', data: DATA.red_lines || emptyFC }});
     }} else if (DATA.red_lines) {{
@@ -1025,6 +1050,31 @@ def generate_3d_viewer_html(
         paint: {{
           'line-color': '#16a34a',
           'line-width': 2.0
+        }}
+      }}, beforeVectorId);
+    }}
+
+    // ЗОУИТ (охранные зоны и ограничения)
+    if (!map.getLayer('zouit-fill')) {{
+      map.addLayer({{
+        id: 'zouit-fill',
+        type: 'fill',
+        source: 'zouit',
+        paint: {{
+          'fill-color': '#ef4444',
+          'fill-opacity': 0.20
+        }}
+      }}, beforeVectorId);
+    }}
+    if (!map.getLayer('zouit-line')) {{
+      map.addLayer({{
+        id: 'zouit-line',
+        type: 'line',
+        source: 'zouit',
+        paint: {{
+          'line-color': '#dc2626',
+          'line-width': 2.0,
+          'line-dasharray': [3, 2]
         }}
       }}, beforeVectorId);
     }}

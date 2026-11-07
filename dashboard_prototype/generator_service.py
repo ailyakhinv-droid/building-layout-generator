@@ -29,7 +29,7 @@ from shapely.geometry import Polygon, MultiPolygon, LineString, LinearRing
 from shapely.ops import unary_union
 
 from src.models.site import Site
-from src.models.building import Building
+from src.models.building import Building, PlacedSection
 from src.core.cadastre import (
     PRESET_PARCELS,
     get_cadastral_parcel,
@@ -244,9 +244,9 @@ def _create_site_from_params(
         red_lines_layer = None
 
     site = None
-    parcel_region_name = "Тюменская область"
-    parcel_district_name = "г. Тюмень"
-    parcel_address = "г. Тюмень"
+    parcel_region_name = "Российская Федерация"
+    parcel_district_name = "Участок проектирования"
+    parcel_address = "Российская Федерация"
     norm_id = "russia_sp42"
 
     # =========================================================================
@@ -282,7 +282,7 @@ def _create_site_from_params(
 
         # Фильтруем фиктивный номер 63:01:0709002:2320 если имя файла явно указывает на другой регион/город
         fn_lower = (cad_filename or "").lower()
-        if detected_cad == "63:01:0709002:2320" and any(k in fn_lower for k in ["тюмен", "72", "москв", "77", "спб", "петербург", "78"]):
+        if detected_cad == "63:01:0709002:2320" and any(k in fn_lower for k in ["тюмен", "72", "москв", "77", "спб", "петербург", "78", "ижевск", "18", "казан", "16"]):
             detected_cad = None
 
         # Если файл свежезагружен (cad_file_b64 передан) и в нем обнаружен кадастровый номер,
@@ -299,7 +299,7 @@ def _create_site_from_params(
             reg_name, dist_name, resolved_norm_id, c_lat, c_lon = smart_resolve_location(assigned_cad)
             norm_id = resolved_norm_id or "russia_sp42"
         else:
-            reg_name, dist_name, resolved_norm_id, c_lat, c_lon = "Тюменская область", "г. Тюмень", "russia_sp42", 57.161069, 65.674079
+            reg_name, dist_name, resolved_norm_id, c_lat, c_lon = "Российская Федерация", "Участок проектирования", "russia_sp42", 55.751244, 37.618423
             norm_id = "russia_sp42"
 
         # Если файл еще не загружен пользователем, подгружаем тестовый контур МСК для мгновенной демонстрации
@@ -353,12 +353,18 @@ def _create_site_from_params(
             else:
                 detected_msk = detect_msk_by_coordinates(site.base_offset[0], site.base_offset[1])
 
+            if not detected_msk and reg_code:
+                detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
             if not detected_msk:
-                detected_msk = "МСК-72 Зона 1 (Тюмень)"
+                detected_msk = next(iter(MSK_PRESETS.keys()))
 
             if detected_msk in MSK_PRESETS:
                 preset = MSK_PRESETS[detected_msk]
-                if not assigned_cad or c_lat == 0.0 or c_lon == 0.0 or ("63" in assigned_cad and "63" not in detected_msk) or ("72" in assigned_cad and "72" not in detected_msk):
+                cad_reg_mismatch = False
+                if assigned_cad and ":" in assigned_cad:
+                    c_prefix = assigned_cad.split(":")[0].zfill(2)
+                    cad_reg_mismatch = (f"-{c_prefix} " not in detected_msk) and (f"_{c_prefix}" not in detected_msk)
+                if not assigned_cad or c_lat == 0.0 or c_lon == 0.0 or cad_reg_mismatch:
                     exp_c = (preset["default_lat"], preset["default_lon"])
                     parcel_region_name = preset.get("region", reg_name or "Российская Федерация")
                     parcel_district_name = f"г. {preset['city']}" if preset.get("city") else (dist_name or "")
@@ -441,7 +447,11 @@ def _create_site_from_params(
     elif site_mode == "concept":
         c_w = float(params.get("concept_width") or 200.0)
         c_d = float(params.get("concept_depth") or 150.0)
-        reg_name, dist_name, resolved_norm_id, c_lat, c_lon = smart_resolve_location("72:23:0222001:16187")
+        concept_q = (params.get("cad_query") or "").strip()
+        if concept_q:
+            reg_name, dist_name, resolved_norm_id, c_lat, c_lon = smart_resolve_location(concept_q)
+        else:
+            reg_name, dist_name, resolved_norm_id, c_lat, c_lon = "Российская Федерация", "Концепт", "russia_sp42", 55.751244, 37.618423
         use_lat = override_lat if override_lat != 0.0 else c_lat
         use_lon = override_lon if override_lon != 0.0 else c_lon
         norm_id = resolved_norm_id or "russia_sp42"
@@ -466,12 +476,15 @@ def _create_site_from_params(
     # РЕЖИМ: ПО КАДАСТРОВОМУ НОМЕРУ / АДРЕСУ РОСРЕЕСТРА
     # =========================================================================
     else:
-        cad_query = (params.get("cad_query") or "72:23:0222001:16187").strip()
+        cad_query = (params.get("cad_query") or "").strip()
         custom_area = float(params.get("custom_area") or 32000)
         enable_red_line = bool(params.get("enable_red_line", False))
         gpzu_coords_text = (params.get("gpzu_coordinates") or "").strip()
 
-        reg_name, dist_name, resolved_norm_id, auto_lat, auto_lon = smart_resolve_location(cad_query)
+        if cad_query:
+            reg_name, dist_name, resolved_norm_id, auto_lat, auto_lon = smart_resolve_location(cad_query)
+        else:
+            reg_name, dist_name, resolved_norm_id, auto_lat, auto_lon = "Российская Федерация", "Участок", "russia_sp42", 55.751244, 37.618423
         norm_id = resolved_norm_id or "russia_sp42"
 
         use_lat = override_lat if override_lat != 0.0 else auto_lat
@@ -510,6 +523,8 @@ def _create_site_from_params(
                         "lat": round(site.geo_center[0], 6),
                         "lon": round(site.geo_center[1], 6),
                     },
+                    "calibrated_pkk": gpzu_meta.get("calibrated_pkk", False),
+                    "pkk_shift_m": gpzu_meta.get("pkk_shift_m", 0.0),
                     "area_sqm": round(site.area, 1),
                     "area_ha": round(site.area / 10000.0, 2),
                 }
@@ -570,7 +585,7 @@ def _create_site_from_params(
 
                 # Если чертеж содержит геодезические координаты МСК и не задан ручной override
                 is_sub_msk = abs(sub_site.base_offset[0]) > 500 or abs(sub_site.base_offset[1]) > 500
-                det_sub_msk = "МСК-72 Зона 1 (Тюмень)"
+                det_sub_msk = None
                 if is_sub_msk and (override_lat == 0.0 or override_lon == 0.0):
                     requested_msk = params.get("msk_zone")
                     if requested_msk and requested_msk in MSK_PRESETS:
@@ -585,7 +600,7 @@ def _create_site_from_params(
                         if not det_sub_msk:
                             det_sub_msk = detect_msk_by_coordinates(sub_site.base_offset[0], sub_site.base_offset[1], region_hint=c_reg)
                         if not det_sub_msk:
-                            det_sub_msk = "МСК-72 Зона 1 (Тюмень)"
+                            det_sub_msk = next(iter(MSK_PRESETS.keys()))
 
                     exp_lat, exp_lon = auto_lat, auto_lon
                     sub_det_cad = sub_meta.get("detected_cadastre")
@@ -594,7 +609,7 @@ def _create_site_from_params(
                         if c_lat_sub != 0.0 and c_lon_sub != 0.0:
                             exp_lat, exp_lon = c_lat_sub, c_lon_sub
                             site.cadastral_number = sub_det_cad
-                    if (exp_lat == 0.0 or exp_lon == 0.0 or (cad_query == "63:01:0709002:2320" and "63" not in det_sub_msk)) and det_sub_msk in MSK_PRESETS:
+                    if (exp_lat == 0.0 or exp_lon == 0.0) and det_sub_msk in MSK_PRESETS:
                         preset = MSK_PRESETS[det_sub_msk]
                         exp_lat, exp_lon = preset["default_lat"], preset["default_lon"]
                     sub_lat, sub_lon = msk_to_wgs84_coords(
@@ -627,6 +642,8 @@ def _create_site_from_params(
                         "lat": round(site.geo_center[0], 6),
                         "lon": round(site.geo_center[1], 6),
                     },
+                    "calibrated_pkk": gpzu_meta.get("calibrated_pkk", False),
+                    "pkk_shift_m": gpzu_meta.get("pkk_shift_m", 0.0),
                     "area_sqm": round(site.area, 1),
                     "area_ha": round(site.area / 10000.0, 2),
                 }
@@ -715,6 +732,48 @@ def _create_site_from_params(
     config["floor_height"] = floor_height
     config["max_building_height_m"] = max_building_height_m if max_building_height_m > 0 else None
 
+    # 3. Обработка зон с особыми условиями использования (ЗОУИТ)
+    raw_zouit_list = params.get("zouit_list") or params.get("zouit_zones") or []
+    site_zouits: list[Polygon] = []
+    base_ox, base_oy = getattr(site, "base_offset", (0.0, 0.0))
+
+    for z in raw_zouit_list:
+        if not z.get("enabled", True):
+            continue
+        coords = z.get("coordinates") or []
+        coords_text = z.get("coordinates_text", "")
+        if not coords and coords_text:
+            coords = parse_coordinate_table(coords_text)
+        if len(coords) >= 3:
+            p0 = coords[0]
+            # Если координаты в абсолютной МСК, сдвигаем их по base_offset участка
+            if max(abs(p0[0]), abs(p0[1])) > 500 and (base_ox != 0 or base_oy != 0):
+                if p0[1] > p0[0]:
+                    cad_pts = [(p[1] - base_ox, p[0] - base_oy) for p in coords]
+                else:
+                    cad_pts = [(p[0] - base_ox, p[1] - base_oy) for p in coords]
+            else:
+                cad_pts = coords
+            try:
+                poly = Polygon(cad_pts)
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+                if poly and not poly.is_empty:
+                    site_zouits.append(poly)
+                    z["area_sqm"] = round(poly.area, 1)
+            except Exception as e:
+                print(f"Ошибка построения полигона ЗОУИТ: {e}")
+        elif len(coords) == 2:
+            buf_m = float(z.get("buffer_m", 5.0))
+            line = LineString(coords)
+            poly = line.buffer(buf_m)
+            if poly and not poly.is_empty:
+                site_zouits.append(poly)
+                z["area_sqm"] = round(poly.area, 1)
+
+    site.zouit_polygons = site_zouits
+    site.zouit_info = raw_zouit_list
+
     # Допустимая зона застройки
     try:
         compute_buildable_area(site, config)
@@ -785,6 +844,11 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
     red_lines = [
         geom_to_svg_path(rl, minx, miny, maxx, maxy, svg_w, svg_h)
         for rl in getattr(site, "red_lines", [])
+    ]
+    zouit_paths = [
+        geom_to_svg_path(zp, minx, miny, maxx, maxy, svg_w, svg_h)
+        for zp in getattr(site, "zouit_polygons", [])
+        if zp and not zp.is_empty
     ]
 
     # Дороги и урбан-блоки
@@ -880,6 +944,8 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
         "site_path": site_path,
         "buildable_path": buildable_path,
         "red_lines_paths": red_lines,
+        "zouit_paths": zouit_paths,
+        "zouit_info": getattr(site, "zouit_info", []),
         "roads": {
             "corridor_path": roads_corridor_path,
             "buffer_path": roads_buffer_path,
@@ -947,6 +1013,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     max_far = float(config["max_far"]) if config.get("max_far") is not None else None
     fire_gap_end_to_end = float(params.get("fire_gap_end_to_end", config.get("fire_gap_end_to_end", 10.0)))
     fire_gap_parallel = float(params.get("fire_gap_parallel", config.get("fire_gap_parallel", 18.0)))
+    only_ground_parking = bool(params.get("only_ground_parking", False))
 
     placement_cfg = PlacementConfig(
         target_floors=target_floors,
@@ -968,11 +1035,51 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         max_far=max_far,
         fire_gap_end_to_end=fire_gap_end_to_end,
         fire_gap_parallel=fire_gap_parallel,
+        only_ground_parking=only_ground_parking,
     )
 
     # 5. Режимы генерации
     gen_mode = params.get("gen_mode", "fixed")
     opt_note = ""
+
+    def _calibrate_for_ground_parking(target_site: Site, b_list: list[Building], norm: Any) -> list[Building]:
+        """Откалибровать этажность зданий под 100% размещение парковок на земле без дефицита."""
+        if not b_list or not only_ground_parking:
+            return b_list
+        curr_b = b_list
+        for _ in range(4):
+            t = calculate_tep(target_site, curr_b, config)
+            bal = calculate_territory_balance(
+                target_site.area, t.building_area, t.population,
+                t.residential_area, t.apartments_total,
+                norm, buildings=curr_b, only_ground_parking=True
+            )
+            req_p = bal.parking.required_total
+            cap_p = bal.parking.ground_capacity
+            if req_p <= cap_p or req_p <= 0:
+                break
+            ratio = max(0.15, min(0.95, cap_p / max(1, req_p)))
+            changed = False
+            calibrated = []
+            for b in curr_b:
+                new_secs = []
+                for s in b.sections:
+                    new_f = max(1, int(math.floor(s.floors * ratio)))
+                    if new_f != s.floors:
+                        changed = True
+                    new_secs.append(PlacedSection(
+                        section_type=s.section_type,
+                        x=s.x, y=s.y, angle=s.angle,
+                        floors=new_f,
+                        is_flipped=s.is_flipped,
+                        floor_height=s.floor_height,
+                        ground_floor_height=s.ground_floor_height,
+                    ))
+                calibrated.append(Building(sections=new_secs, typology=getattr(b, "typology", "LINEAR")))
+            curr_b = calibrated
+            if not changed:
+                break
+        return curr_b
 
     def _generate_buildings_for_site(target_site: Site, p_cfg: PlacementConfig) -> list[Building]:
         roads_res = getattr(target_site, "roads_result", None)
@@ -988,10 +1095,11 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
                     all_b.extend(sub_engine.generate(p_cfg))
                 except Exception as ex:
                     print(f"Ошибка размещения в под-блоке {s_idx + 1}: {ex}")
-            return all_b
+            res = all_b
         else:
             eng = PlacementEngine(target_site, library, config)
-            return eng.generate(p_cfg)
+            res = eng.generate(p_cfg)
+        return _calibrate_for_ground_parking(target_site, res, selected_norm)
 
     if gen_mode == "fixed":
         buildings = _generate_buildings_for_site(site, placement_cfg)
@@ -1010,8 +1118,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
 
         optimizer = Optimizer(site, library, config, base_placement_config=placement_cfg)
         result = optimizer.optimize_for_target(target_tep)
-        buildings = result.buildings
-        tep = result.tep
+        buildings = _calibrate_for_ground_parking(site, result.buildings, selected_norm)
+        tep = calculate_tep(site, buildings, config)
 
     elif gen_mode == "maximize":
         respect_norms = bool(params.get("respect_norms", True))
@@ -1039,8 +1147,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         finally:
             set_optimization_progress({"active": False, "percent": 100})
 
-        buildings = result.buildings
-        tep = result.tep
+        buildings = _calibrate_for_ground_parking(site, result.buildings, selected_norm)
+        tep = calculate_tep(site, buildings, config)
         opt_note = getattr(result, "note", "")
         if hasattr(result, "floors") and result.floors:
             target_floors = result.floors
@@ -1053,7 +1161,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
 
     else:
         engine = PlacementEngine(site, library, config)
-        buildings = engine.generate(placement_cfg)
+        raw_b = engine.generate(placement_cfg)
+        buildings = _calibrate_for_ground_parking(site, raw_b, selected_norm)
         tep = calculate_tep(site, buildings, config)
 
     # 6. Баланс территории и машиномест
@@ -1065,6 +1174,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         tep.apartments_total,
         selected_norm,
         buildings=buildings,
+        only_ground_parking=only_ground_parking,
     )
     checks = check_normatives(tep, config)
 
@@ -1104,6 +1214,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         max_far=max_far,
         fire_gap_end_to_end=fire_gap_end_to_end,
         fire_gap_parallel=fire_gap_parallel,
+        only_ground_parking=only_ground_parking,
     )
     try:
         v2_buildings = _generate_buildings_for_site(site, v2_cfg)
@@ -1116,6 +1227,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
             v2_tep.apartments_total,
             selected_norm,
             buildings=v2_buildings,
+            only_ground_parking=only_ground_parking,
         )
         v2_checks = check_normatives(v2_tep, config)
         var2 = _package_single_variant(
@@ -1156,11 +1268,21 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         max_far=max_far,
         fire_gap_end_to_end=fire_gap_end_to_end,
         fire_gap_parallel=fire_gap_parallel,
+        only_ground_parking=only_ground_parking,
     )
     try:
         v3_buildings = _generate_buildings_for_site(site, v3_cfg)
         v3_tep = calculate_tep(site, v3_buildings, config)
-        v3_balance = calculate_territory_balance(site.area, v3_tep.building_area, v3_tep.population, v3_tep.residential_area, v3_tep.apartments_total, selected_norm)
+        v3_balance = calculate_territory_balance(
+            site.area,
+            v3_tep.building_area,
+            v3_tep.population,
+            v3_tep.residential_area,
+            v3_tep.apartments_total,
+            selected_norm,
+            buildings=v3_buildings,
+            only_ground_parking=only_ground_parking,
+        )
         v3_checks = check_normatives(v3_tep, config)
         var3 = _package_single_variant(
             site, v3_buildings, v3_tep, v3_balance, v3_checks, selected_norm,
@@ -1228,6 +1350,11 @@ def _package_single_variant(
     site_path = geom_to_svg_path(site.boundary, minx, miny, maxx, maxy, svg_w, svg_h)
     buildable_path = geom_to_svg_path(site.buildable_area, minx, miny, maxx, maxy, svg_w, svg_h) if site.buildable_area else ""
     red_lines = [geom_to_svg_path(rl, minx, miny, maxx, maxy, svg_w, svg_h) for rl in getattr(site, "red_lines", [])]
+    zouit_paths = [
+        geom_to_svg_path(zp, minx, miny, maxx, maxy, svg_w, svg_h)
+        for zp in getattr(site, "zouit_polygons", [])
+        if zp and not zp.is_empty
+    ]
 
     # Дорожная сеть и под-блоки
     roads_result = getattr(site, "roads_result", None)
@@ -1257,6 +1384,64 @@ def _package_single_variant(
         roads_area_sqm = roads_result.roads_area_sqm
         roads_buffer_area_sqm = getattr(roads_result, "buffer_area_sqm", 0.0)
         roads_length_m = roads_result.roads_length_m
+
+    # Автоматическая трассировка пожарных проездов по СП 4.13130.2020
+    fire_roads_path = ""
+    fire_turnarounds_path = ""
+    fire_centerlines_paths = []
+    fire_res = None
+    try:
+        from src.core.fire_safety import FireAccessEngine
+        fire_engine = FireAccessEngine()
+        fire_res = fire_engine.generate_fire_routes(site, buildings, include_turnarounds=True)
+        if fire_res.fire_lanes_polygon and not fire_res.fire_lanes_polygon.is_empty:
+            fire_roads_path = geom_to_svg_path(fire_res.fire_lanes_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+        if fire_res.turnarounds_polygon and not fire_res.turnarounds_polygon.is_empty:
+            fire_turnarounds_path = geom_to_svg_path(fire_res.turnarounds_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+        fire_centerlines_paths = [
+            geom_to_svg_path(cl, minx, miny, maxx, maxy, svg_w, svg_h)
+            for cl in fire_res.centerlines
+            if not cl.is_empty
+        ]
+    except Exception as ex:
+        print(f"Ошибка трассировки пожарных проездов: {ex}")
+
+    # ── Санитарные разрывы стоянок и площадки ТКО (СанПиН 2.2 и 2.1) ──────────
+    waste_sites_data = []
+    waste_radius_paths = []
+    parking_buffer_15m_path = ""
+    parking_buffer_25m_path = ""
+    san_res = None
+    try:
+        from src.core.sanitary_norms import SanitaryNormsEngine
+        san_engine = SanitaryNormsEngine()
+        fire_poly = fire_res.fire_lanes_polygon if fire_res else None
+        pop_num = getattr(tep, "population", 1000) or 1000
+        san_res = san_engine.analyze_site(
+            site=site,
+            buildings=buildings,
+            population=pop_num,
+            fire_lanes=fire_poly,
+        )
+        for ws in san_res.waste_sites:
+            ws_path = geom_to_svg_path(ws.polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+            rad_circle = ws.centroid.buffer(ws.service_radius_m)
+            rad_path = geom_to_svg_path(rad_circle, minx, miny, maxx, maxy, svg_w, svg_h)
+            waste_radius_paths.append(rad_path)
+            waste_sites_data.append({
+                "id": ws.id,
+                "path": ws_path,
+                "containers": ws.containers_count,
+                "distance_to_windows": ws.distance_to_nearest_window_m,
+                "is_compliant": ws.is_compliant,
+                "note": ws.note,
+            })
+        if san_res.parking_forbidden_buffer_15m and not san_res.parking_forbidden_buffer_15m.is_empty:
+            parking_buffer_15m_path = geom_to_svg_path(san_res.parking_forbidden_buffer_15m, minx, miny, maxx, maxy, svg_w, svg_h)
+        if san_res.parking_forbidden_buffer_25m and not san_res.parking_forbidden_buffer_25m.is_empty:
+            parking_buffer_25m_path = geom_to_svg_path(san_res.parking_forbidden_buffer_25m, minx, miny, maxx, maxy, svg_w, svg_h)
+    except Exception as ex:
+        print(f"Ошибка санитарного анализа: {ex}")
 
     category_labels = {
         "MIDDLE": "Рядовая",
@@ -1395,6 +1580,8 @@ def _package_single_variant(
         "site_path": site_path,
         "buildable_path": buildable_path,
         "red_lines_paths": red_lines,
+        "zouit_paths": zouit_paths,
+        "zouit_info": getattr(site, "zouit_info", []),
         "roads": {
             "corridor_path": roads_corridor_path,
             "buffer_path": roads_buffer_path,
@@ -1405,6 +1592,30 @@ def _package_single_variant(
             "buffer_area_sqm": roads_buffer_area_sqm,
             "length_m": roads_length_m,
             "road_setback": getattr(roads_result, "road_setback", 4.0) if roads_result else 4.0,
+        },
+        "fire_safety": {
+            "fire_roads_path": fire_roads_path,
+            "fire_turnarounds_path": fire_turnarounds_path,
+            "fire_centerlines_paths": fire_centerlines_paths,
+            "total_area_sqm": fire_res.total_area_sqm if fire_res else 0.0,
+            "turnarounds_area_sqm": fire_res.turnarounds_area_sqm if fire_res else 0.0,
+            "total_length_m": fire_res.total_length_m if fire_res else 0.0,
+            "is_compliant": fire_res.is_compliant if fire_res else True,
+            "issues": fire_res.issues if fire_res else [],
+            "building_checks": fire_res.building_checks if fire_res else [],
+        },
+        "sanitary": {
+            "waste_sites": waste_sites_data,
+            "waste_radius_paths": waste_radius_paths,
+            "parking_buffer_15m_path": parking_buffer_15m_path,
+            "parking_buffer_25m_path": parking_buffer_25m_path,
+            "total_containers": san_res.total_containers_count if san_res else 0,
+            "waste_coverage_pct": san_res.waste_coverage_pct if san_res else 100.0,
+            "waste_is_compliant": san_res.waste_is_compliant if san_res else True,
+            "waste_issues": san_res.waste_issues if san_res else [],
+            "parking_is_compliant": san_res.parking_is_compliant if san_res else True,
+            "parking_issues": san_res.parking_issues if san_res else [],
+            "summary_notes": san_res.summary_notes if san_res else [],
         },
         "optimization_note": opt_note,
         "viewer_3d_html": viewer_3d_html,
@@ -1435,6 +1646,8 @@ def _package_single_variant(
             "parking_underground": balance.parking.underground_deficit,
             "parking_underground_area_est": round(balance.parking.underground_area_est),
             "underground_levels": getattr(balance.parking, "underground_levels", 1),
+            "only_ground_parking": getattr(balance.parking, "only_ground_parking", False),
+            "parking_norm_met": getattr(balance.parking, "parking_norm_met", True),
             "stylobate_area": round(getattr(balance, "stylobate_area", 0.0)),
             "green_roof_area": round(getattr(balance, "green_roof_area", 0.0)),
             "effective_green_area": round(getattr(balance, "effective_green_area", 0.0)),
@@ -1624,10 +1837,28 @@ def parse_gpzu_table(
     region_hint: str | None = None,
     cad_num: str | None = None,
 ) -> dict[str, Any]:
-    """Разобрать и провалидировать каталог координат ГПЗУ."""
+    """Разобрать и провалидировать каталог координат ГПЗУ (поддерживает разделение на зоны)."""
     try:
+        from src.core.gpzu_parser import extract_all_coordinate_tables
+        zones = extract_all_coordinate_tables(text)
+        coords_to_use = text
+        if zones:
+            boundary_candidates = [z for z in zones if z["type"] == "boundary"]
+            primary_zone = max(boundary_candidates, key=lambda z: z["area_sqm"]) if boundary_candidates else max(zones, key=lambda z: z["area_sqm"])
+            coords_to_use = primary_zone["coordinates_text"]
+
+        if not region_hint and cad_num and ":" in cad_num:
+            region_hint = cad_num.split(":")[0]
+        if not expected_center and cad_num:
+            try:
+                _, _, _, c_lat, c_lon = smart_resolve_location(cad_num)
+                if c_lat != 0.0 and c_lon != 0.0:
+                    expected_center = (c_lat, c_lon)
+            except Exception:
+                pass
+
         site, meta = create_site_from_coordinate_table(
-            text,
+            coords_to_use,
             msk_zone=msk_zone,
             expected_center=expected_center,
             region_hint=region_hint,
@@ -1636,6 +1867,7 @@ def parse_gpzu_table(
         return {
             "success": True,
             "points_count": meta["points_count"],
+            "coordinates_text": coords_to_use,
             "area_sqm": meta["area_sqm"],
             "area_ha": meta["area_ha"],
             "coordinate_system": meta["coordinate_system"],
@@ -1643,6 +1875,9 @@ def parse_gpzu_table(
                 "lat": round(meta["center"][0], 6),
                 "lon": round(meta["center"][1], 6),
             },
+            "calibrated_pkk": meta.get("calibrated_pkk", False),
+            "pkk_shift_m": meta.get("pkk_shift_m", 0.0),
+            "zones": zones or [],
         }
     except Exception as e:
         return {"success": False, "error": str(e)}

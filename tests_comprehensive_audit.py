@@ -222,6 +222,14 @@ class AuditRunner:
                     not valid_custom_reject,
                     f"При fire_gap_parallel=25м разрыв 20м отклонен: {not valid_custom_reject}")
 
+        # 2.5 Автоматическая трассировка пожарного проезда (СП 4.13130.2020)
+        from src.core.fire_safety import FireAccessEngine
+        fa_engine = FireAccessEngine()
+        fa_res = fa_engine.generate_fire_routes(site, [b1, b3_ok], include_turnarounds=True)
+        self.record(mod, "Автоматическая трассировка пожарного проезда (СП 4.13130.2020)",
+                    fa_res.is_compliant and fa_res.total_length_m > 0 and fa_res.fire_lanes_polygon is not None,
+                    f"Длина: {fa_res.total_length_m:.1f}м, площадь: {fa_res.total_area_sqm:.1f}м², площадки 15х15м: {fa_res.turnarounds_area_sqm:.1f}м²")
+
     # -------------------------------------------------------------------------
     # МОДУЛЬ 3: Инсоляция и ориентация (СанПиН 1.2.3685-21)
     # -------------------------------------------------------------------------
@@ -433,6 +441,28 @@ class AuditRunner:
         self.record(mod, "Региональная дифференциация: Москва МНГП № 945-ПП (1 м/м на 90 м²)",
                     moscow_req == math.ceil(20000 / 90),
                     f"Жилая площадь 20 000 м² -> требуется {moscow_req} м/м в Москве против 280 м/м по СП 42")
+
+        # 6.5 Ограничение: Только наземные парковки (Zero underground parking)
+        ground_only_bal = calculate_territory_balance(
+            site_area=25000.0,
+            building_footprint_area=4000.0,
+            population=600.0,
+            residential_area=15000.0,
+            apartments_total=250,
+            regional_norm=norm_sp42,
+            only_ground_parking=True,
+        )
+        zero_underground = (
+            ground_only_bal.parking.underground_deficit == 0
+            and ground_only_bal.parking.underground_area_est == 0.0
+            and ground_only_bal.parking.underground_levels == 0
+            and ground_only_bal.green_roof_area == 0.0
+            and ground_only_bal.parking.only_ground_parking is True
+            and ground_only_bal.parking.ground_capacity >= ground_only_bal.parking.required_total
+        )
+        self.record(mod, "Ограничение «Только наземные парковки» (полное исключение подземного паркинга)",
+                    zero_underground,
+                    f"Наземных мест: {ground_only_bal.parking.ground_capacity} >= {ground_only_bal.parking.required_total} треб., подземный дефицит: {ground_only_bal.parking.underground_deficit} м/м")
 
     # -------------------------------------------------------------------------
     # МОДУЛЬ 7: Парсер ГПЗУ и выявление ЗОУИТ

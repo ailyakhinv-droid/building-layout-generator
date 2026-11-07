@@ -149,6 +149,24 @@ def generate_leaflet_map_html(
             "properties": {"type": "red_line", "id": idx + 1},
         })
 
+    # 3.5. Формируем GeoJSON охранных зон (ЗОУИТ)
+    zouit_features = []
+    for idx, zp in enumerate(getattr(site, "zouit_polygons", [])):
+        if zp and not zp.is_empty:
+            zp_wgs = transform_geometry_to_wgs84(zp, center_lat, center_lon)
+            info = site.zouit_info[idx] if idx < len(getattr(site, "zouit_info", [])) else {}
+            name = info.get("name") or f"Охранная зона / ЗОУИТ {idx + 1}"
+            zouit_features.append({
+                "type": "Feature",
+                "geometry": mapping(zp_wgs),
+                "properties": {
+                    "type": "zouit",
+                    "id": idx + 1,
+                    "name": name,
+                    "area": round(zp.area, 1),
+                },
+            })
+
     # 4. Формируем GeoJSON общих контуров корпусов зданий
     building_features = []
     # 5. Формируем GeoJSON индивидуальных секций (для детального отображения планировки)
@@ -230,6 +248,7 @@ def generate_leaflet_map_html(
     boundary_json = json.dumps(boundary_feature, ensure_ascii=False)
     buildable_json = json.dumps(buildable_feature, ensure_ascii=False) if buildable_feature else "null"
     red_lines_json = json.dumps(red_line_features, ensure_ascii=False)
+    zouit_json = json.dumps(zouit_features, ensure_ascii=False)
     buildings_json = json.dumps(building_features, ensure_ascii=False)
     sections_json = json.dumps(section_features, ensure_ascii=False)
 
@@ -488,6 +507,7 @@ def generate_leaflet_map_html(
         var boundaryData = {boundary_json};
         var buildableData = {buildable_json};
         var redLinesData = {red_lines_json};
+        var zouitData = {zouit_json};
         var buildingsData = {buildings_json};
         var sectionsData = {sections_json};
 
@@ -551,6 +571,25 @@ def generate_leaflet_map_html(
                 }},
                 onEachFeature: function(feature, layer) {{
                     layer.bindPopup('<b>⛔ Красная линия</b><br>Граница территорий общего пользования / отступ УДС');
+                }}
+            }}).addTo(map);
+        }}
+
+        // 3.5. Слой охранных зон (ЗОУИТ)
+        var zouitLayer = null;
+        if (zouitData && zouitData.length > 0) {{
+            zouitLayer = L.geoJSON(zouitData, {{
+                style: {{
+                    color: '#EF4444',
+                    weight: 2.2,
+                    dashArray: '5, 4',
+                    fillColor: '#EF4444',
+                    fillOpacity: 0.22
+                }},
+                onEachFeature: function(feature, layer) {{
+                    var p = feature.properties || {{}};
+                    layer.bindPopup('<b>🛡️ ' + (p.name || 'Охранная зона / ЗОУИТ') + '</b><br>Площадь: ' + (p.area || 0) + ' м²<br><span style=\"color:#ef4444; font-size:11px;\">Вырезано из зоны застройки</span>');
+                    layer.bindTooltip(p.name || 'ЗОУИТ', {{ permanent: false, direction: 'top' }});
                 }}
             }}).addTo(map);
         }}
@@ -863,6 +902,7 @@ def generate_leaflet_map_html(
         }}
         registerAttached(buildableLayer);
         registerAttached(redLinesLayer);
+        registerAttached(zouitLayer);
         registerAttached(buildingsLayer);
         registerAttached(sectionsLayer);
 
@@ -1122,6 +1162,7 @@ def generate_leaflet_map_html(
         }};
         if (buildableLayer) overlayMaps["🟩 Зона застройки"] = buildableLayer;
         if (redLinesLayer) overlayMaps["⛔ Красная линия (УДС)"] = redLinesLayer;
+        if (zouitLayer) overlayMaps["🛡️ Охранные зоны (ЗОУИТ)"] = zouitLayer;
 
         L.control.layers(baseMaps, overlayMaps, {{ collapsed: false, position: 'topright' }}).addTo(map);
 

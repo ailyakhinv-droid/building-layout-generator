@@ -213,6 +213,34 @@ MSK_PRESETS: dict[str, dict[str, Any]] = {
         "default_lat": 53.3481,
         "default_lon": 83.7799,
     },
+    "МСК-18 Зона 1 (Удмуртия)": {
+        "region": "Удмуртская Республика",
+        "city": "Можга / Глазов (Запад)",
+        "central_meridian": 50.55,  # 50° 33' E
+        "latitude_of_origin": 0.0,
+        "false_northing": -5914743.504,
+        "false_easting": 1250000.0,
+        "scale_factor": 1.0,
+        "L0_deg": 50.55,
+        "x0": -5914743.504,
+        "y0": 1250000.0,
+        "default_lat": 56.50,
+        "default_lon": 51.50,
+    },
+    "МСК-18 Зона 2 (Ижевск)": {
+        "region": "Удмуртская Республика",
+        "city": "Ижевск / Сарапул (Восток)",
+        "central_meridian": 53.55,  # 53° 33' E
+        "latitude_of_origin": 0.0,
+        "false_northing": -5914743.504,
+        "false_easting": 2250000.0,
+        "scale_factor": 1.0,
+        "L0_deg": 53.55,
+        "x0": -5914743.504,
+        "y0": 2250000.0,
+        "default_lat": 56.8498,
+        "default_lon": 53.2045,
+    },
 }
 
 # ─── Таблица псевдонимов и сокращений зон ────────────────────────────────────
@@ -303,25 +331,114 @@ ZONE_ALIASES: dict[str, str] = {
     "22": "МСК-22 Зона 2 (Барнаул)",
     "22_2": "МСК-22 Зона 2 (Барнаул)",
     "барнаул": "МСК-22 Зона 2 (Барнаул)",
+    # Удмуртская Республика МСК-18
+    "msk_18_1": "МСК-18 Зона 1 (Удмуртия)",
+    "msk-18-1": "МСК-18 Зона 1 (Удмуртия)",
+    "msk18_1": "МСК-18 Зона 1 (Удмуртия)",
+    "18_1": "МСК-18 Зона 1 (Удмуртия)",
+    "18-1": "МСК-18 Зона 1 (Удмуртия)",
+    "msk_18_2": "МСК-18 Зона 2 (Ижевск)",
+    "msk-18-2": "МСК-18 Зона 2 (Ижевск)",
+    "msk18_2": "МСК-18 Зона 2 (Ижевск)",
+    "18_2": "МСК-18 Зона 2 (Ижевск)",
+    "18-2": "МСК-18 Зона 2 (Ижевск)",
+    "18": "МСК-18 Зона 2 (Ижевск)",
+    "msk_18": "МСК-18 Зона 2 (Ижевск)",
+    "ижевск": "МСК-18 Зона 2 (Ижевск)",
+    "удмуртия": "МСК-18 Зона 2 (Ижевск)",
 }
+
+
+def get_or_create_msk_preset_for_region(
+    region_code: str,
+    easting: float | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Получить или динамически сформировать параметры МСК для любого из 89 субъектов РФ.
+
+    Args:
+        region_code: 2-значный код субъекта РФ ('01'..'89', '90'..'95').
+        easting: Значение координаты востока (для выбора правильной зоны 1, 2, 3 и т.д.).
+
+    Returns:
+        Кортеж (канонический ключ МСК, словарь параметров проекции Гаусса-Крюгера).
+    """
+    from src.core.cadastre import ALL_REGIONS
+
+    clean_code = str(region_code).strip().zfill(2)
+
+    # Определяем требуемую зону по смещению координаты Y (восток)
+    target_zone = 1
+    if easting is not None and abs(easting) >= 1000000.0:
+        target_zone = int(abs(easting) // 1000000.0)
+
+    # 1. Проверяем наличие пресетов в MSK_PRESETS
+    matching_keys = [
+        k for k in MSK_PRESETS
+        if f"-{clean_code} " in k or f"_{clean_code}" in k or f"-{int(clean_code)} " in k or f"МСК-{clean_code}" in k
+    ]
+
+    if matching_keys:
+        for k in matching_keys:
+            if f"Зона {target_zone}" in k:
+                return k, MSK_PRESETS[k]
+        if target_zone > 1 and len(matching_keys) > 1:
+            return matching_keys[min(target_zone - 1, len(matching_keys) - 1)], MSK_PRESETS[matching_keys[min(target_zone - 1, len(matching_keys) - 1)]]
+        return matching_keys[0], MSK_PRESETS[matching_keys[0]]
+
+    # 2. Если пресета нет в таблице, динамически синтезируем параметры для региона РФ
+    if clean_code in ALL_REGIONS:
+        reg_name, reg_norm, r_lat, r_lon = ALL_REGIONS[clean_code]
+        zone = max(1, target_zone)
+        # Стандартные 3-градусные зоны Гаусса-Крюгера
+        base_l0 = round(r_lon / 3.0) * 3.0
+        l0 = base_l0 + (zone - 1) * 3.0 if zone > 1 else base_l0
+
+        # Нормативный сдвиг по широте от экватора
+        s_approx = 111134.0 * r_lat
+        x0 = -round((s_approx - 450000.0) / 100000.0) * 100000.0
+        y0 = zone * 1000000.0 + 500000.0
+
+        short_name = reg_name.split(" (")[0]
+        canon_key = f"МСК-{clean_code} Зона {zone} ({short_name})"
+        preset = {
+            "region": reg_name,
+            "city": short_name,
+            "central_meridian": float(l0),
+            "latitude_of_origin": 0.0,
+            "false_northing": float(x0),
+            "false_easting": float(y0),
+            "scale_factor": 1.0,
+            "L0_deg": float(l0),
+            "x0": float(x0),
+            "y0": float(y0),
+            "default_lat": float(r_lat),
+            "default_lon": float(r_lon),
+        }
+        MSK_PRESETS[canon_key] = preset
+        ZONE_ALIASES[f"msk_{clean_code}_{zone}"] = canon_key
+        ZONE_ALIASES[f"msk-{clean_code}-{zone}"] = canon_key
+        ZONE_ALIASES[f"msk_{clean_code}"] = canon_key
+        ZONE_ALIASES[f"{clean_code}"] = canon_key
+        ZONE_ALIASES[f"{clean_code}_{zone}"] = canon_key
+        return canon_key, preset
+
+    first_k = next(iter(MSK_PRESETS.keys()))
+    return first_k, MSK_PRESETS[first_k]
 
 
 def resolve_zone_preset(zone: str) -> tuple[str, dict[str, Any]]:
     """Найти и вернуть пресет МСК по названию, коду или псевдониму зоны.
 
     Args:
-        zone: Имя зоны ('msk_63_1', 'МСК-63 Зона 1 (Самара)', '63', 'msk-50-2' и др.).
+        zone: Имя зоны ('msk_63_1', 'МСК-18 Зона 2 (Ижевск)', '54', 'msk-50-2' и др.).
 
     Returns:
         Кортеж (канонический ключ, словарь параметров пресета).
-
-    Raises:
-        ValueError: Если зона не найдена.
     """
     if zone in MSK_PRESETS:
         return zone, MSK_PRESETS[zone]
 
-    clean = zone.strip().lower()
+    clean = (zone or "").strip().lower()
     clean_norm = re.sub(r"[\s\-]+", "_", clean)
 
     if clean in ZONE_ALIASES:
@@ -335,11 +452,24 @@ def resolve_zone_preset(zone: str) -> tuple[str, dict[str, Any]]:
     # Поиск по подстроке среди канонических ключей
     for key, p in MSK_PRESETS.items():
         k_low = key.lower()
-        if clean in k_low or clean_norm in k_low:
+        if clean and (clean in k_low or clean_norm in k_low):
             return key, p
 
-    # По умолчанию для Самары
-    return "МСК-63 Зона 1 (Самара)", MSK_PRESETS["МСК-63 Зона 1 (Самара)"]
+    # Проверяем, содержит ли строка 2-значный код субъекта РФ
+    m_reg = re.search(r"(?:^|[\D])(\d{1,2})(?:$|[\D])", clean)
+    if m_reg:
+        reg_code = m_reg.group(1).zfill(2)
+        return get_or_create_msk_preset_for_region(reg_code)
+
+    # Проверяем по тексту субъекта РФ
+    from src.core.cadastre import ALL_REGIONS
+    for code, (reg_name, _, _, _) in ALL_REGIONS.items():
+        if code in clean or (clean and reg_name.lower().split(" (")[0] in clean):
+            return get_or_create_msk_preset_for_region(code)
+
+    # Универсальный федеральный пресет по умолчанию (первый в справочнике)
+    first_k = next(iter(MSK_PRESETS.keys()))
+    return first_k, MSK_PRESETS[first_k]
 
 
 def wgs84_to_msk_coords(
@@ -538,7 +668,18 @@ def msk_to_wgs84_coords(
     """
     # Совместимость со старыми вызовами (msk_key=...)
     zone_arg = kwargs.get("msk_key", zone)
-    canonical_key, p = resolve_zone_preset(zone_arg)
+    if not zone_arg or str(zone_arg).strip().lower() in ("", "auto", "none", "default"):
+        if expected_center:
+            from src.core.cadastre import ALL_REGIONS
+            best_code, _ = min(
+                ALL_REGIONS.items(),
+                key=lambda item: (item[1][2] - expected_center[0]) ** 2 + ((item[1][3] - expected_center[1]) * math.cos(math.radians(expected_center[0]))) ** 2
+            )
+            canonical_key, p = get_or_create_msk_preset_for_region(best_code, easting=max(abs(float(x)), abs(float(y))))
+        else:
+            canonical_key, p = resolve_zone_preset("")
+    else:
+        canonical_key, p = resolve_zone_preset(str(zone_arg))
 
     # Если для системы задан простой дефолтный центр (МСК-78 / городские СК без ключа)
     if p["x0"] == 0.0 and p["y0"] == 0.0:
@@ -574,7 +715,7 @@ def msk_to_wgs84_coords(
 
     # Варианты False Northing (X0)
     x0_options = [p["x0"]]
-    for alt_x0 in [-5514743.504, -5711057.63, -5414743.504, -5714743.504, -6000000.0, -4514743.504]:
+    for alt_x0 in [-5514743.504, -5711057.63, -5414743.504, -5714743.504, -5914743.504, -6000000.0, -4514743.504]:
         if alt_x0 not in x0_options:
             x0_options.append(alt_x0)
 
@@ -592,12 +733,20 @@ def msk_to_wgs84_coords(
 
     # Варианты Центрального меридиана (L0)
     l0_options = [p["L0_deg"]]
+    for delta_l in [-6.0, -3.0, 3.0, 6.0]:
+        alt_l0 = p["L0_deg"] + delta_l
+        if alt_l0 not in l0_options:
+            l0_options.append(alt_l0)
     if "72" in canonical_key or "Тюмен" in canonical_key:
         for alt_l0 in [66.08333333333333, 65.96666667, 66.0, 66.03333333, 66.05, 65.51666667]:
             if alt_l0 not in l0_options:
                 l0_options.append(alt_l0)
     elif "63" in canonical_key or "Самар" in canonical_key:
         for alt_l0 in [49.03333333333333, 52.03333333333333]:
+            if alt_l0 not in l0_options:
+                l0_options.append(alt_l0)
+    elif "18" in canonical_key or "Ижевск" in canonical_key or "Удмурт" in canonical_key:
+        for alt_l0 in [53.55, 50.55]:
             if alt_l0 not in l0_options:
                 l0_options.append(alt_l0)
 
@@ -665,14 +814,14 @@ def detect_msk_by_coordinates(
     """Определить вероятную систему координат МСК по числовым значениям offset.
 
     Поддерживает:
-    - Диапазоны для Самарской области (МСК-63): X ≈ 450000-600000, Y ≈ 1200000-1750000
-    - Подсказку по региону (region_hint: '63', '50', '72' и др.)
-    - Полные и усеченные координаты.
+    - Все 89 субъектов РФ по коду региона (например, '01', '18', '54', '63', '72', '77', '78' и др.)
+    - Текстовые названия городов и регионов ('Ижевск', 'Новосибирск', 'Казань', 'Тюмень', 'Самара' и др.)
+    - Характерные геодезические диапазоны координат.
 
     Args:
         x: Координата X (север или восток в чертеже).
         y: Координата Y (север или восток в чертеже).
-        region_hint: Подсказка по коду региона (например, '63' для Самары).
+        region_hint: Подсказка по коду региона (например, '18' для Ижевска, '63' для Самары).
 
     Returns:
         Название ключа из MSK_PRESETS или None, если определить невозможно.
@@ -680,30 +829,28 @@ def detect_msk_by_coordinates(
     vals = sorted([abs(float(x)), abs(float(y))])
     v_small, v_large = vals[0], vals[1]
 
-    # Если передан код региона — приоритетно используем его
+    # Если передан код региона или текстовая подсказка — приоритетно используем её
     if region_hint:
         clean_hint = str(region_hint).strip().lower()
-        c_hint = clean_hint.zfill(2)
-        if c_hint == "72" or "тюмен" in clean_hint:
-            return "МСК-72 Зона 2 (Тобольск / Ишим)" if v_large > 2000000.0 else "МСК-72 Зона 1 (Тюмень)"
-        elif c_hint == "63" or "самар" in clean_hint:
-            return "МСК-63 Зона 2 (Тольятти)" if v_large > 2000000.0 else "МСК-63 Зона 1 (Самара)"
-        elif c_hint == "50" or "москов" in clean_hint:
-            return "МСК-50 Зона 2 (МО Восток)" if v_large > 2000000.0 else "МСК-50 Зона 1 (МО Запад)"
-        elif c_hint == "77" or "москв" in clean_hint:
-            return "МСК-77 (Москва)"
-        elif c_hint == "78" or "петербург" in clean_hint or "спб" in clean_hint:
-            return "МСК-78 (Санкт-Петербург)"
-        elif c_hint == "16" or "татар" in clean_hint or "казан" in clean_hint:
-            return "МСК-16 Зона 1 (Татарстан)"
-        elif c_hint == "66" or "свердл" in clean_hint or "екатерин" in clean_hint:
-            return "МСК-66 Зона 1 (Свердловская обл.)"
-        elif c_hint == "23" or "краснодар" in clean_hint:
-            return "МСК-23 Зона 1 (Краснодар)"
-        elif c_hint == "22" or "алтай" in clean_hint or "барнаул" in clean_hint:
-            return "МСК-22 Зона 2 (Барнаул)"
+        # Ищем 2-значный код региона
+        m_code = re.search(r"(?:^|[\D])(\d{1,2})(?:$|[\D])", clean_hint)
+        if m_code:
+            code = m_code.group(1).zfill(2)
+            k = get_msk_key_for_region(code, x, y)
+            if k:
+                return k
 
-    # Без явного кода региона: если координаты однозначно попадают в специфические диапазоны:
+        # Поиск по текстовому совпадению с названиями всех регионов РФ
+        from src.core.cadastre import ALL_REGIONS
+        for code, (reg_name, _, _, _) in ALL_REGIONS.items():
+            base_reg = reg_name.lower().split(" (")[0]
+            city_part = reg_name.lower().split("(")[1].rstrip(")") if "(" in reg_name else ""
+            if base_reg in clean_hint or (city_part and city_part in clean_hint) or clean_hint in base_reg:
+                k = get_msk_key_for_region(code, x, y)
+                if k:
+                    return k
+
+    # Без явного кода региона: проверка специфических малых диапазонов
     # Москва МСК-77: малые координаты 0..50 000
     if v_small < 50000 and v_large < 50000 and (v_small > 500 or v_large > 500):
         return "МСК-77 (Москва)"
@@ -712,58 +859,12 @@ def detect_msk_by_coordinates(
     if v_small < 100000 and v_large < 150000:
         return "МСК-78 (Санкт-Петербург)"
 
-    # Самарская область (МСК-63 Зона 2, Тольятти):
-    # X ≈ 350 000..650 000, Y ≈ 2 200 000..2 750 000
-    if 300000 <= v_small <= 650000 and 2200000 <= v_large <= 2750000:
-        return "МСК-63 Зона 2 (Тольятти)"
-
-    # Усечённые координаты МСК-63 Зона 1 (Самара):
-    # - без номера зоны: Northing ~ 450k..600k, Easting ~ 540k..650k
-    # - без ложного сдвига: Northing ~ 450k..600k, Easting ~ 10k..200k
-    if 400000 <= v_large <= 650000 and 10000 <= v_small <= 200000:
-        return "МСК-63 Зона 1 (Самара)"
-    if 450000 <= v_small <= 600000 and 540000 <= v_large <= 650000:
-        return "МСК-63 Зона 1 (Самара)"
-
-    # Московская область (МСК-50 Зона 1): X ~ 350 000..550 000, Y ~ 1 100 000..1 400 000
-    if 300000 <= v_small <= 550000 and 1100000 <= v_large <= 1400000:
-        return "МСК-50 Зона 1 (МО Запад)"
-
-    # Московская область (МСК-50 Зона 2): X ~ 350 000..550 000, Y ~ 2 100 000..2 400 000
-    if 300000 <= v_small <= 600000 and 2100000 <= v_large <= 2400000:
-        return "МСК-50 Зона 2 (МО Восток)"
-
-    # Тюменская область (МСК-72 Зона 1): X ~ 300 000..550 000, Y ~ 1 400 000..1 650 000
-    if 300000 <= v_small <= 550000 and 1400000 <= v_large <= 1650000:
-        return "МСК-72 Зона 1 (Тюмень)"
-    if 300000 <= v_small <= 550000 and 400000 <= v_large <= 650000:
-        return "МСК-72 Зона 1 (Тюмень)"
-    if 300000 <= v_large <= 550000 and 10000 <= v_small <= 200000:
-        return "МСК-72 Зона 1 (Тюмень)"
-
-    # Тюменская область (МСК-72 Зона 2): Y ~ 2 400 000..2 650 000
-    if 300000 <= v_small <= 550000 and 2400000 <= v_large <= 2650000:
-        return "МСК-72 Зона 2 (Тобольск / Ишим)"
-
-    # Алтайский край (МСК-22 Зона 2, Барнаул): X ~ 160 000..240 000, Y ~ 2 450 000..2 550 000
-    if 160000 <= v_small <= 240000 and 2450000 <= v_large <= 2550000:
-        return "МСК-22 Зона 2 (Барнаул)"
-
-    # Москва МСК-77: X, Y в диапазоне 0..50 000
-    if v_small < 50000 and v_large < 50000 and (v_small > 500 or v_large > 500):
-        return "МСК-77 (Москва)"
-
-    # Свердловская область (МСК-66 Зона 1): X ~ 250 000..600 000, Y ~ 1 400 000..1 650 000
-    if 250000 <= v_small <= 600000 and 1400000 <= v_large <= 1650000:
-        return "МСК-66 Зона 1 (Свердловская обл.)"
-
-    # Краснодарский край (МСК-23 Зона 1): X ~ 400 000..600 000, Y ~ 1 300 000..1 550 000
-    if 400000 <= v_small <= 600000 and 1300000 <= v_large <= 1550000:
-        return "МСК-23 Зона 1 (Краснодар)"
-
-    # Республика Татарстан (МСК-16 Зона 1): X ~ 400 000..600 000, Y ~ 1 400 000..1 600 000
-    if 400000 <= v_small <= 600000 and 1400000 <= v_large <= 1600000:
-        return "МСК-16 Зона 1 (Татарстан)"
+    # Для любых координат пробуем сопоставить с зарегистрированными пресетами
+    for k, p in MSK_PRESETS.items():
+        base_y = p.get("false_easting", 0.0)
+        if base_y > 1000000.0:
+            if abs(v_large - base_y) < 350000.0 and 200000.0 <= v_small <= 850000.0:
+                return k
 
     return None
 
@@ -772,38 +873,24 @@ def get_msk_key_for_region(
     region_code: str,
     coord1: float | None = None,
     coord2: float | None = None,
+    easting: float | None = None,
 ) -> str | None:
     """Определить подходящую систему координат МСК для заданного кода региона РФ.
 
+    Поддерживает все 89 субъектов РФ.
+
     Args:
-        region_code: 2-значный код субъекта РФ ('63', '77', '50', '72', '22', и т.д.).
+        region_code: 2-значный код субъекта РФ ('01'..'89', '90'..'95').
         coord1: Первая координата (X в CAD или Север в геодезии).
         coord2: Вторая координата (Y в CAD или Восток в геодезии).
+        easting: Явное значение координаты востока (для зон).
 
     Returns:
-        Каноническое название ключа из MSK_PRESETS или None.
+        Каноническое название ключа из MSK_PRESETS.
     """
     clean_code = str(region_code).strip().zfill(2)
-    vals = [abs(float(c)) for c in (coord1, coord2) if c is not None]
-    easting = max(vals) if vals else 0.0
+    vals = [abs(float(c)) for c in (coord1, coord2, easting) if c is not None]
+    eff_easting = max(vals) if vals else None
 
-    if clean_code == "63":
-        return "МСК-63 Зона 2 (Тольятти)" if easting > 2000000.0 else "МСК-63 Зона 1 (Самара)"
-    elif clean_code == "77":
-        return "МСК-77 (Москва)"
-    elif clean_code == "50":
-        return "МСК-50 Зона 2 (МО Восток)" if easting > 2000000.0 else "МСК-50 Зона 1 (МО Запад)"
-    elif clean_code == "78":
-        return "МСК-78 (Санкт-Петербург)"
-    elif clean_code == "16":
-        return "МСК-16 Зона 1 (Татарстан)"
-    elif clean_code == "66":
-        return "МСК-66 Зона 1 (Свердловская обл.)"
-    elif clean_code == "23":
-        return "МСК-23 Зона 1 (Краснодар)"
-    elif clean_code == "72":
-        return "МСК-72 Зона 2 (Тобольск / Ишим)" if easting > 2000000.0 else "МСК-72 Зона 1 (Тюмень)"
-    elif clean_code == "22":
-        return "МСК-22 Зона 2 (Барнаул)"
-
-    return None
+    canon_key, _ = get_or_create_msk_preset_for_region(clean_code, easting=eff_easting)
+    return canon_key

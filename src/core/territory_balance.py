@@ -43,6 +43,8 @@ class ParkingBalance:
     underground_levels: int = 1 # Расчетное число подземных этажей паркинга
     guest_ground_placed: int = 0 # Фактически размещено гостевых мест открыто
     resident_ground_placed: int = 0 # Фактически размещено постоянных мест открыто
+    only_ground_parking: bool = False # Флаг: только наземные парковки (без подземного)
+    parking_norm_met: bool = True # Обеспечен ли норматив автостоянок на участке
 
 
 @dataclass
@@ -96,6 +98,8 @@ class TerritoryBalanceResult:
             "  - В т.ч. открытых гостевых, м/м": self.parking.guest_ground_placed,
             "  - В т.ч. открытых для жителей, м/м": self.parking.resident_ground_placed,
             "Площадь открытых парковок, м²": round(self.parking.ground_area, 1),
+            "Режим парковки": "Только наземные стоянки (без подземного)" if self.parking.only_ground_parking else "Смешанный (наземный + подземный)",
+            "Парковки в норме": "Да" if self.parking.parking_norm_met else f"Нет (дефицит {max(0, self.parking.required_total - self.parking.ground_capacity)} м/м)",
             "Дефицит в подземный паркинг, м/м": self.parking.underground_deficit,
             "Оценка площади подземного паркинга, м²": round(self.parking.underground_area_est, 1),
             "Расчетная этажность подземного паркинга": f"{self.parking.underground_levels} ур." if self.parking.underground_deficit > 0 else "0 ур.",
@@ -130,13 +134,15 @@ def calculate_territory_balance(
     driveways_factor: float = 0.18,
     underground_area_per_car: float = 35.0,
     buildings: list[Any] | None = None,
+    only_ground_parking: bool = False,
 ) -> TerritoryBalanceResult:
     """Рассчитать полный градостроительный баланс территории земельного участка.
 
     Включает:
     - Расчет пожарных проездов по СП 4.13130 (по периметру и этажности);
     - Приоритет открытого размещения гостевых автостоянок (СП 42.13330 п. 11.5);
-    - Вынос постоянных мест жителей в подземный паркинг с расчетом этажности стилобата;
+    - Вынос постоянных мест жителей в подземный паркинг с расчетом этажности стилобата (при only_ground_parking=False);
+    - Строгий режим «Только наземные парковки» (при only_ground_parking=True): подземный паркинг полностью исключен;
     - Эксплуатируемую кровлю стилобата с зачетом в озеленение (СП 42.13330 п. 9.13).
 
     Args:
@@ -149,6 +155,7 @@ def calculate_territory_balance(
         driveways_factor: Резервный коэффициент доли свободной площади под проезды.
         underground_area_per_car: Нормативная площадь подземного паркинга на 1 м/м с рампами (~35 м²).
         buildings: Список размещенных зданий для точного геометрического расчета проездов СП 4.13130.
+        only_ground_parking: Ограничение «Только наземные стоянки» (без подземного паркинга).
 
     Returns:
         Объект TerritoryBalanceResult с полной детализацией и проверками.
@@ -236,50 +243,90 @@ def calculate_territory_balance(
         actual_ground_spaces = 0
         actual_ground_area = 0.0
         actual_green_area = max(0.0, free_land - driveways_area - playgrounds.total)
-        warnings.append(
-            "Дефицит территории участка: для обеспечения нормативных площадок "
-            "наземные парковки не помещаются, машиноместа перенесены в подземный паркинг."
-        )
-
-    # 7. Дефицит машиномест (в подземный паркинг)
-    underground_deficit = max(0, req_total - actual_ground_spaces)
-    underground_area_est = round(underground_deficit * underground_area_per_car, 1)
-
-    # 8. Расчет стилобата и уровней подземного паркинга
-    stylobate_footprint = building_footprint_area * 1.35 if building_footprint_area > 0 else max(500.0, site_area * 0.25)
-    underground_levels = math.ceil(underground_area_est / max(400.0, stylobate_footprint)) if underground_deficit > 0 else 0
-
-    # 9. Озелененная кровля стилобата (СП 42.13330 п. 9.13)
-    green_roof_area = max(0.0, round(stylobate_footprint - building_footprint_area, 1)) if underground_deficit > 0 else 0.0
-    effective_green_area = round(actual_green_area + green_roof_area, 1)
-    effective_green_ratio = effective_green_area / site_area if site_area > 0 else 0.0
-
-    actual_green_ratio = actual_green_area / site_area if site_area > 0 else 0.0
-    green_norm_met = (actual_green_ratio >= min_green_ratio) or (effective_green_ratio >= min_green_ratio)
-
-    if not (actual_green_ratio >= min_green_ratio):
-        if effective_green_ratio >= min_green_ratio:
+        if only_ground_parking:
             warnings.append(
-                f"Наземное озеленение ({actual_green_ratio:.1%}) компенсируется "
-                f"эксплуатируемой кровлей стилобата ({green_roof_area:,.0f} м²). Суммарно: {effective_green_ratio:.1%} (норма {min_green_ratio:.0%})."
+                "Дефицит территории участка: для обеспечения нормативных площадок "
+                "наземные парковки не помещаются на участке при выбранных габаритах застройки."
             )
         else:
             warnings.append(
-                f"Доля озеленения ({actual_green_ratio:.1%}) ниже норматива ({min_green_ratio:.0%}). "
-                f"Рекомендуется сократить пятно застройки или использовать эксплуатируемую кровлю."
+                "Дефицит территории участка: для обеспечения нормативных площадок "
+                "наземные парковки не помещаются, машиноместа перенесены в подземный паркинг."
             )
 
-    if underground_deficit > 0:
-        lvl_str = f" ({underground_levels} подземн. ур.)" if underground_levels > 0 else ""
-        warnings.append(
-            f"Требуется подземный/стилобатный паркинг на {underground_deficit} м/м "
-            f"(ориентировочно {underground_area_est:,.0f} м²{lvl_str})."
-        )
-        if underground_levels > 2:
+    actual_green_ratio = actual_green_area / site_area if site_area > 0 else 0.0
+
+    if only_ground_parking:
+        # Режим «Только наземные парковки»: подземный паркинг полностью исключен
+        underground_deficit = 0
+        underground_area_est = 0.0
+        underground_levels = 0
+        stylobate_footprint = 0.0
+        green_roof_area = 0.0
+        effective_green_area = actual_green_area
+        effective_green_ratio = actual_green_ratio
+        parking_norm_met = (actual_ground_spaces >= req_total)
+
+        if not (actual_green_ratio >= min_green_ratio):
             warnings.append(
-                f"Внимание: расчетная этажность подземного паркинга ({underground_levels} ур.) "
-                f"приведет к существенному удорожанию. Рекомендуется вынос части мест в отдельный паркинг."
+                f"Доля озеленения ({actual_green_ratio:.1%}) ниже норматива ({min_green_ratio:.0%}). "
+                f"Рекомендуется сократить пятно застройки."
             )
+        green_norm_met = (actual_green_ratio >= min_green_ratio)
+
+        if parking_norm_met:
+            warnings.append(
+                f"Режим «Только наземные парковки»: 100% нормативной потребности ({actual_ground_spaces} из {req_total} м/м) "
+                f"обеспечено открытыми стоянками на территории участка. Подземный паркинг исключен."
+            )
+        else:
+            unmet = req_total - actual_ground_spaces
+            warnings.append(
+                f"Режим «Только наземные парковки»: дефицит {unmet} м/м. На открытой территории участка помещается "
+                f"только {actual_ground_spaces} из {req_total} требуемых м/м. Подземный паркинг отключен."
+            )
+
+    else:
+        # Стандартный режим со стилобатом и подземным паркингом
+        parking_norm_met = True
+        # 7. Дефицит машиномест (в подземный паркинг)
+        underground_deficit = max(0, req_total - actual_ground_spaces)
+        underground_area_est = round(underground_deficit * underground_area_per_car, 1)
+
+        # 8. Расчет стилобата и уровней подземного паркинга
+        stylobate_footprint = building_footprint_area * 1.35 if building_footprint_area > 0 else max(500.0, site_area * 0.25)
+        underground_levels = math.ceil(underground_area_est / max(400.0, stylobate_footprint)) if underground_deficit > 0 else 0
+
+        # 9. Озелененная кровля стилобата (СП 42.13330 п. 9.13)
+        green_roof_area = max(0.0, round(stylobate_footprint - building_footprint_area, 1)) if underground_deficit > 0 else 0.0
+        effective_green_area = round(actual_green_area + green_roof_area, 1)
+        effective_green_ratio = effective_green_area / site_area if site_area > 0 else 0.0
+
+        green_norm_met = (actual_green_ratio >= min_green_ratio) or (effective_green_ratio >= min_green_ratio)
+
+        if not (actual_green_ratio >= min_green_ratio):
+            if effective_green_ratio >= min_green_ratio:
+                warnings.append(
+                    f"Наземное озеленение ({actual_green_ratio:.1%}) компенсируется "
+                    f"эксплуатируемой кровлей стилобата ({green_roof_area:,.0f} м²). Суммарно: {effective_green_ratio:.1%} (норма {min_green_ratio:.0%})."
+                )
+            else:
+                warnings.append(
+                    f"Доля озеленения ({actual_green_ratio:.1%}) ниже норматива ({min_green_ratio:.0%}). "
+                    f"Рекомендуется сократить пятно застройки или использовать эксплуатируемую кровлю."
+                )
+
+        if underground_deficit > 0:
+            lvl_str = f" ({underground_levels} подземн. ур.)" if underground_levels > 0 else ""
+            warnings.append(
+                f"Требуется подземный/стилобатный паркинг на {underground_deficit} м/м "
+                f"(ориентировочно {underground_area_est:,.0f} м²{lvl_str})."
+            )
+            if underground_levels > 2:
+                warnings.append(
+                    f"Внимание: расчетная этажность подземного паркинга ({underground_levels} ур.) "
+                    f"приведет к существенному удорожанию. Рекомендуется вынос части мест в отдельный паркинг."
+                )
 
     parking_balance = ParkingBalance(
         required_total=req_total,
@@ -292,6 +339,8 @@ def calculate_territory_balance(
         underground_levels=underground_levels,
         guest_ground_placed=actual_guest_ground,
         resident_ground_placed=actual_resident_ground,
+        only_ground_parking=only_ground_parking,
+        parking_norm_met=parking_norm_met,
     )
 
     return TerritoryBalanceResult(

@@ -71,6 +71,12 @@ def geom_to_svg_path(geom, minx, miny, maxx, maxy, width=1000, height=700, pad=4
     elif geom.geom_type in ("LineString", "LinearRing"):
         pts = [pt(x, y) for x, y in geom.coords]
         return "M " + " L ".join(pts)
+    elif geom.geom_type == "MultiLineString":
+        parts = []
+        for line in geom.geoms:
+            pts = [pt(x, y) for x, y in line.coords]
+            parts.append("M " + " L ".join(pts))
+        return " ".join(parts)
     return ""
 
 
@@ -208,6 +214,64 @@ def generate_scenario_data(cad_query: str, typology: str, target_floors: int, sc
             }
             sections_data.append(s_entry)
 
+    # Пожарные проезды (СП 4.13130.2020)
+    fire_roads_path = ""
+    fire_turnarounds_path = ""
+    fire_centerlines_paths = []
+    fire_res = None
+    try:
+        from src.core.fire_safety import FireAccessEngine
+        fire_engine = FireAccessEngine()
+        fire_res = fire_engine.generate_fire_routes(site, buildings, include_turnarounds=True)
+        if fire_res.fire_lanes_polygon and not fire_res.fire_lanes_polygon.is_empty:
+            fire_roads_path = geom_to_svg_path(fire_res.fire_lanes_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+        if fire_res.turnarounds_polygon and not fire_res.turnarounds_polygon.is_empty:
+            fire_turnarounds_path = geom_to_svg_path(fire_res.turnarounds_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+        fire_centerlines_paths = [
+            geom_to_svg_path(cl, minx, miny, maxx, maxy, svg_w, svg_h)
+            for cl in fire_res.centerlines
+            if not cl.is_empty
+        ]
+    except Exception as ex:
+        print(f"Ошибка пожарных проездов: {ex}")
+
+    # Санитарные разрывы стоянок и площадки ТКО (СанПиН 2.2 и 2.1)
+    waste_sites_data = []
+    waste_radius_paths = []
+    parking_buffer_15m_path = ""
+    parking_buffer_25m_path = ""
+    san_res = None
+    try:
+        from src.core.sanitary_norms import SanitaryNormsEngine
+        san_engine = SanitaryNormsEngine()
+        fire_poly = fire_res.fire_lanes_polygon if fire_res else None
+        pop_num = getattr(tep, "population", 1000) or 1000
+        san_res = san_engine.analyze_site(
+            site=site,
+            buildings=buildings,
+            population=pop_num,
+            fire_lanes=fire_poly,
+        )
+        for ws in san_res.waste_sites:
+            ws_path = geom_to_svg_path(ws.polygon, minx, miny, maxx, maxy, svg_w, svg_h)
+            rad_circle = ws.centroid.buffer(ws.service_radius_m)
+            rad_path = geom_to_svg_path(rad_circle, minx, miny, maxx, maxy, svg_w, svg_h)
+            waste_radius_paths.append(rad_path)
+            waste_sites_data.append({
+                "id": ws.id,
+                "path": ws_path,
+                "containers": ws.containers_count,
+                "distance_to_windows": ws.distance_to_nearest_window_m,
+                "is_compliant": ws.is_compliant,
+                "note": ws.note,
+            })
+        if san_res.parking_forbidden_buffer_15m and not san_res.parking_forbidden_buffer_15m.is_empty:
+            parking_buffer_15m_path = geom_to_svg_path(san_res.parking_forbidden_buffer_15m, minx, miny, maxx, maxy, svg_w, svg_h)
+        if san_res.parking_forbidden_buffer_25m and not san_res.parking_forbidden_buffer_25m.is_empty:
+            parking_buffer_25m_path = geom_to_svg_path(san_res.parking_forbidden_buffer_25m, minx, miny, maxx, maxy, svg_w, svg_h)
+    except Exception as ex:
+        print(f"Ошибка санитарного анализа: {ex}")
+
     # 3D и Leaflet встраивания
     try:
         leaflet_html = generate_leaflet_map_html(site, buildings, tep, height=640, show_sections=True)
@@ -287,6 +351,30 @@ def generate_scenario_data(cad_query: str, typology: str, target_floors: int, sc
         },
         "buildings": buildings_data,
         "sections": sections_data,
+        "fire_safety": {
+            "fire_roads_path": fire_roads_path,
+            "fire_turnarounds_path": fire_turnarounds_path,
+            "fire_centerlines_paths": fire_centerlines_paths,
+            "total_area_sqm": fire_res.total_area_sqm if fire_res else 0.0,
+            "turnarounds_area_sqm": fire_res.turnarounds_area_sqm if fire_res else 0.0,
+            "total_length_m": fire_res.total_length_m if fire_res else 0.0,
+            "is_compliant": fire_res.is_compliant if fire_res else True,
+            "issues": fire_res.issues if fire_res else [],
+            "building_checks": fire_res.building_checks if fire_res else [],
+        },
+        "sanitary": {
+            "waste_sites": waste_sites_data,
+            "waste_radius_paths": waste_radius_paths,
+            "parking_buffer_15m_path": parking_buffer_15m_path,
+            "parking_buffer_25m_path": parking_buffer_25m_path,
+            "total_containers": san_res.total_containers_count if san_res else 0,
+            "waste_coverage_pct": san_res.waste_coverage_pct if san_res else 100.0,
+            "waste_is_compliant": san_res.waste_is_compliant if san_res else True,
+            "waste_issues": san_res.waste_issues if san_res else [],
+            "parking_is_compliant": san_res.parking_is_compliant if san_res else True,
+            "parking_issues": san_res.parking_issues if san_res else [],
+            "summary_notes": san_res.summary_notes if san_res else [],
+        },
         "leaflet_html": leaflet_html,
         "viewer_3d_html": viewer_3d_html,
         "viewer_3d_data": viewer_3d_data,

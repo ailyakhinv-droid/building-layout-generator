@@ -576,12 +576,86 @@ def build():
     .badge-warn {{ background: rgba(217, 119, 6, 0.12); color: var(--warning); }}
     .badge-info {{ background: rgba(83, 141, 178, 0.12); color: var(--accent); }}
 
-    /* КАРТА И ИНСПЕКТОР: ИНСПЕКТОР СЛЕВА, КАРТА/3D СПРАВА (БОЛЬШАЯ ЧАСТЬ) */
+    /* ПОЛНОРАЗМЕРНЫЙ ВЬЮПОРТ КАРТЫ С ВЫЕЗЖАЮЩИМ ИНСПЕКТОРОМ */
     .spatial-split {{
-      display: grid; grid-template-columns: minmax(320px, 1fr) minmax(0, 2.7fr);
-      gap: 20px; align-items: stretch;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      position: relative;
     }}
-    @media (max-width: 1100px) {{ .spatial-split {{ grid-template-columns: 1fr; }} }}
+
+    /* КОМПАКТНЫЙ KPI-HUD ОСТРОВОК НАД КАРТОЙ */
+    .kpi-hud-bar {{
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 8px 14px; box-shadow: var(--shadow); flex-wrap: wrap; margin-bottom: 2px;
+    }}
+    .kpi-hud-chips {{
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }}
+    .kpi-chip {{
+      display: inline-flex; align-items: center; gap: 5px; font-size: 12px;
+      color: var(--secondary); background: var(--muted); padding: 4px 10px;
+      border-radius: var(--radius-sm); border: 1px solid var(--border);
+    }}
+    .kpi-chip-icon {{ font-size: 13px; }}
+    .kpi-chip-label {{ font-weight: 500; }}
+    .kpi-chip-val {{ font-weight: 700; color: var(--text); }}
+    .btn-hud-toggle {{
+      font-size: 11.5px; padding: 4px 10px; background: transparent;
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--secondary); cursor: pointer; transition: all 0.15s ease;
+    }}
+    .btn-hud-toggle:hover {{
+      background: var(--muted); color: var(--text);
+    }}
+
+    /* ВЫЕЗЖАЮЩИЙ ИНСПЕКТОР СЕКЦИИ (SLIDE-OVER DRAWER) */
+    .inspector-drawer {{
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 380px;
+      max-width: 90vw;
+      background: var(--surface);
+      border-left: 1px solid var(--border-strong);
+      box-shadow: -8px 0 24px rgba(0, 0, 0, 0.15);
+      z-index: 25;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(105%);
+      transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+      border-top-right-radius: var(--radius-lg);
+      border-bottom-right-radius: var(--radius-lg);
+    }}
+    .inspector-drawer.open {{
+      transform: translateX(0);
+    }}
+
+    /* РЕЖИМ ZEN / ПОЛНОЭКРАННЫЙ ХОЛСТ */
+    #viewport-card-container.zen-fullscreen {{
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      z-index: 9999 !important;
+      border-radius: 0 !important;
+      margin: 0 !important;
+      border: none !important;
+    }}
+    #viewport-card-container.zen-fullscreen .map-canvas-container {{
+      height: calc(100vh - 55px) !important;
+      max-height: none !important;
+      min-height: none !important;
+    }}
+    #viewport-card-container.zen-fullscreen #view-container-osm,
+    #viewport-card-container.zen-fullscreen #view-container-3d {{
+      height: calc(100vh - 55px) !important;
+    }}
 
     .card {{
       background: var(--surface); border: 1px solid var(--border);
@@ -611,8 +685,13 @@ def build():
     }}
 
     .map-canvas-container {{
-      height: 740px; position: relative; overflow: hidden;
-      background: #f1f5f9; user-select: none;
+      height: calc(100vh - 170px);
+      min-height: 720px;
+      max-height: 940px;
+      position: relative;
+      overflow: hidden;
+      background: #f1f5f9;
+      user-select: none;
     }}
     [data-theme="dark"] .map-canvas-container {{ background: #0f172a; }}
 
@@ -660,12 +739,20 @@ def build():
 
     .svg-site-boundary {{ fill: none; stroke: #64748b; stroke-width: 1.8; stroke-dasharray: 6 4; }}
     .svg-buildable-area {{ fill: rgba(83, 141, 178, 0.05); stroke: rgba(83, 141, 178, 0.4); stroke-width: 1; }}
+    .svg-zouit {{ fill: url(#pattern-zouit); stroke: #ef4444; stroke-width: 1.8; stroke-dasharray: 4 2; opacity: 0.85; transition: opacity 0.15s ease; cursor: pointer; }}
+    .svg-zouit:hover {{ opacity: 1; stroke: #b91c1c; stroke-width: 2.5; }}
     .svg-red-line {{ fill: none; stroke: #ef4444; stroke-width: 2.2; }}
     .svg-road-corridor {{ fill: #334155; stroke: #64748b; stroke-width: 1.2; opacity: 0.95; }}
     .svg-road-buffer {{ fill: rgba(148, 163, 184, 0.22); stroke: rgba(100, 116, 139, 0.45); stroke-width: 1.0; stroke-dasharray: 4 3; }}
     .svg-road-centerline {{ fill: none; stroke: #ffffff; stroke-width: 2.2; stroke-dasharray: 6 5; opacity: 0.9; }}
     .svg-subblock-bound {{ fill: rgba(37, 99, 235, 0.03); stroke: #3b82f6; stroke-width: 1.4; stroke-dasharray: 4 3; }}
     .svg-road-preview {{ stroke: #2563eb; stroke-width: 3.5; stroke-dasharray: 6 4; fill: none; }}
+    .svg-fire-road {{ fill: rgba(239, 68, 68, 0.18); stroke: #ef4444; stroke-width: 1.6; stroke-dasharray: 6 3; }}
+    .svg-fire-turnaround {{ fill: rgba(220, 38, 38, 0.32); stroke: #dc2626; stroke-width: 2.2; }}
+    .svg-fire-cl {{ fill: none; stroke: #b91c1c; stroke-width: 1.2; stroke-dasharray: 5 3; }}
+    .svg-parking-san-buffer {{ fill: rgba(168, 85, 247, 0.12); stroke: #a855f7; stroke-width: 1.4; stroke-dasharray: 5 4; }}
+    .svg-tko-radius {{ fill: rgba(16, 185, 129, 0.06); stroke: #10b981; stroke-width: 1.2; stroke-dasharray: 4 3; opacity: 0.85; }}
+    .svg-tko-site {{ fill: #059669; stroke: #064e3b; stroke-width: 1.8; cursor: pointer; }}
     .svg-section {{ stroke: #ffffff; stroke-width: 1; cursor: pointer; transition: stroke 0.15s ease; }}
     .svg-section:hover {{ stroke: #0f172a; stroke-width: 2.6; }}
     .svg-section.selected {{
@@ -790,6 +877,9 @@ def build():
     /* АНАЛИТИКА */
     .sub-grid-2 {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
     @media (max-width: 900px) {{ .sub-grid-2 {{ grid-template-columns: 1fr; }} }}
+
+    .sub-grid-3 {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }}
+    @media (max-width: 900px) {{ .sub-grid-3 {{ grid-template-columns: 1fr; }} }}
 
     .sub-grid-4 {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }}
     @media (max-width: 900px) {{ .sub-grid-4 {{ grid-template-columns: repeat(2, 1fr); }} }}
@@ -1022,13 +1112,14 @@ def build():
               <option value="23:43:0106012:450">Краснодар, Зап. обход (4.3 га)</option>
               <option value="66:41:0101001:500">Екатеринбург, Академический</option>
               <option value="16:50:010101:200">Казань, Ново-Савиновский</option>
+              <option value="18:26:041136:753">Ижевск, Удмуртия (4.1 га)</option>
             </select>
           </div>
 
           <div class="control-row">
             <label class="control-label" for="cfg-cad-input">Кадастровый номер, адрес или координаты</label>
             <div style="display:flex; gap:6px;">
-              <input type="text" class="input-text" id="cfg-cad-input" value="" placeholder="72:23:0222001:16187 или 'Тюмень'" style="flex:1;" />
+              <input type="text" class="input-text" id="cfg-cad-input" value="" placeholder="Кадастровый номер любого региона РФ (напр. 18:26:041136:753)" style="flex:1;" />
               <button class="btn-toggle-sidebar" id="btn-fetch-pkk" type="button" title="Загрузить официальные границы напрямую из Публичной кадастровой карты Росреестра / НСПД" style="white-space:nowrap; padding:6px 8px; font-size:11px;">
                 🌐 ПКК
               </button>
@@ -1050,6 +1141,9 @@ def build():
               </div>
               <input type="file" id="file-gpzu-input" accept=".pdf,.xlsx,.xls,.docx,.txt,.csv" style="display:none;" />
               <div id="gpzu-file-badge" style="display:none; font-size:11px; padding:4px 8px; border-radius:4px; background:var(--muted); border:1px solid var(--border);"></div>
+              <button class="btn" id="btn-open-gpzu-modal" type="button" style="width:100%; justify-content:center; font-size:11.5px; padding:6px 8px; background:var(--surface); display:none; gap:6px;">
+                <span>⚙️ Настроить параметры и ЗОУИТ из ГПЗУ</span>
+              </button>
               <div id="gpzu-zouit-container" style="display:none; flex-direction:column; gap:4px; margin-top:2px;"></div>
 
               <div class="control-hint" style="line-height:1.4;">
@@ -1137,8 +1231,10 @@ def build():
               <span id="msk-detected-badge" style="font-size:10px; font-weight:700; color:var(--primary); background:rgba(37,99,235,0.08); padding:2px 6px; border-radius:4px;">Регион</span>
             </div>
             <select class="select-custom" id="cfg-cad-msk-zone" style="width:100%; font-weight:600;">
-              <option value="">(Автоопределение по чертежу и кадастру)</option>
-              <option value="МСК-72 Зона 1 (Тюмень)" selected>МСК-72 Зона 1 (Тюмень / ЖК Акватория)</option>
+              <option value="" selected>(Автоопределение по чертежу и кадастру)</option>
+              <option value="МСК-18 Зона 2 (Ижевск)">МСК-18 Зона 2 (Ижевск / Сарапул)</option>
+              <option value="МСК-18 Зона 1 (Удмуртия)">МСК-18 Зона 1 (Удмуртия / Можга / Глазов)</option>
+              <option value="МСК-72 Зона 1 (Тюмень)">МСК-72 Зона 1 (Тюмень / ЖК Акватория)</option>
               <option value="МСК г. Тюмени">МСК г. Тюмени</option>
               <option value="МСК-72 Зона 2 (Тобольск / Ишим)">МСК-72 Зона 2 (Тобольск / Ишим)</option>
               <option value="МСК-63 Зона 1 (Самара)">МСК-63 Зона 1 (Самара)</option>
@@ -1547,6 +1643,21 @@ def build():
           </button>
         </div>
 
+        <!-- ОГРАНИЧЕНИЕ: ТОЛЬКО НАЗЕМНЫЕ ПАРКОВКИ -->
+        <div class="toggle-row" style="background:rgba(16, 185, 129, 0.05); border:1px solid rgba(16, 185, 129, 0.25); border-radius:8px; padding:10px 12px; margin-top:8px;">
+          <div>
+            <div class="control-label" style="display:flex; align-items:center; gap:6px;">
+              <span>🅿️ Только наземные парковки</span>
+              <span class="badge" id="badge-ground-parking" style="font-size:9.5px; background:#ecfdf5; color:#059669; border:1px solid #a7f3d0;">Без подземного</span>
+            </div>
+            <div class="control-hint">Исключить подземный паркинг: этажность и параметры застройки калибруются под 100% размещение открытых стоянок на земле по СП 42 / РНГП</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="cfg-only-ground-parking" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+
         <div class="control-row">
           <div class="control-label">
             <span>Макс. плотность застройки (Кпз)</span>
@@ -1633,8 +1744,52 @@ def build():
         </div>
       </div>
 
-      <!-- 1. ВЕРХНИЕ KPI (10 КАРТОЧЕК ОСНОВНЫХ ТЭП) -->
-      <section class="kpi-grid">
+      <!-- КОМПАКТНЫЙ KPI-HUD ОСТРОВОК НАД КАРТОЙ (СВЕРНУТЫЕ 7 КЛЮЧЕВЫХ ТЭП) -->
+      <div class="kpi-hud-bar" id="kpi-hud-bar">
+        <div class="kpi-hud-chips">
+          <div class="kpi-chip" title="Общая площадь застройки (GFA)">
+            <span class="kpi-chip-icon">🏢</span>
+            <span class="kpi-chip-label">GFA:</span>
+            <span class="kpi-chip-val" id="hud-kpi-gfa">—</span>
+          </div>
+          <div class="kpi-chip" title="Жилая площадь фонда">
+            <span class="kpi-chip-icon">🏠</span>
+            <span class="kpi-chip-label">Жилая:</span>
+            <span class="kpi-chip-val" id="hud-kpi-living">—</span>
+          </div>
+          <div class="kpi-chip" title="Коэффициент плотности застройки (СП 42)">
+            <span class="kpi-chip-icon">📊</span>
+            <span class="kpi-chip-label">Кпз:</span>
+            <span class="kpi-chip-val" id="hud-kpi-far">—</span>
+          </div>
+          <div class="kpi-chip" title="Процент застройки участка (СП 42)">
+            <span class="kpi-chip-icon">📐</span>
+            <span class="kpi-chip-label">Кз:</span>
+            <span class="kpi-chip-val" id="hud-kpi-bcr">—</span>
+          </div>
+          <div class="kpi-chip" title="Количество квартир в жилом комплексе">
+            <span class="kpi-chip-icon">🚪</span>
+            <span class="kpi-chip-label">Квартир:</span>
+            <span class="kpi-chip-val" id="hud-kpi-apts">—</span>
+          </div>
+          <div class="kpi-chip" title="Обеспеченность машиноместами">
+            <span class="kpi-chip-icon">🚗</span>
+            <span class="kpi-chip-label">Парковки:</span>
+            <span class="kpi-chip-val" id="hud-kpi-parking">—</span>
+          </div>
+          <div class="kpi-chip" title="Доля озеленения территории">
+            <span class="kpi-chip-icon">🌳</span>
+            <span class="kpi-chip-label">Озеленение:</span>
+            <span class="kpi-chip-val" id="hud-kpi-green">—</span>
+          </div>
+        </div>
+        <button class="btn-hud-toggle" id="btn-toggle-kpi-grid" type="button" title="Показать или скрыть подробные 10 карточек ТЭП">
+          <span>▾ Детальные карточки ТЭП</span>
+        </button>
+      </div>
+
+      <!-- 1. ВЕРХНИЕ KPI (10 КАРТОЧЕК ОСНОВНЫХ ТЭП) - РАЗВОРАЧИВАЮТСЯ ПО КНОПКЕ -->
+      <section class="kpi-grid" id="full-kpi-grid" style="display:none;">
         <!-- 1. GFA -->
         <div class="metric-card">
           <div class="metric-card-header">
@@ -1736,57 +1891,8 @@ def build():
         </div>
       </section>
 
-      <!-- 2. ЦЕНТРАЛЬНЫЙ СПЛИТ: ИНСПЕКТОР (СЛЕВА) + КАРТА/3D/СХЕМА (СПРАВА, БОЛЬШАЯ ЧАСТЬ) -->
-      <section class="spatial-split">
-
-        <!-- ИНСПЕКТОР СЕКЦИИ (СЛЕВА) -->
-        <div class="card" id="inspector-card-container">
-          <div class="card-header">
-            <h2 class="card-title">Инспектор секции</h2>
-            <button class="btn" id="btn-clear-selection" style="display:none;">Снять выбор</button>
-          </div>
-
-          <div class="inspector-card" id="inspector-content">
-            <div class="inspector-empty" id="inspector-empty">
-              <div class="inspector-empty-icon">⌖</div>
-              <strong style="font-size:15px; color:var(--text);">Инспектор параметров застройки</strong>
-              <p>Кликните по любой секции на генплане или выберите строку в ведомости ниже для просмотра архитектурных параметров, высоты и квартирографии.</p>
-            </div>
-
-            <div id="inspector-active" style="display:none; flex-direction:column; gap:14px;">
-              <div class="inspector-header">
-                <div>
-                  <h3 class="inspector-title" id="insp-title">Дом Д1 · Секция 1</h3>
-                  <p class="inspector-subtitle" id="insp-subtitle">Марка: Рядовая 14×26м</p>
-                </div>
-                <span class="category-badge" id="insp-cat-badge">Рядовая</span>
-              </div>
-
-              <dl class="detail-grid">
-                <div class="detail-item"><dt>Этажность</dt><dd id="insp-floors">—</dd></div>
-                <div class="detail-item"><dt>Высота здания</dt><dd id="insp-height">—</dd></div>
-                <div class="detail-item"><dt>Габариты фасада</dt><dd id="insp-dims">—</dd></div>
-                <div class="detail-item"><dt>Пятно секции</dt><dd id="insp-footprint">—</dd></div>
-                <div class="detail-item"><dt>GFA секции</dt><dd id="insp-gfa">—</dd></div>
-                <div class="detail-item"><dt>Всего квартир</dt><dd id="insp-apts-count">—</dd></div>
-              </dl>
-
-              <div class="feature-box">
-                <span class="feature-box-title">Квартирография данной секции</span>
-                <div class="apt-bars" id="insp-apt-bars"></div>
-              </div>
-
-              <div class="feature-box">
-                <span class="feature-box-title">Инженерные узлы и лифты</span>
-                <p style="font-size:13px; color:var(--text);" id="insp-elevators">Лифтов: 2 шт.</p>
-                <p style="font-size:12px; color:var(--secondary);" id="insp-ground">1-й этаж: Коммерческие помещения</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- ГЕНПЛАН ЗАСТРОЙКИ: КАРТА, 3D И СХЕМА НА ВКЛАДКАХ (СПРАВА, ДОМИНИРУЮЩИЙ РАЗМЕР) -->
-        <div class="card" id="viewport-card-container" style="position:relative;">
+      <!-- 2. ПОЛНОРАЗМЕРНЫЙ ВЬЮПОРТ ГЕНПЛАНА (100% ШИРИНЫ) С ВЫЕЗЖАЮЩИМ ИНСПЕКТОРОМ -->
+      <section class="card" id="viewport-card-container" style="position:relative; overflow:hidden; width:100%;">
           <div class="card-header">
             <div style="display:flex; align-items:center; gap:10px;">
               <h2 class="card-title">Генплан застройки</h2>
@@ -1798,7 +1904,16 @@ def build():
             </div>
 
             <div class="card-controls" id="svg-controls">
-              <span class="filter-label" style="margin-right:4px;">Раскраска:</span>
+              <button class="btn" id="btn-toggle-fire-roads" type="button" title="Показать пожарные проезды и площадки 15х15м (СП 4.13130.2020)" style="font-size:11.5px; padding:5px 9px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
+                <span>🚒 Пожарные проезды (СП 4)</span>
+              </button>
+              <button class="btn" id="btn-toggle-tko" type="button" title="Показать контейнерные площадки ТКО и радиус 100м (СанПиН 2.1.3684-21)" style="font-size:11.5px; padding:5px 9px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
+                <span>🗑️ ТКО (СанПиН 2.1)</span>
+              </button>
+              <button class="btn" id="btn-toggle-parking-san" type="button" title="Показать санразрывы парковок 10-15м от окон (СанПиН 2.2.1/2.1.1.1200-03)" style="font-size:11.5px; padding:5px 9px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer;">
+                <span>🅿️ Санразрывы стоянок</span>
+              </button>
+              <span class="filter-label" style="margin-right:4px; margin-left:4px;">Раскраска:</span>
               <select class="select-custom" id="map-metric-select">
                 <option value="category">По типам секций</option>
                 <option value="floors">По этажности</option>
@@ -1844,13 +1959,31 @@ def build():
 
           <div class="map-canvas-container" id="view-container-svg">
             <svg class="map-svg" id="masterplan-svg" role="img" aria-label="Интерактивный генплан застройки">
+              <defs>
+                <pattern id="pattern-zouit" width="10" height="10" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <line x1="0" y1="0" x2="0" y2="10" stroke="#ef4444" stroke-width="2.5" stroke-opacity="0.65" />
+                </pattern>
+              </defs>
               <g id="svg-viewport">
                 <g id="svg-site-world">
                   <path id="svg-site-bound" class="svg-site-boundary" />
                   <path id="svg-buildable" class="svg-buildable-area" />
+                  <g id="svg-zouit-group"></g>
                   <g id="svg-redlines-group"></g>
                   <g id="svg-roads-group"></g>
                   <g id="svg-subblocks-group"></g>
+                  <g id="svg-fire-roads-group" style="display:none; pointer-events:none;">
+                    <path id="svg-fire-roads" class="svg-fire-road" d="" />
+                    <path id="svg-fire-turnarounds" class="svg-fire-turnaround" d="" />
+                    <g id="svg-fire-centerlines"></g>
+                  </g>
+                  <g id="svg-parking-san-group" style="display:none; pointer-events:none;">
+                    <path id="svg-parking-san-buffer" class="svg-parking-san-buffer" d="" />
+                  </g>
+                  <g id="svg-tko-group" style="display:none; pointer-events:none;">
+                    <g id="svg-tko-radius-group"></g>
+                    <g id="svg-tko-sites-group"></g>
+                  </g>
                   <g id="svg-road-draw-preview"></g>
                   <g id="svg-sections-group"></g>
                 </g>
@@ -1863,6 +1996,7 @@ def build():
               <button class="map-btn" id="btn-zoom-out" title="Отдалить">−</button>
               <button class="map-btn" id="btn-zoom-reset" title="Показать весь участок">⌂</button>
               <button class="map-btn" id="btn-zoom-focus" title="Приблизить выбранную секцию">⌖</button>
+              <button class="map-btn" id="btn-fullscreen-map" title="Развернуть на весь экран (Zen Mode)">⛶</button>
             </div>
 
             <div class="north-arrow">↑<br>С</div>
@@ -1875,14 +2009,62 @@ def build():
             <div class="map-tooltip" id="map-tooltip"></div>
           </div>
 
-          <div id="view-container-osm" style="display:none; height:740px;">
+          <!-- ИНСПЕКТОР СЕКЦИИ (ВЫЕЗЖАЮЩИЙ SLIDE-OVER DRAWER) -->
+          <div class="inspector-drawer" id="inspector-card-container">
+            <div class="card-header" style="background:var(--surface); flex-shrink:0;">
+              <h2 class="card-title" style="font-size:14px;">Инспектор секции</h2>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button class="btn" id="btn-clear-selection" style="display:none; font-size:11px; padding:3px 7px;">Снять</button>
+                <button class="modal-close" id="btn-close-inspector" title="Закрыть инспектор (Esc)" style="font-size:18px; line-height:1; cursor:pointer; background:none; border:none; color:var(--secondary); padding:2px 6px;">&times;</button>
+              </div>
+            </div>
+
+            <div class="inspector-card" id="inspector-content" style="flex:1; overflow-y:auto; padding:16px;">
+              <div class="inspector-empty" id="inspector-empty">
+                <div class="inspector-empty-icon">⌖</div>
+                <strong style="font-size:14px; color:var(--text);">Инспектор параметров застройки</strong>
+                <p style="font-size:12px; color:var(--secondary); margin-top:4px;">Кликните по любой секции на генплане или в ведомости для просмотра параметров, высоты и квартирографии.</p>
+              </div>
+
+              <div id="inspector-active" style="display:none; flex-direction:column; gap:14px;">
+                <div class="inspector-header">
+                  <div>
+                    <h3 class="inspector-title" id="insp-title">Дом Д1 · Секция 1</h3>
+                    <p class="inspector-subtitle" id="insp-subtitle">Марка: Рядовая 14×26м</p>
+                  </div>
+                  <span class="category-badge" id="insp-cat-badge">Рядовая</span>
+                </div>
+
+                <dl class="detail-grid">
+                  <div class="detail-item"><dt>Этажность</dt><dd id="insp-floors">—</dd></div>
+                  <div class="detail-item"><dt>Высота здания</dt><dd id="insp-height">—</dd></div>
+                  <div class="detail-item"><dt>Габариты фасада</dt><dd id="insp-dims">—</dd></div>
+                  <div class="detail-item"><dt>Пятно секции</dt><dd id="insp-footprint">—</dd></div>
+                  <div class="detail-item"><dt>GFA секции</dt><dd id="insp-gfa">—</dd></div>
+                  <div class="detail-item"><dt>Всего квартир</dt><dd id="insp-apts-count">—</dd></div>
+                </dl>
+
+                <div class="feature-box">
+                  <span class="feature-box-title">Квартирография данной секции</span>
+                  <div class="apt-bars" id="insp-apt-bars"></div>
+                </div>
+
+                <div class="feature-box">
+                  <span class="feature-box-title">Инженерные узлы и лифты</span>
+                  <p style="font-size:13px; color:var(--text);" id="insp-elevators">Лифтов: 2 шт.</p>
+                  <p style="font-size:12px; color:var(--secondary);" id="insp-ground">1-й этаж: Коммерческие помещения</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="view-container-osm" style="display:none; height:calc(100vh - 170px); min-height:720px; max-height:940px;">
             <iframe id="iframe-osm" style="width:100%; height:100%; border:0;" title="OSM Карта"></iframe>
           </div>
 
-          <div id="view-container-3d" style="display:none; height:740px;">
+          <div id="view-container-3d" style="display:none; height:calc(100vh - 170px); min-height:720px; max-height:940px;">
             <iframe id="iframe-3d" src="viewer_3d.html" style="width:100%; height:100%; border:0;" title="3D Модель"></iframe>
           </div>
-        </div>
       </section>
 
       <!-- 3. ДЕТАЛЬНЫЙ ТЕРРИТОРИАЛЬНЫЙ БАЛАНС (РНГП) -->
@@ -1894,7 +2076,7 @@ def build():
         <div class="card-body">
           <div id="balance-warnings-container" style="display:flex; flex-direction:column; gap:6px;"></div>
 
-          <div class="sub-grid-2" style="margin-top:6px;">
+          <div class="sub-grid-3" style="margin-top:6px;">
             <div class="mini-stat-card">
               <span class="mini-stat-title">Обеспеченность автостоянками</span>
               <span class="mini-stat-val" id="bal-parking-req">— м/м</span>
@@ -1905,11 +2087,29 @@ def build():
               <span class="mini-stat-val" id="bal-parking-ground">— м/м</span>
               <span class="mini-stat-sub" id="bal-parking-ground-area">— м² открытых стоянок</span>
             </div>
+            <div class="mini-stat-card">
+              <span class="mini-stat-title">🚒 Пожарные проезды (СП 4)</span>
+              <span class="mini-stat-val" id="bal-fire-val">— м²</span>
+              <span class="mini-stat-sub" id="bal-fire-sub">Ширина 4.2–6.0 м · СП 4.13130</span>
+            </div>
           </div>
 
           <div class="warning-banner warning-info" id="bal-parking-underground-box">
             <span>🚗</span>
             <span id="bal-parking-underground-text">Дефицит в подземный паркинг: — м/м</span>
+          </div>
+
+          <div class="sub-grid-2" style="margin-top:8px;">
+            <div class="mini-stat-card">
+              <span class="mini-stat-title">🗑️ Площадки ТКО (СанПиН 2.1.3684-21)</span>
+              <span class="mini-stat-val" id="bal-tko-val">— площ.</span>
+              <span class="mini-stat-sub" id="bal-tko-sub">Радиус доступности ≤ 100 м · Отступ от окон ≥ 20 м</span>
+            </div>
+            <div class="mini-stat-card">
+              <span class="mini-stat-title">🅿️ Санразрывы стоянок (СанПиН 2.2.1)</span>
+              <span class="mini-stat-val" id="bal-park-san-val">Разрыв 10–15 м</span>
+              <span class="mini-stat-sub" id="bal-park-san-sub">Карманы ≤ 15 м/м · 25 м до детских площадок</span>
+            </div>
           </div>
 
           <span class="filter-label" style="margin-top:8px;">Обязательные дворовые площадки по нормативу (м²):</span>
@@ -2296,6 +2496,188 @@ def build():
     </div>
   </div>
 
+  <!-- МОДАЛЬНОЕ ОКНО ПРИЕМКИ И ВАЛИДАЦИИ ГПЗУ / ЗОУИТ -->
+  <div class="modal-backdrop" id="gpzu-modal">
+    <div class="modal-box" style="max-width: 860px; font-family: var(--font-sans);">
+      <div class="modal-header" style="padding: 16px 22px;">
+        <div>
+          <div style="font-size: 16px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px;">
+            <span>📑</span> Градостроительный план земельного участка (ГПЗУ)
+          </div>
+          <div style="font-size: 12px; color: var(--secondary); margin-top: 3px;">
+            Выбор параметров застройки, предельных регламентов и зон с особыми условиями (ЗОУИТ)
+          </div>
+        </div>
+        <button class="modal-close" id="gpzu-modal-close" title="Закрыть">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 18px 22px; max-height: calc(85vh - 130px); overflow-y: auto; font-family: var(--font-sans); white-space: normal;">
+        <!-- Карточка реквизитов документа -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:rgba(83, 141, 178, 0.08); border-left:4px solid var(--accent); padding:10px 14px; border-radius:0 var(--radius-sm) var(--radius-sm) 0; flex-wrap:wrap; gap:8px;">
+          <div>
+            <span style="font-size:11px; color:var(--secondary);">Кадастровый номер и файл:</span>
+            <div id="modal-gpzu-title" style="font-weight:700; font-size:13.5px; color:var(--text);">—</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span id="modal-gpzu-points-badge" class="badge-status badge-ok" style="font-size:11px;">— точек границы</span>
+            <span id="modal-gpzu-area-badge" class="badge-status badge-neutral" style="font-size:11px;">— м²</span>
+          </div>
+        </div>
+
+        <!-- РАЗДЕЛ 1: КАТАЛОГИ КООРДИНАТ И ЗОНЫ ГПЗУ (РАЗДЕЛЬНАЯ ЗАГРУЗКА) -->
+        <div style="margin-bottom:18px; background:var(--muted); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px 14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="font-weight:700; font-size:13px; color:var(--text); display:flex; align-items:center; gap:6px;">
+              <span>🗺️</span> 1. Каталоги координат и зоны ГПЗУ (<span id="modal-gpzu-zones-count">0</span>)
+            </div>
+            <span class="badge-status badge-ok" style="font-size:10.5px;">Раздельная группировка по зонам</span>
+          </div>
+          <div style="font-size:11.5px; color:var(--secondary); margin-bottom:10px; line-height:1.3;">
+            Координаты из ГПЗУ автоматически разделены по контурам и таблицам (без сваливания в общую кучу). Выберите роль для каждого контура:
+          </div>
+
+          <div id="modal-gpzu-zones-list" style="display:flex; flex-direction:column; gap:8px;">
+            <!-- Карточки зон генерируются динамически -->
+          </div>
+        </div>
+
+        <!-- РАЗДЕЛ 2: ПРЕДЕЛЬНЫЕ ПАРАМЕТРЫ РАЗРЕШЕННОГО СТРОИТЕЛЬСТВА (Раздел 2 ГПЗУ) -->
+        <div style="margin-bottom:18px;">
+          <div style="font-weight:700; font-size:13px; color:var(--text); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+            <span>📐</span> 2. Градостроительные регламенты и параметры застройки (Раздел 2 ГПЗУ)
+          </div>
+          <div style="font-size:11.5px; color:var(--secondary); margin-bottom:10px;">
+            Отметьте параметры, которые необходимо соблюдать. Справа показаны оригинальные цитаты из текста ГПЗУ.
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr; gap:8px;">
+            <!-- Параметр: Отступ от границ -->
+            <div class="gpzu-param-row" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); gap:12px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-setback" checked />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text);">Минимальный отступ от границ участка:</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-setback" value="3.0" step="0.5" min="0" max="30" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;" class="input-text" />
+                <span style="font-size:12px; color:var(--secondary);">м</span>
+              </div>
+              <div id="modal-gpzu-snip-setback" style="font-size:10.5px; color:var(--secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Отступ от красных линий -->
+            <div class="gpzu-param-row" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); gap:12px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-redline" checked />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text);">Отступ от красных линий улиц и дорог:</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-redline" value="5.0" step="0.5" min="0" max="30" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;" class="input-text" />
+                <span style="font-size:12px; color:var(--secondary);">м</span>
+              </div>
+              <div id="modal-gpzu-snip-redline" style="font-size:10.5px; color:var(--secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Предельная этажность -->
+            <div class="gpzu-param-row" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); gap:12px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-floors" />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text);">Предельная этажность зданий:</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-floors" value="16" step="1" min="1" max="50" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;" class="input-text" />
+                <span style="font-size:12px; color:var(--secondary);">эт.</span>
+              </div>
+              <div id="modal-gpzu-snip-floors" style="font-size:10.5px; color:var(--secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Предельная высота -->
+            <div class="gpzu-param-row" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); gap:12px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-max-h" />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text);">Предельная высота зданий (м):</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-max-h" value="50" step="1" min="0" max="250" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;" class="input-text" />
+                <span style="font-size:12px; color:var(--secondary);">м</span>
+              </div>
+              <div id="modal-gpzu-snip-max-h" style="font-size:10.5px; color:var(--secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Максимальный процент застройки (Кз / BCR) -->
+            <div class="gpzu-param-row" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); gap:12px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-bcr" />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text);">Максимальный процент застройки (Кз):</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-bcr" value="40" step="1" min="5" max="100" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;" class="input-text" />
+                <span style="font-size:12px; color:var(--secondary);">%</span>
+              </div>
+              <div id="modal-gpzu-snip-bcr" style="font-size:10.5px; color:var(--secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Коэффициент плотности застройки (Кпз / FAR) -->
+            <div class="gpzu-param-row" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); gap:12px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-far" />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text);">Коэффициент плотности застройки (Кпз):</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-far" value="2.5" step="0.1" min="0.1" max="10.0" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;" class="input-text" />
+                <span style="font-size:12px; color:var(--secondary);">ед.</span>
+              </div>
+              <div id="modal-gpzu-snip-far" style="font-size:10.5px; color:var(--secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Минимальный процент озеленения -->
+            <div class="gpzu-param-row" style="display:flex; align-items:center; justify-content:space-between; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); gap:12px;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-green" />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text);">Минимальная доля озеленения:</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-green" value="25" step="1" min="5" max="80" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;" class="input-text" />
+                <span style="font-size:12px; color:var(--secondary);">%</span>
+              </div>
+              <div id="modal-gpzu-snip-green" style="font-size:10.5px; color:var(--secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- РАЗДЕЛ 3: ЗОУИТ И ОХРАННЫЕ ЗОНЫ (Раздел 3 ГПЗУ) -->
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-weight:700; font-size:13px; color:var(--text); display:flex; align-items:center; gap:6px;">
+              <span>🛡️</span> 3. Зоны с особыми условиями использования (ЗОУИТ / охранные зоны)
+            </div>
+            <button type="button" class="btn" id="btn-modal-add-zouit" style="font-size:11px; padding:4px 8px;">
+              <span>➕ Добавить ЗОУИТ вручную</span>
+            </button>
+          </div>
+          <div style="font-size:11.5px; color:var(--secondary); margin-bottom:10px;">
+            Геометрия зон строится строго по каталогу поворотных точек. Зоны, отмеченные галочкой, автоматически вырезаются из допустимой зоны застройки. Если точек нет, вы можете ввести их вручную.
+          </div>
+
+          <div id="modal-gpzu-zouit-list" style="display:flex; flex-direction:column; gap:10px;">
+            <!-- Карточки ЗОУИТ генерируются динамически -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 14px 22px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border); background:var(--surface);">
+        <button type="button" class="btn" id="btn-modal-gpzu-boundary-only" title="Импортировать только контур границ земельного участка без изменения регламентов">
+          <span>📐 Применить только контур</span>
+        </button>
+        <div style="display:flex; gap:10px;">
+          <button type="button" class="btn" id="btn-modal-gpzu-cancel">Отмена</button>
+          <button type="button" class="btn btn-primary" id="btn-modal-gpzu-apply">
+            <span>🚀 Применить выбранное из ГПЗУ</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- МОДАЛЬНОЕ ОКНО СТАРТА: МАСТЕР НАЧАЛА РАБОТЫ -->
   <div class="modal-backdrop" id="welcome-wizard-modal" style="display:flex;">
     <div class="modal-box" style="max-width: 720px; border: 1px solid var(--border-strong); box-shadow: 0 25px 50px -12px rgba(0,0,0,0.35);">
@@ -2449,12 +2831,59 @@ def build():
       const dropzoneGpzu = document.getElementById("dropzone-gpzu");
       const fileGpzuInput = document.getElementById("file-gpzu-input");
       const gpzuFileBadge = document.getElementById("gpzu-file-badge");
+      const btnOpenGpzuModal = document.getElementById("btn-open-gpzu-modal");
       const gpzuZouitContainer = document.getElementById("gpzu-zouit-container");
       const cfgGpzuCoords = document.getElementById("cfg-gpzu-coords");
       const btnApplyGpzu = document.getElementById("btn-apply-gpzu");
       const btnClearGpzu = document.getElementById("btn-clear-gpzu");
       const gpzuStatusBadge = document.getElementById("gpzu-status-badge");
       let activeGpzuCoordinates = "";
+      let activeZouitZones = [];
+      let currentGpzuParsedData = null;
+
+      // Модальное окно ГПЗУ и ЗОУИТ
+      const gpzuModal = document.getElementById("gpzu-modal");
+      const gpzuModalClose = document.getElementById("gpzu-modal-close");
+      const btnModalGpzuApply = document.getElementById("btn-modal-gpzu-apply");
+      const btnModalGpzuCancel = document.getElementById("btn-modal-gpzu-cancel");
+      const btnModalGpzuBoundaryOnly = document.getElementById("btn-modal-gpzu-boundary-only");
+      const btnModalAddZouit = document.getElementById("btn-modal-add-zouit");
+
+      const modalGpzuTitle = document.getElementById("modal-gpzu-title");
+      const modalGpzuPointsBadge = document.getElementById("modal-gpzu-points-badge");
+      const modalGpzuAreaBadge = document.getElementById("modal-gpzu-area-badge");
+
+      const modalGpzuChkSetback = document.getElementById("modal-gpzu-chk-setback");
+      const modalGpzuValSetback = document.getElementById("modal-gpzu-val-setback");
+      const modalGpzuSnipSetback = document.getElementById("modal-gpzu-snip-setback");
+
+      const modalGpzuChkRedline = document.getElementById("modal-gpzu-chk-redline");
+      const modalGpzuValRedline = document.getElementById("modal-gpzu-val-redline");
+      const modalGpzuSnipRedline = document.getElementById("modal-gpzu-snip-redline");
+
+      const modalGpzuChkFloors = document.getElementById("modal-gpzu-chk-floors");
+      const modalGpzuValFloors = document.getElementById("modal-gpzu-val-floors");
+      const modalGpzuSnipFloors = document.getElementById("modal-gpzu-snip-floors");
+
+      const modalGpzuChkMaxH = document.getElementById("modal-gpzu-chk-max-h");
+      const modalGpzuValMaxH = document.getElementById("modal-gpzu-val-max-h");
+      const modalGpzuSnipMaxH = document.getElementById("modal-gpzu-snip-max-h");
+
+      const modalGpzuChkBcr = document.getElementById("modal-gpzu-chk-bcr");
+      const modalGpzuValBcr = document.getElementById("modal-gpzu-val-bcr");
+      const modalGpzuSnipBcr = document.getElementById("modal-gpzu-snip-bcr");
+
+      const modalGpzuChkFar = document.getElementById("modal-gpzu-chk-far");
+      const modalGpzuValFar = document.getElementById("modal-gpzu-val-far");
+      const modalGpzuSnipFar = document.getElementById("modal-gpzu-snip-far");
+
+      const modalGpzuChkGreen = document.getElementById("modal-gpzu-chk-green");
+      const modalGpzuValGreen = document.getElementById("modal-gpzu-val-green");
+      const modalGpzuSnipGreen = document.getElementById("modal-gpzu-snip-green");
+
+      const modalGpzuZonesList = document.getElementById("modal-gpzu-zones-list");
+      const modalGpzuZonesCount = document.getElementById("modal-gpzu-zones-count");
+      const modalGpzuZouitList = document.getElementById("modal-gpzu-zouit-list");
       const cfgRotSlider = document.getElementById("cfg-rot-slider");
       const cfgRotBadge = document.getElementById("cfg-rot-badge");
       const cfgAreaInput = document.getElementById("cfg-area-input");
@@ -2521,6 +2950,7 @@ def build():
       const cfgMaxSectionsSlider = document.getElementById("cfg-max-sections-slider");
       const cfgMaxSectionsBadge = document.getElementById("cfg-max-sections-badge");
       const cfgRegionalNorm = document.getElementById("cfg-regional-norm");
+      const cfgOnlyGroundParking = document.getElementById("cfg-only-ground-parking");
       const badgeNormStatus = document.getElementById("badge-norm-status");
       const badgeRegionalNormTitle = document.getElementById("badge-regional-norm-title");
       const badgeRegionalNormSummary = document.getElementById("badge-regional-norm-summary");
@@ -2620,11 +3050,29 @@ def build():
       const svgViewport = document.getElementById("svg-viewport");
       const svgSiteBound = document.getElementById("svg-site-bound");
       const svgBuildable = document.getElementById("svg-buildable");
+      const svgZouitGroup = document.getElementById("svg-zouit-group");
       const svgRedlinesGroup = document.getElementById("svg-redlines-group");
       const svgRoadsGroup = document.getElementById("svg-roads-group");
       const svgSubblocksGroup = document.getElementById("svg-subblocks-group");
       const svgRoadDrawPreview = document.getElementById("svg-road-draw-preview");
       const svgSectionsGroup = document.getElementById("svg-sections-group");
+      const btnToggleFireRoads = document.getElementById("btn-toggle-fire-roads");
+      const svgFireRoadsGroup = document.getElementById("svg-fire-roads-group");
+      const svgFireRoads = document.getElementById("svg-fire-roads");
+      const svgFireTurnarounds = document.getElementById("svg-fire-turnarounds");
+      const svgFireCenterlines = document.getElementById("svg-fire-centerlines");
+      let showFireRoads = false;
+
+      // Санитарные разрывы (СанПиН 2.2) и ТКО (СанПиН 2.1)
+      const btnToggleTko = document.getElementById("btn-toggle-tko");
+      const btnToggleParkingSan = document.getElementById("btn-toggle-parking-san");
+      const svgParkingSanGroup = document.getElementById("svg-parking-san-group");
+      const svgParkingSanBuffer = document.getElementById("svg-parking-san-buffer");
+      const svgTkoGroup = document.getElementById("svg-tko-group");
+      const svgTkoRadiusGroup = document.getElementById("svg-tko-radius-group");
+      const svgTkoSitesGroup = document.getElementById("svg-tko-sites-group");
+      let showTko = false;
+      let showParkingSan = false;
       const mapTooltip = document.getElementById("map-tooltip");
       const mapLegendTitle = document.getElementById("legend-title");
       const mapLegendItems = document.getElementById("legend-items");
@@ -2750,6 +3198,12 @@ def build():
       const plSport = document.getElementById("pl-sport");
       const plRelax = document.getElementById("pl-relax");
       const plUtility = document.getElementById("pl-utility");
+      const balFireVal = document.getElementById("bal-fire-val");
+      const balFireSub = document.getElementById("bal-fire-sub");
+      const balTkoVal = document.getElementById("bal-tko-val");
+      const balTkoSub = document.getElementById("bal-tko-sub");
+      const balParkSanVal = document.getElementById("bal-park-san-val");
+      const balParkSanSub = document.getElementById("bal-park-san-sub");
       const balanceProgressList = document.getElementById("balance-progress-list");
 
       // Таблицы
@@ -3428,6 +3882,7 @@ def build():
 
       // Изменение кадастрового номера в режиме 1
       cfgCadInput.addEventListener("change", () => {{
+        if (cfgCadMskZone) cfgCadMskZone.value = "";
         userHasMovedSite = false;
         currentSiteLat = null;
         currentSiteLon = null;
@@ -3463,6 +3918,17 @@ def build():
               pkkStatusBadge.textContent = `✓ Найдено в Росреестре: ${{data.points_count}} точек, ${{areaStr}}`;
               if (data.area_sqm && cfgAreaInput) {{
                 cfgAreaInput.value = Math.round(data.area_sqm);
+              }}
+              if ((data.detected_msk || data.coordinate_system) && cfgCadMskZone) {{
+                const mskName = data.detected_msk || data.coordinate_system;
+                let opt = Array.from(cfgCadMskZone.options).find(o => o.value === mskName);
+                if (!opt) {{
+                  opt = document.createElement("option");
+                  opt.value = mskName;
+                  opt.textContent = mskName;
+                  cfgCadMskZone.appendChild(opt);
+                }}
+                cfgCadMskZone.value = mskName;
               }}
               activeGpzuCoordinates = "";
               if (gpzuStatusBadge) gpzuStatusBadge.style.display = "none";
@@ -3515,8 +3981,36 @@ def build():
             const data = await resp.json();
             if (data.success) {{
               activeGpzuCoordinates = coordsText;
+              if (data.coordinate_system && cfgCadMskZone) {{
+                let opt = Array.from(cfgCadMskZone.options).find(o => o.value === data.coordinate_system);
+                if (!opt) {{
+                  opt = document.createElement("option");
+                  opt.value = data.coordinate_system;
+                  opt.textContent = data.coordinate_system;
+                  cfgCadMskZone.appendChild(opt);
+                }}
+                cfgCadMskZone.value = data.coordinate_system;
+              }}
+              // Автоматически подключаем зоны ЗОУИТ из ГПЗУ (если были обнаружены)
+              if (currentGpzuParsedData && currentGpzuParsedData.zones) {{
+                activeZouitZones = [];
+                currentGpzuParsedData.zones.forEach(z => {{
+                  if (z.role === "zouit_exclusion" && z.enabled !== false && z.coordinates && z.coordinates.length >= 3) {{
+                    activeZouitZones.push({{
+                      name: z.name,
+                      enabled: true,
+                      coordinates: z.coordinates,
+                      coordinates_text: z.coordinates_text,
+                      buffer_m: 5.0,
+                      snippet: z.description || "",
+                      type: "zouit"
+                    }});
+                  }}
+                }});
+              }}
               gpzuStatusBadge.style.color = "#10b981";
-              gpzuStatusBadge.textContent = `✓ Контур из ГПЗУ применён: ${{data.points_count}} точек, ${{Math.round(data.area_sqm).toLocaleString()}} м² (${{data.coordinate_system}})`;
+              const zCount = activeZouitZones ? activeZouitZones.length : 0;
+              gpzuStatusBadge.textContent = `✓ Контур из ГПЗУ применён: ${{data.points_count}} точек, ${{Math.round(data.area_sqm).toLocaleString()}} м² (${{data.coordinate_system}})${{zCount > 0 ? ` + ${{zCount}} зон ЗОУИТ` : ""}}`;
               if (cfgAreaInput) {{
                 cfgAreaInput.value = Math.round(data.area_sqm);
               }}
@@ -3542,10 +4036,820 @@ def build():
         }});
       }}
 
+      // Экранирование HTML для безопасного вывода
+      function escapeHtml(str) {{
+        if (str === null || str === undefined) return "";
+        return String(str)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
+      }}
+
+      // Клиентский расчет площади полигона (формула Гаусса / Shoelace)
+      function calculatePolygonAreaClient(pts) {{
+        if (!pts || pts.length < 3) return 0;
+        let area = 0;
+        for (let i = 0; i < pts.length; i++) {{
+          const j = (i + 1) % pts.length;
+          area += pts[i][0] * pts[j][1];
+          area -= pts[j][0] * pts[i][1];
+        }}
+        return Math.abs(area) / 2.0;
+      }}
+
+      // Клиентский парсер пар координат (X, Y) из произвольного текста
+      function parseCoordinateTextClient(text) {{
+        if (!text) return [];
+        const lines = text.trim().split(/[\\r\\n]+/);
+        const pts = [];
+        for (const line of lines) {{
+          const clean = line.trim();
+          if (!clean || clean.startsWith("#")) continue;
+          // Пропускаем строки с буквами (кроме меток типа н1, т.1)
+          const words = clean.match(/[а-яА-ЯёЁa-zA-Z]{{2,}}/g);
+          if (words && words.length >= 2) continue;
+          const lineNorm = clean.replace(/,/g, ".");
+          const parts = lineNorm.split(/[\\s\\t;,|]+/);
+          const nums = [];
+          for (const p of parts) {{
+            const pClean = p.replace(/[()\\[\\]{{}}:X=Y=x=y=Х=У=х=у=]/g, "").trim();
+            const n = parseFloat(pClean);
+            if (!isNaN(n) && pClean !== "") nums.push(n);
+          }}
+          if (nums.length >= 2) {{
+            if (nums.length >= 5 && Number.isInteger(nums[0]) && nums[0] < 5000) {{
+              pts.push([nums[3], nums[4]]);
+            }} else if (nums.length === 4) {{
+              pts.push([nums[2], nums[3]]);
+            }} else if (nums.length >= 3 && Number.isInteger(nums[0]) && nums[0] < 5000) {{
+              pts.push([nums[1], nums[2]]);
+            }} else {{
+              pts.push([nums[0], nums[1]]);
+            }}
+          }}
+        }}
+        return pts;
+      }}
+
+      // Отрисовка списка зон ЗОУИТ в модальном окне ГПЗУ
+      function renderZouitModalList(zouitList) {{
+        if (!modalGpzuZouitList) return;
+        modalGpzuZouitList.innerHTML = "";
+
+        if (!zouitList || zouitList.length === 0) {{
+          modalGpzuZouitList.innerHTML = `
+            <div style="font-size:12px; color:var(--secondary); background:var(--muted); padding:14px; border-radius:var(--radius-sm); text-align:center;">
+              🛡️ В документе не обнаружено записей об охранных зонах и ЗОУИТ.<br>Вы можете добавить зону вручную с помощью кнопки «➕ Добавить ЗОУИТ вручную».
+            </div>`;
+          return;
+        }}
+
+        zouitList.forEach((z, idx) => {{
+          const card = document.createElement("div");
+          card.className = "zouit-item-card";
+          card.style.cssText = "background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:12px; display:flex; flex-direction:column; gap:8px;";
+
+          const hasCoords = Boolean(z.has_coordinates && z.coordinates && z.coordinates.length >= 3);
+          const badgeClass = hasCoords ? "badge-status badge-ok" : "badge-status badge-warn";
+          const badgeText = hasCoords
+            ? `🟢 Каталог координат: ${{z.points_count || z.coordinates.length}} точек`
+            : `⚠️ Поворотные точки в документе отсутствуют`;
+
+          const defaultChecked = z.is_exclusion_zone !== false && hasCoords;
+
+          card.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1; min-width:240px;">
+                <input type="checkbox" class="zouit-chk-apply" data-index="${{idx}}" ${{defaultChecked ? "checked" : ""}} />
+                <input type="text" class="input-text zouit-input-name" data-index="${{idx}}" value="${{z.name || `Охранная зона ${{idx + 1}}`}}" style="font-weight:600; font-size:12.5px; width:100%; border:1px solid transparent; background:transparent; padding:2px 4px;" title="Кликните для редактирования наименования зоны" />
+              </label>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="${{badgeClass}} zouit-badge-status" id="zouit-badge-${{idx}}" style="font-size:11px;">${{badgeText}}</span>
+                <button type="button" class="btn btn-zouit-del" data-index="${{idx}}" title="Удалить зону из списка" style="padding:2px 6px; font-size:12px; color:var(--secondary); border:none; background:transparent; cursor:pointer;">✕</button>
+              </div>
+            </div>
+
+            ${{z.snippet ? `<div style="font-size:11px; color:var(--secondary); font-style:italic; line-height:1.3; background:var(--muted); padding:6px 10px; border-radius:var(--radius-sm); border-left:3px solid #f59e0b;">«${{z.snippet}}»</div>` : ""}}
+
+            <details class="expander" ${{!hasCoords ? "open" : ""}} style="margin-top:2px; font-size:11.5px;">
+              <summary style="cursor:pointer; color:var(--accent); font-weight:600;">
+                ${{hasCoords ? `Посмотреть каталог точек (${{z.points_count || z.coordinates.length}} точ.)` : `✏️ Ввести каталог поворотных точек вручную`}}
+              </summary>
+              <div style="display:flex; flex-direction:column; gap:6px; margin-top:6px;">
+                <div style="font-size:10.5px; color:var(--secondary);">
+                  Вставьте пары координат X Y (или точка, X, Y) в метрах МСК или градусах:
+                </div>
+                <textarea class="input-text zouit-manual-coords" data-index="${{idx}}" rows="3" style="font-family:monospace; font-size:11px; width:100%; resize:vertical;" placeholder="1  338000.00  1475200.00&#10;2  338050.00  1475250.00&#10;3  338020.00  1475300.00">${{z.coordinates_text || ""}}</textarea>
+                <div style="display:flex; gap:12px; align-items:center;">
+                  <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:var(--secondary);">
+                    <span>Буфер / ширина (если ось сети / линия, м):</span>
+                    <input type="number" class="input-text zouit-input-buffer" data-index="${{idx}}" value="${{z.buffer_m || 5}}" step="1" min="1" max="200" style="width:55px; padding:2px 4px; font-size:11px; text-align:right;" />
+                  </label>
+                </div>
+              </div>
+            </details>
+          `;
+
+          modalGpzuZouitList.appendChild(card);
+        }});
+
+        // Слушатели ввода координат вручную
+        modalGpzuZouitList.querySelectorAll(".zouit-manual-coords").forEach(ta => {{
+          ta.addEventListener("input", (e) => {{
+            const idx = parseInt(e.target.dataset.index, 10);
+            const text = e.target.value.trim();
+            const pts = parseCoordinateTextClient(text);
+            const badge = document.getElementById(`zouit-badge-${{idx}}`);
+            const chk = modalGpzuZouitList.querySelector(`.zouit-chk-apply[data-index="${{idx}}"]`);
+            if (pts.length >= 3) {{
+              if (badge) {{
+                badge.className = "badge-status badge-ok";
+                badge.textContent = `🟢 Введено вручную: ${{pts.length}} точек`;
+              }}
+              if (chk) chk.checked = true;
+            }} else if (pts.length === 2) {{
+              if (badge) {{
+                badge.className = "badge-status badge-ok";
+                badge.textContent = `🟢 Осевая линия (2 точки + буфер)`;
+              }}
+              if (chk) chk.checked = true;
+            }} else {{
+              if (badge) {{
+                badge.className = "badge-status badge-warn";
+                badge.textContent = `⚠️ Поворотные точки отсутствуют`;
+              }}
+            }}
+          }});
+        }});
+
+        // Слушатели удаления
+        modalGpzuZouitList.querySelectorAll(".btn-zouit-del").forEach(btn => {{
+          btn.addEventListener("click", (e) => {{
+            const idx = parseInt(e.target.dataset.index, 10);
+            if (currentGpzuParsedData && currentGpzuParsedData.zouit) {{
+              currentGpzuParsedData.zouit.splice(idx, 1);
+              renderZouitModalList(currentGpzuParsedData.zouit);
+            }}
+          }});
+        }});
+      }}
+
+      // Отрисовка списка каталогов координат и зон в модальном окне ГПЗУ
+      function renderGpzuZonesModalList(zones) {{
+        if (!modalGpzuZonesList) return;
+        modalGpzuZonesList.innerHTML = "";
+        if (modalGpzuZonesCount) modalGpzuZonesCount.textContent = zones ? zones.length : 0;
+
+        if (!zones || zones.length === 0) {{
+          modalGpzuZonesList.innerHTML = `
+            <div style="font-size:11.5px; color:var(--secondary); padding:8px; text-align:center;">
+              Каталоги координат в документе не обнаружены.
+            </div>`;
+          return;
+        }}
+
+        zones.forEach((z, idx) => {{
+          const isBoundary = (z.role === "boundary");
+          const card = document.createElement("div");
+          card.className = "gpzu-zone-card";
+          card.style.cssText = isBoundary
+            ? "background:rgba(83, 141, 178, 0.05); border:1.5px solid var(--accent); border-radius:var(--radius-sm); padding:12px; display:flex; flex-direction:column; gap:8px;"
+            : "background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:10px 12px; display:flex; flex-direction:column; gap:6px;";
+
+          let typeBadge = "badge-neutral";
+          if (z.role === "boundary") typeBadge = "badge-ok";
+          else if (z.role === "buildable_envelope") typeBadge = "badge-accent";
+          else if (z.role === "zouit_exclusion") typeBadge = "badge-warn";
+
+          card.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:8px; flex:1; min-width:240px;">
+                <input type="checkbox" class="gpzu-zone-chk-apply" data-index="${{idx}}" ${{z.default_apply !== false ? "checked" : ""}} />
+                <span style="font-weight:600; font-size:12.5px; color:var(--text);">${{escapeHtml(z.name || `Зона ${{idx+1}}`)}}</span>
+                <span class="badge-status ${{typeBadge}} zone-badge-pts-${{idx}}" style="font-size:10.5px;">${{z.points_count}} точек</span>
+                <span class="badge-status badge-neutral zone-badge-area-${{idx}}" style="font-size:10.5px;">${{Math.round(z.area_sqm || 0).toLocaleString()}} м²</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <label style="font-size:11px; color:var(--secondary);">Роль:</label>
+                <select class="input-text gpzu-zone-role-select" data-index="${{idx}}" style="font-size:11px; padding:3px 6px;">
+                  <option value="boundary" ${{z.role === "boundary" ? "selected" : ""}}>📐 Основной контур ЗУ</option>
+                  <option value="buildable_envelope" ${{z.role === "buildable_envelope" ? "selected" : ""}}>🏗️ Пятно застройки</option>
+                  <option value="zouit_exclusion" ${{z.role === "zouit_exclusion" ? "selected" : ""}}>🛡️ ЗОУИТ (Вычесть)</option>
+                  <option value="easement" ${{z.role === "easement" ? "selected" : ""}}>🚶 Сервитут</option>
+                  <option value="ignore" ${{z.role === "ignore" ? "selected" : ""}}>❌ Игнорировать</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:var(--secondary); flex-wrap:wrap; gap:6px;">
+              <span>${{escapeHtml(z.description || "")}}</span>
+              <div style="display:flex; gap:6px;">
+                <button type="button" class="btn btn-set-boundary" data-index="${{idx}}" style="font-size:10.5px; padding:3px 8px; ${{isBoundary ? 'background:rgba(83,141,178,0.18); font-weight:600;' : ''}}" title="Сделать этот контур границей участка">
+                  📐 ${{isBoundary ? "✓ Контур ЗУ" : "Сделать контуром ЗУ"}}
+                </button>
+                <button type="button" class="btn btn-toggle-zone-coords" data-index="${{idx}}" style="font-size:10.5px; padding:3px 8px;">
+                  ✏️ Точки границ (<span class="btn-pts-lbl-${{idx}}">${{z.points_count}}</span>)
+                </button>
+              </div>
+            </div>
+
+            <!-- Редактор координат точек границ -->
+            <div class="zone-coords-editor-box" id="zone-coords-box-${{idx}}" style="display:${{isBoundary ? "block" : "none"}}; margin-top:6px; background:var(--muted); border:1px solid var(--border); border-radius:var(--radius-sm); padding:8px 10px;">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; flex-wrap:wrap; gap:6px;">
+                <span style="font-size:11px; font-weight:600; color:var(--text); display:flex; align-items:center; gap:4px;">
+                  <span>📋</span> Координаты поворотных точек (формат: № X Y или X Y):
+                </span>
+                <div style="display:flex; gap:4px;">
+                  <button type="button" class="btn btn-swap-xy" data-index="${{idx}}" style="font-size:10px; padding:2px 6px;" title="Поменять X и Y местами (инвертировать порядок осей)">
+                    ↕ X ↔ Y
+                  </button>
+                  <button type="button" class="btn btn-add-pt" data-index="${{idx}}" style="font-size:10px; padding:2px 6px;" title="Добавить строку для новой поворотной точки">
+                    + Добавить точку
+                  </button>
+                  <button type="button" class="btn btn-recalc-pts" data-index="${{idx}}" style="font-size:10px; padding:2px 6px;" title="Пересчитать площадь по введенным точкам">
+                    🔄 Пересчитать
+                  </button>
+                </div>
+              </div>
+              <textarea class="input-text zone-coords-textarea" id="zone-coords-ta-${{idx}}" rows="7" style="font-family:monospace; font-size:11.5px; width:100%; resize:vertical; background:var(--surface); border:1px solid var(--border); padding:6px 8px; line-height:1.45;" placeholder="1  386213.46  2226426.33\n2  386253.41  2226490.62...">${{escapeHtml(z.coordinates_text || "")}}</textarea>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px; font-size:10.5px; color:var(--secondary);">
+                <span id="zone-live-stat-${{idx}}">✅ Точек: <b>${{z.points_count}}</b> | Площадь: <b>${{Math.round(z.area_sqm || 0).toLocaleString()}} м²</b> (${{(z.area_ha || 0).toFixed(2)}} га)</span>
+                <span style="color:var(--text-muted);">Формат: № [таб/пробел] X [таб/пробел] Y</span>
+              </div>
+            </div>
+          `;
+
+          const ta = card.querySelector(`#zone-coords-ta-${{idx}}`);
+          const boxCoords = card.querySelector(`#zone-coords-box-${{idx}}`);
+          const btnCoords = card.querySelector(".btn-toggle-zone-coords");
+
+          if (btnCoords && boxCoords) {{
+            btnCoords.addEventListener("click", () => {{
+              boxCoords.style.display = boxCoords.style.display === "none" ? "block" : "none";
+            }});
+          }}
+
+          // Функция мгновенной переоценки точек из поля ввода
+          const updateZoneFromTextarea = () => {{
+            if (!ta) return;
+            const text = ta.value;
+            const pts = parseCoordinateTextClient(text);
+            const area = calculatePolygonAreaClient(pts);
+            z.coordinates_text = text;
+            z.coordinates = pts;
+            z.points_count = pts.length;
+            z.area_sqm = Math.round(area * 10) / 10;
+            z.area_ha = Math.round(area / 1000) / 10;
+
+            const badgePts = card.querySelector(`.zone-badge-pts-${{idx}}`);
+            if (badgePts) badgePts.textContent = `${{pts.length}} точек`;
+            const badgeArea = card.querySelector(`.zone-badge-area-${{idx}}`);
+            if (badgeArea) badgeArea.textContent = `${{Math.round(area).toLocaleString()}} м²`;
+            const btnPtsLbl = card.querySelector(`.btn-pts-lbl-${{idx}}`);
+            if (btnPtsLbl) btnPtsLbl.textContent = pts.length;
+
+            const statSpan = card.querySelector(`#zone-live-stat-${{idx}}`);
+            if (statSpan) {{
+              if (pts.length >= 3) {{
+                statSpan.innerHTML = `✅ Точек: <b>${{pts.length}}</b> | Площадь: <b>${{Math.round(area).toLocaleString()}} м²</b> (${{(area / 10000).toFixed(2)}} га)`;
+              }} else {{
+                statSpan.innerHTML = `⚠️ <span style="color:#ef4444;">Точек: <b>${{pts.length}}</b> (нужно минимум 3 для контура)</span>`;
+              }}
+            }}
+
+            if (z.role === "boundary") {{
+              if (modalGpzuPointsBadge) {{
+                modalGpzuPointsBadge.textContent = `${{pts.length}} точек границы (${{currentGpzuParsedData.coordinate_system || "МСК"}})`;
+              }}
+              if (modalGpzuAreaBadge) {{
+                modalGpzuAreaBadge.textContent = `${{Math.round(area).toLocaleString()}} м² (${{(area / 10000).toFixed(2)}} га)`;
+              }}
+              currentGpzuParsedData.points_count = pts.length;
+              currentGpzuParsedData.area_sqm = area;
+              currentGpzuParsedData.area_ha = area / 10000;
+              currentGpzuParsedData.coordinates_text = text;
+            }}
+          }};
+
+          if (ta) {{
+            ta.addEventListener("input", updateZoneFromTextarea);
+            ta.addEventListener("change", updateZoneFromTextarea);
+          }}
+
+          const btnRecalc = card.querySelector(".btn-recalc-pts");
+          if (btnRecalc) {{
+            btnRecalc.addEventListener("click", () => {{
+              updateZoneFromTextarea();
+              showToast(`✓ Площадь пересчитана: ${{Math.round(z.area_sqm || 0).toLocaleString()}} м²`);
+            }});
+          }}
+
+          const btnSwap = card.querySelector(".btn-swap-xy");
+          if (btnSwap && ta) {{
+            btnSwap.addEventListener("click", () => {{
+              const text = ta.value;
+              const lines = text.trim().split(/[\\r\\n]+/);
+              const swapped = lines.map(l => {{
+                const clean = l.trim();
+                if (!clean) return l;
+                const parts = clean.split(/[\\s\\t;]+/);
+                if (parts.length >= 3) {{
+                  return `${{parts[0]}}\\t${{parts[2]}}\\t${{parts[1]}}`;
+                }} else if (parts.length === 2) {{
+                  return `${{parts[1]}}\\t${{parts[0]}}`;
+                }}
+                return l;
+              }}).join("\\n");
+              ta.value = swapped;
+              updateZoneFromTextarea();
+              showToast("↕ Оси X и Y поменяны местами");
+            }});
+          }}
+
+          const btnAddPt = card.querySelector(".btn-add-pt");
+          if (btnAddPt && ta) {{
+            btnAddPt.addEventListener("click", () => {{
+              const text = ta.value.trim();
+              const pts = parseCoordinateTextClient(text);
+              const nextIdx = pts.length + 1;
+              let nextX = 0, nextY = 0;
+              if (pts.length > 0) {{
+                nextX = (pts[pts.length - 1][0] + 10).toFixed(2);
+                nextY = (pts[pts.length - 1][1] + 10).toFixed(2);
+              }}
+              ta.value = text + (text ? "\\n" : "") + `${{nextIdx}}\\t${{nextX}}\\t${{nextY}}`;
+              updateZoneFromTextarea();
+              ta.scrollTop = ta.scrollHeight;
+            }});
+          }}
+
+          const btnSetB = card.querySelector(".btn-set-boundary");
+          if (btnSetB) {{
+            btnSetB.addEventListener("click", () => {{
+              if (!currentGpzuParsedData || !currentGpzuParsedData.zones) return;
+              currentGpzuParsedData.zones.forEach((zoneItem, sIdx) => {{
+                zoneItem.role = (sIdx === idx) ? "boundary" : "other";
+              }});
+              renderGpzuZonesModalList(currentGpzuParsedData.zones);
+              showToast(`Выбран контур «${{z.name}}» как граница ЗУ`);
+            }});
+          }}
+
+          const roleSel = card.querySelector(".gpzu-zone-role-select");
+          if (roleSel) {{
+            roleSel.addEventListener("change", () => {{
+              if (currentGpzuParsedData.zones && currentGpzuParsedData.zones[idx]) {{
+                currentGpzuParsedData.zones[idx].role = roleSel.value;
+                if (roleSel.value === "boundary") {{
+                  currentGpzuParsedData.zones.forEach((oZ, oIdx) => {{
+                    if (oIdx !== idx && oZ.role === "boundary") oZ.role = "other";
+                  }});
+                  renderGpzuZonesModalList(currentGpzuParsedData.zones);
+                }}
+              }}
+            }});
+          }}
+
+          const chkApply = card.querySelector(".gpzu-zone-chk-apply");
+          if (chkApply) {{
+            chkApply.addEventListener("change", () => {{
+              if (currentGpzuParsedData.zones && currentGpzuParsedData.zones[idx]) {{
+                currentGpzuParsedData.zones[idx].enabled = chkApply.checked;
+              }}
+            }});
+          }}
+
+          modalGpzuZonesList.appendChild(card);
+        }});
+      }}
+
+      // Открытие модального окна ГПЗУ с заполнением полей
+      function openGpzuModalWithData(data) {{
+        if (!data) return;
+        currentGpzuParsedData = JSON.parse(JSON.stringify(data));
+        if (gpzuModal) gpzuModal.style.display = "flex";
+
+        if (modalGpzuTitle) {{
+          modalGpzuTitle.textContent = `${{data.cadastral_number || "Кадастровый номер не указан"}} · ${{data.filename || "Файл ГПЗУ"}}`;
+        }}
+        if (modalGpzuPointsBadge) {{
+          modalGpzuPointsBadge.textContent = `${{data.points_count || 0}} точек границы (${{data.coordinate_system || "МСК"}})`;
+        }}
+        if (modalGpzuAreaBadge) {{
+          modalGpzuAreaBadge.textContent = `${{Math.round(data.area_sqm || 0).toLocaleString()}} м² (${{(data.area_ha || ((data.area_sqm || 0) / 10000)).toFixed(2)}} га)`;
+        }}
+
+        const sb = data.setbacks || {{}};
+        const snips = data.snippets || {{}};
+
+        // 1. Отступ от границ участка
+        if (modalGpzuChkSetback && modalGpzuValSetback && modalGpzuSnipSetback) {{
+          if (sb.boundary_setback !== undefined && sb.boundary_setback !== null) {{
+            modalGpzuChkSetback.checked = true;
+            modalGpzuValSetback.value = sb.boundary_setback;
+            modalGpzuSnipSetback.textContent = snips.boundary_setback ? `«${{snips.boundary_setback}}»` : "Найдено в разделе 2.2 ГПЗУ";
+          }} else {{
+            modalGpzuChkSetback.checked = false;
+            modalGpzuValSetback.value = (cfgBoundarySetback && cfgBoundarySetback.value) || 3.0;
+            modalGpzuSnipSetback.textContent = "(в тексте ГПЗУ не найдено, действует ПЗЗ/РНГП)";
+          }}
+        }}
+
+        // 2. Отступ от красных линий
+        if (modalGpzuChkRedline && modalGpzuValRedline && modalGpzuSnipRedline) {{
+          if (sb.red_line_setback !== undefined && sb.red_line_setback !== null) {{
+            modalGpzuChkRedline.checked = true;
+            modalGpzuValRedline.value = sb.red_line_setback;
+            modalGpzuSnipRedline.textContent = snips.red_line_setback ? `«${{snips.red_line_setback}}»` : "Найдено в разделе 2.2 ГПЗУ";
+          }} else {{
+            modalGpzuChkRedline.checked = false;
+            modalGpzuValRedline.value = (cfgRedlineSetback && cfgRedlineSetback.value) || 5.0;
+            modalGpzuSnipRedline.textContent = "(в тексте ГПЗУ не найдено, действует норматив)";
+          }}
+        }}
+
+        // 3. Предельная этажность
+        if (modalGpzuChkFloors && modalGpzuValFloors && modalGpzuSnipFloors) {{
+          if (sb.max_floors !== undefined && sb.max_floors !== null) {{
+            modalGpzuChkFloors.checked = true;
+            modalGpzuValFloors.value = sb.max_floors;
+            modalGpzuSnipFloors.textContent = snips.max_floors ? `«${{snips.max_floors}}»` : "Найдено в регламентах ГПЗУ";
+          }} else {{
+            modalGpzuChkFloors.checked = false;
+            modalGpzuValFloors.value = (cfgFloorsSlider && cfgFloorsSlider.value) || 14;
+            modalGpzuSnipFloors.textContent = "(в тексте ГПЗУ не найдено, действует базовая)";
+          }}
+        }}
+
+        // 4. Предельная высота зданий
+        if (modalGpzuChkMaxH && modalGpzuValMaxH && modalGpzuSnipMaxH) {{
+          if (sb.max_height_m !== undefined && sb.max_height_m !== null) {{
+            modalGpzuChkMaxH.checked = true;
+            modalGpzuValMaxH.value = sb.max_height_m;
+            modalGpzuSnipMaxH.textContent = snips.max_height_m ? `«${{snips.max_height_m}}»` : "Найдено в регламентах ГПЗУ";
+          }} else {{
+            modalGpzuChkMaxH.checked = false;
+            modalGpzuValMaxH.value = (cfgMaxH && parseFloat(cfgMaxH.value)) || 50;
+            modalGpzuSnipMaxH.textContent = "(в тексте ГПЗУ не найдено, без ограничений)";
+          }}
+        }}
+
+        // 5. Кз (BCR)
+        if (modalGpzuChkBcr && modalGpzuValBcr && modalGpzuSnipBcr) {{
+          if (sb.max_bcr !== undefined && sb.max_bcr !== null) {{
+            modalGpzuChkBcr.checked = true;
+            modalGpzuValBcr.value = Math.round(sb.max_bcr * 100);
+            modalGpzuSnipBcr.textContent = snips.max_bcr ? `«${{snips.max_bcr}}»` : "Найдено в регламентах ГПЗУ";
+          }} else {{
+            modalGpzuChkBcr.checked = false;
+            modalGpzuValBcr.value = 40;
+            modalGpzuSnipBcr.textContent = "(в тексте ГПЗУ не найдено, действует ПЗЗ 40%)";
+          }}
+        }}
+
+        // 6. Кпз (FAR)
+        if (modalGpzuChkFar && modalGpzuValFar && modalGpzuSnipFar) {{
+          if (sb.max_far !== undefined && sb.max_far !== null) {{
+            modalGpzuChkFar.checked = true;
+            modalGpzuValFar.value = sb.max_far;
+            modalGpzuSnipFar.textContent = snips.max_far ? `«${{snips.max_far}}»` : "Найдено в регламентах ГПЗУ";
+          }} else {{
+            modalGpzuChkFar.checked = false;
+            modalGpzuValFar.value = 2.5;
+            modalGpzuSnipFar.textContent = "(в тексте ГПЗУ не найдено, действует ПЗЗ 2.5)";
+          }}
+        }}
+
+        // 7. Озеленение
+        if (modalGpzuChkGreen && modalGpzuValGreen && modalGpzuSnipGreen) {{
+          if (sb.min_greening_percent !== undefined && sb.min_greening_percent !== null) {{
+            modalGpzuChkGreen.checked = true;
+            modalGpzuValGreen.value = Math.round(sb.min_greening_percent);
+            modalGpzuSnipGreen.textContent = snips.min_greening_percent ? `«${{snips.min_greening_percent}}»` : "Найдено в регламентах ГПЗУ";
+          }} else {{
+            modalGpzuChkGreen.checked = false;
+            modalGpzuValGreen.value = 25;
+            modalGpzuSnipGreen.textContent = "(в тексте ГПЗУ не найдено, норматив СП 42: 25%)";
+          }}
+        }}
+
+        // Отрисовать карточки зон и контуров
+        renderGpzuZonesModalList(currentGpzuParsedData.zones || []);
+
+        // Отрисовать карточки ЗОУИТ
+        renderZouitModalList(currentGpzuParsedData.zouit || []);
+      }}
+
+      function closeGpzuModal() {{
+        if (gpzuModal) gpzuModal.style.display = "none";
+      }}
+
+      // Кнопки закрытия модального окна ГПЗУ
+      if (gpzuModalClose) gpzuModalClose.addEventListener("click", closeGpzuModal);
+      if (btnModalGpzuCancel) btnModalGpzuCancel.addEventListener("click", closeGpzuModal);
+      if (gpzuModal) {{
+        gpzuModal.addEventListener("click", e => {{
+          if (e.target === gpzuModal) closeGpzuModal();
+        }});
+      }}
+
+      // Кнопка открытия окна настройки ГПЗУ из сайдбара
+      if (btnOpenGpzuModal) {{
+        btnOpenGpzuModal.addEventListener("click", () => {{
+          if (currentGpzuParsedData) {{
+            openGpzuModalWithData(currentGpzuParsedData);
+          }} else {{
+            showToast("Сначала загрузите файл ГПЗУ");
+          }}
+        }});
+      }}
+
+      // Добавление новой зоны ЗОУИТ вручную
+      if (btnModalAddZouit) {{
+        btnModalAddZouit.addEventListener("click", () => {{
+          if (!currentGpzuParsedData) {{
+            currentGpzuParsedData = {{ zouit: [] }};
+          }}
+          if (!currentGpzuParsedData.zouit) currentGpzuParsedData.zouit = [];
+          currentGpzuParsedData.zouit.push({{
+            name: `Пользовательская охранная зона ${{currentGpzuParsedData.zouit.length + 1}}`,
+            type: "custom",
+            has_coordinates: false,
+            coordinates: [],
+            coordinates_text: "",
+            points_count: 0,
+            is_exclusion_zone: true,
+            buffer_m: 5.0,
+            snippet: "Добавлено пользователем вручную"
+          }});
+          renderZouitModalList(currentGpzuParsedData.zouit);
+        }});
+      }}
+
+      // Вспомогательная функция синхронизации введенных в окне координат
+      function flushGpzuModalTextareas() {{
+        if (!modalGpzuZonesList || !currentGpzuParsedData || !currentGpzuParsedData.zones) return;
+        modalGpzuZonesList.querySelectorAll(".gpzu-zone-card").forEach((card, cIdx) => {{
+          const ta = card.querySelector(".zone-coords-textarea");
+          if (ta && currentGpzuParsedData.zones[cIdx]) {{
+            const val = ta.value.trim();
+            if (val) {{
+              currentGpzuParsedData.zones[cIdx].coordinates_text = val;
+              const pts = parseCoordinateTextClient(val);
+              currentGpzuParsedData.zones[cIdx].coordinates = pts;
+              currentGpzuParsedData.zones[cIdx].points_count = pts.length;
+              currentGpzuParsedData.zones[cIdx].area_sqm = calculatePolygonAreaClient(pts);
+              currentGpzuParsedData.zones[cIdx].area_ha = currentGpzuParsedData.zones[cIdx].area_sqm / 10000;
+            }}
+          }}
+        }});
+      }}
+
+      // Применение только контура участка
+      if (btnModalGpzuBoundaryOnly) {{
+        btnModalGpzuBoundaryOnly.addEventListener("click", () => {{
+          if (!currentGpzuParsedData) return;
+          flushGpzuModalTextareas();
+
+          let bZone = null;
+          if (currentGpzuParsedData.zones && currentGpzuParsedData.zones.length > 0) {{
+            bZone = currentGpzuParsedData.zones.find(z => z.role === "boundary") || currentGpzuParsedData.zones[0];
+          }}
+          const targetCoords = (bZone && bZone.coordinates_text) || currentGpzuParsedData.coordinates_text || "";
+          const targetPts = parseCoordinateTextClient(targetCoords);
+
+          if (targetPts.length < 3) {{
+            showToast("⚠️ Ошибка: для контура границы требуется минимум 3 точки!", true);
+            return;
+          }}
+
+          const targetPoints = targetPts.length;
+          const targetArea = (bZone && bZone.area_sqm) || calculatePolygonAreaClient(targetPts);
+
+          activeGpzuCoordinates = targetCoords;
+          if (cfgGpzuCoords) cfgGpzuCoords.value = targetCoords;
+          if (currentGpzuParsedData.coordinate_system && cfgCadMskZone) {{
+            let opt = Array.from(cfgCadMskZone.options).find(o => o.value === currentGpzuParsedData.coordinate_system);
+            if (!opt) {{
+              opt = document.createElement("option");
+              opt.value = currentGpzuParsedData.coordinate_system;
+              opt.textContent = currentGpzuParsedData.coordinate_system;
+              cfgCadMskZone.appendChild(opt);
+            }}
+            cfgCadMskZone.value = currentGpzuParsedData.coordinate_system;
+          }}
+          if (currentGpzuParsedData.cadastral_number && cfgCadInput) {{
+            cfgCadInput.value = currentGpzuParsedData.cadastral_number;
+          }}
+          if (targetArea && cfgAreaInput) {{
+            cfgAreaInput.value = Math.round(targetArea);
+          }}
+          activeZouitZones = [];
+          if (gpzuStatusBadge) {{
+            gpzuStatusBadge.style.display = "block";
+            gpzuStatusBadge.style.color = "#10b981";
+            gpzuStatusBadge.textContent = `✓ Применён контур: ${{targetPoints}} точек (${{bZone ? bZone.name : "Граница ЗУ"}}), ${{Math.round(targetArea).toLocaleString()}} м²`;
+          }}
+          if (btnOpenGpzuModal) btnOpenGpzuModal.style.display = "flex";
+          closeGpzuModal();
+          userHasMovedSite = false;
+          currentSiteLat = null;
+          currentSiteLon = null;
+          isSiteLocked = false;
+          showToast(`✓ Загружен контур (${{targetPoints}} точек, ${{Math.round(targetArea).toLocaleString()}} м²)`);
+          loadSitePreview(true);
+        }});
+      }}
+
+      // Применение выбранных параметров и зон ЗОУИТ из ГПЗУ
+      if (btnModalGpzuApply) {{
+        btnModalGpzuApply.addEventListener("click", () => {{
+          if (!currentGpzuParsedData) return;
+          flushGpzuModalTextareas();
+
+          // 1. Применяем параметры Раздела 2
+          if (modalGpzuChkSetback && modalGpzuChkSetback.checked) {{
+            const val = parseFloat(modalGpzuValSetback.value);
+            if (!isNaN(val) && cfgBoundarySetback) {{
+              cfgBoundarySetback.value = val;
+              if (badgeBoundarySetback) badgeBoundarySetback.textContent = `${{val}} м`;
+            }}
+          }}
+
+          if (modalGpzuChkRedline && modalGpzuChkRedline.checked) {{
+            const val = parseFloat(modalGpzuValRedline.value);
+            if (!isNaN(val) && cfgRedlineSetback) {{
+              cfgRedlineSetback.value = val;
+              if (badgeRedlineSetback) badgeRedlineSetback.textContent = `${{val}} м`;
+            }}
+          }}
+
+          if (modalGpzuChkFloors && modalGpzuChkFloors.checked) {{
+            const val = parseInt(modalGpzuValFloors.value, 10);
+            if (!isNaN(val) && cfgFloorsSlider) {{
+              cfgFloorsSlider.value = val;
+              if (cfgFloorsBadge) cfgFloorsBadge.textContent = `${{val}} эт.`;
+            }}
+          }}
+
+          if (modalGpzuChkMaxH && modalGpzuChkMaxH.checked) {{
+            const val = parseFloat(modalGpzuValMaxH.value);
+            if (!isNaN(val) && cfgMaxH) {{
+              cfgMaxH.value = val;
+            }}
+          }}
+
+          if (modalGpzuChkBcr && modalGpzuChkBcr.checked) {{
+            const val = parseFloat(modalGpzuValBcr.value);
+            if (!isNaN(val)) {{
+              if (cfgBcrSlider) cfgBcrSlider.value = (val / 100.0).toFixed(2);
+              if (cfgBcrBadge) cfgBcrBadge.textContent = `${{Math.round(val)}}%`;
+              if (activeNormValues) activeNormValues.max_bcr = val;
+            }}
+          }}
+
+          if (modalGpzuChkFar && modalGpzuChkFar.checked) {{
+            const val = parseFloat(modalGpzuValFar.value);
+            if (!isNaN(val)) {{
+              if (cfgFarSlider) cfgFarSlider.value = val.toFixed(2);
+              if (cfgFarBadge) cfgFarBadge.textContent = val.toFixed(2);
+              if (activeNormValues) activeNormValues.max_far = val;
+            }}
+          }}
+
+          if (modalGpzuChkGreen && modalGpzuChkGreen.checked) {{
+            const val = parseFloat(modalGpzuValGreen.value);
+            if (!isNaN(val) && activeNormValues) {{
+              activeNormValues.green_ratio = val;
+            }}
+          }}
+
+          // 2. Сбор активных ЗОУИТ
+          activeZouitZones = [];
+
+          // Добавляем зоны, отмеченные как zouit_exclusion
+          if (currentGpzuParsedData.zones) {{
+            currentGpzuParsedData.zones.forEach(z => {{
+              if (z.role === "zouit_exclusion" && z.enabled !== false && z.coordinates && z.coordinates.length >= 3) {{
+                activeZouitZones.push({{
+                  name: z.name,
+                  enabled: true,
+                  coordinates: z.coordinates,
+                  coordinates_text: z.coordinates_text,
+                  buffer_m: 5.0,
+                  snippet: z.description || "",
+                  type: "zouit"
+                }});
+              }}
+            }});
+          }}
+
+          if (modalGpzuZouitList && currentGpzuParsedData.zouit) {{
+            const cards = modalGpzuZouitList.querySelectorAll(".zouit-item-card");
+            cards.forEach(card => {{
+              const chk = card.querySelector(".zouit-chk-apply");
+              const idx = parseInt(chk.dataset.index, 10);
+              const zObj = currentGpzuParsedData.zouit[idx];
+              if (chk && chk.checked && zObj) {{
+                const nameInput = card.querySelector(".zouit-input-name");
+                const name = nameInput ? nameInput.value.trim() : zObj.name;
+                const ta = card.querySelector(".zouit-manual-coords");
+                const coordsText = ta ? ta.value.trim() : (zObj.coordinates_text || "");
+                const bufInput = card.querySelector(".zouit-input-buffer");
+                const bufM = bufInput ? (parseFloat(bufInput.value) || 5.0) : 5.0;
+
+                let coords = zObj.coordinates || [];
+                if (coordsText) {{
+                  const clientPts = parseCoordinateTextClient(coordsText);
+                  if (clientPts.length >= 2) {{
+                    coords = clientPts;
+                  }}
+                }}
+
+                if (!activeZouitZones.some(az => az.name === name)) {{
+                  activeZouitZones.push({{
+                    name: name,
+                    enabled: true,
+                    coordinates: coords,
+                    coordinates_text: coordsText,
+                    buffer_m: bufM,
+                    snippet: zObj.snippet || "",
+                    type: zObj.type || "easement"
+                  }});
+                }}
+              }}
+            }});
+          }}
+
+          // 3. Установка основного контура участка
+          let bZone = null;
+          if (currentGpzuParsedData.zones && currentGpzuParsedData.zones.length > 0) {{
+            bZone = currentGpzuParsedData.zones.find(z => z.role === "boundary") || currentGpzuParsedData.zones[0];
+          }}
+          const targetCoords = (bZone && bZone.coordinates_text) || currentGpzuParsedData.coordinates_text || "";
+          const targetPts = parseCoordinateTextClient(targetCoords);
+
+          if (targetPts.length < 3) {{
+            showToast("⚠️ Ошибка: для контура границы требуется минимум 3 точки!", true);
+            return;
+          }}
+
+          const targetPoints = targetPts.length;
+          const targetArea = (bZone && bZone.area_sqm) || calculatePolygonAreaClient(targetPts);
+
+          if (targetCoords) {{
+            activeGpzuCoordinates = targetCoords;
+            if (cfgGpzuCoords) cfgGpzuCoords.value = targetCoords;
+          }}
+          if (currentGpzuParsedData.coordinate_system && cfgCadMskZone) {{
+            let opt = Array.from(cfgCadMskZone.options).find(o => o.value === currentGpzuParsedData.coordinate_system);
+            if (!opt) {{
+              opt = document.createElement("option");
+              opt.value = currentGpzuParsedData.coordinate_system;
+              opt.textContent = currentGpzuParsedData.coordinate_system;
+              cfgCadMskZone.appendChild(opt);
+            }}
+            cfgCadMskZone.value = currentGpzuParsedData.coordinate_system;
+          }}
+          if (currentGpzuParsedData.cadastral_number && cfgCadInput) {{
+            cfgCadInput.value = currentGpzuParsedData.cadastral_number;
+          }}
+          if (targetArea && cfgAreaInput) {{
+            cfgAreaInput.value = Math.round(targetArea);
+          }}
+
+          // 4. Обновление статусов
+          if (gpzuFileBadge) {{
+            gpzuFileBadge.style.display = "block";
+            const zoneCount = (currentGpzuParsedData.zones && currentGpzuParsedData.zones.length) || 1;
+            gpzuFileBadge.innerHTML = `📄 <b>${{currentGpzuParsedData.filename || "ГПЗУ"}}</b>: ${{zoneCount}} зон, контур: ${{targetPoints}} точ., ${{Math.round(targetArea).toLocaleString()}} м²; ЗОУИТ: <b>${{activeZouitZones.length}}</b>`;
+          }}
+          if (gpzuStatusBadge) {{
+            gpzuStatusBadge.style.display = "block";
+            gpzuStatusBadge.style.color = "#10b981";
+            gpzuStatusBadge.textContent = `✓ Данные ГПЗУ применены: контур (${{targetPoints}} т.) + ${{activeZouitZones.length}} зон ЗОУИТ`;
+          }}
+          if (btnOpenGpzuModal) btnOpenGpzuModal.style.display = "flex";
+
+          closeGpzuModal();
+          userHasMovedSite = false;
+          currentSiteLat = null;
+          currentSiteLon = null;
+          isSiteLocked = false;
+          showToast(`✓ Применен контур (${{targetPoints}} т., ${{Math.round(targetArea).toLocaleString()}} м²) и ${{activeZouitZones.length}} зон ЗОУИТ`);
+          loadSitePreview(true);
+        }});
+      }}
+
       if (btnClearGpzu) {{
         btnClearGpzu.addEventListener("click", () => {{
           cfgGpzuCoords.value = "";
           activeGpzuCoordinates = "";
+          activeZouitZones = [];
+          currentGpzuParsedData = null;
+          if (btnOpenGpzuModal) btnOpenGpzuModal.style.display = "none";
           gpzuStatusBadge.style.display = "none";
           if (gpzuFileBadge) gpzuFileBadge.style.display = "none";
           if (gpzuZouitContainer) {{
@@ -3623,53 +4927,46 @@ def build():
             }});
             const data = await resp.json();
             if (data.success) {{
-              activeGpzuCoordinates = data.coordinates_text;
-              if (cfgGpzuCoords) cfgGpzuCoords.value = data.coordinates_text;
+              currentGpzuParsedData = data;
+              if (data.coordinate_system && cfgCadMskZone) {{
+                let opt = Array.from(cfgCadMskZone.options).find(o => o.value === data.coordinate_system);
+                if (!opt) {{
+                  opt = document.createElement("option");
+                  opt.value = data.coordinate_system;
+                  opt.textContent = data.coordinate_system;
+                  cfgCadMskZone.appendChild(opt);
+                }}
+                cfgCadMskZone.value = data.coordinate_system;
+              }}
               if (data.cadastral_number && cfgCadInput) {{
                 cfgCadInput.value = data.cadastral_number;
               }}
-              if (data.area_sqm && cfgAreaInput) {{
-                cfgAreaInput.value = Math.round(data.area_sqm);
+              if (data.coordinates_text && cfgGpzuCoords) {{
+                cfgGpzuCoords.value = data.coordinates_text;
+              }}
+              if (data.zones && data.zones.length > 0) {{
+                activeZouitZones = [];
+                data.zones.forEach(z => {{
+                  if (z.role === "zouit_exclusion" && z.enabled !== false && z.coordinates && z.coordinates.length >= 3) {{
+                    activeZouitZones.push({{
+                      name: z.name,
+                      enabled: true,
+                      coordinates: z.coordinates,
+                      coordinates_text: z.coordinates_text,
+                      buffer_m: 5.0,
+                      snippet: z.description || "",
+                      type: "zouit"
+                    }});
+                  }}
+                }});
               }}
               if (gpzuFileBadge) {{
-                gpzuFileBadge.innerHTML = `📄 <b>${{file.name}}</b>: найдено точек: <b>${{data.points_count}}</b>, площадь: <b>${{Math.round(data.area_sqm).toLocaleString()}} м²</b> (${{data.coordinate_system}})`;
+                const zCount = activeZouitZones ? activeZouitZones.length : ((data.zouit && data.zouit.length) || 0);
+                gpzuFileBadge.innerHTML = `📄 <b>${{file.name}}</b>: найдено точек границы: <b>${{data.points_count}}</b>, площадь: <b>${{Math.round(data.area_sqm).toLocaleString()}} м²</b> (${{data.coordinate_system}}). ЗОУИТ: <b>${{zCount}}</b>`;
               }}
-
-              // Отображение ограничений и ЗОУИТ
-              if (data.zouit && data.zouit.length > 0 && gpzuZouitContainer) {{
-                gpzuZouitContainer.style.display = "flex";
-                let html = '<div style="font-size:11px; font-weight:700; color:var(--text); margin-top:4px;">🛡️ Зоны с особыми условиями (ЗОУИТ):</div>';
-                data.zouit.forEach(z => {{
-                  html += `<div style="font-size:11px; padding:3px 6px; border-radius:4px; background:rgba(245, 158, 11, 0.12); border-left:3px solid #f59e0b; color:var(--text);">
-                    <b>${{z.name}}</b><br><span style="color:var(--secondary); font-size:10px;">${{z.snippet}}</span>
-                  </div>`;
-                }});
-                gpzuZouitContainer.innerHTML = html;
-              }}
-
-              // Применение отступов из ГПЗУ при наличии
-              if (data.setbacks) {{
-                if (data.setbacks.boundary_setback && cfgBoundarySetback) {{
-                  cfgBoundarySetback.value = data.setbacks.boundary_setback;
-                  if (badgeBoundarySetback) badgeBoundarySetback.textContent = `${{data.setbacks.boundary_setback}} м`;
-                }}
-                if (data.setbacks.red_line_setback && cfgRedlineSetback) {{
-                  cfgRedlineSetback.value = data.setbacks.red_line_setback;
-                  if (badgeRedlineSetback) badgeRedlineSetback.textContent = `${{data.setbacks.red_line_setback}} м`;
-                }}
-              }}
-
-              if (gpzuStatusBadge) {{
-                gpzuStatusBadge.style.display = "block";
-                gpzuStatusBadge.style.color = "#10b981";
-                gpzuStatusBadge.textContent = `✓ Контур из ГПЗУ применён: ${{data.points_count}} точек, ${{Math.round(data.area_sqm).toLocaleString()}} м²`;
-              }}
-              userHasMovedSite = false;
-              currentSiteLat = null;
-              currentSiteLon = null;
-              isSiteLocked = false;
-              showToast(`✓ Файл ГПЗУ обработан: ${{data.points_count}} точек, ${{Math.round(data.area_sqm).toLocaleString()}} м²`);
-              loadSitePreview(true);
+              if (btnOpenGpzuModal) btnOpenGpzuModal.style.display = "flex";
+              openGpzuModalWithData(data);
+              showToast(`📑 ГПЗУ разобран. Выберите параметры и ограничения.`);
             }} else {{
               if (gpzuFileBadge) {{
                 gpzuFileBadge.innerHTML = `<span style="color:#ef4444;">❌ ${{data.error || "Не удалось извлечь координаты"}}</span>`;
@@ -3789,6 +5086,7 @@ def build():
       if (cfgFloorH) cfgFloorH.addEventListener("change", scheduleRegeneration);
       if (cfgCascadeFloors) cfgCascadeFloors.addEventListener("change", scheduleRegeneration);
       if (cfgAsymmetricWings) cfgAsymmetricWings.addEventListener("change", scheduleRegeneration);
+      if (cfgOnlyGroundParking) cfgOnlyGroundParking.addEventListener("change", scheduleRegeneration);
       if (cfgTowersMixed) cfgTowersMixed.addEventListener("change", scheduleRegeneration);
       if (cfgFireGapEnd) {{
         cfgFireGapEnd.addEventListener("input", e => {{
@@ -4285,6 +5583,7 @@ def build():
           target_floors: parseInt(cfgFloorsSlider.value, 10) || 14,
           cascade_floors: cfgCascadeFloors.checked,
           asymmetric_wings: cfgAsymmetricWings.checked,
+          only_ground_parking: cfgOnlyGroundParking ? cfgOnlyGroundParking.checked : false,
           floor_height: parseFloat(cfgFloorH.value) || 3.0,
           max_building_height_m: parseFloat(cfgMaxH.value) || 0,
           max_sections: parseInt(cfgMaxSectionsSlider.value, 10) || 8,
@@ -4322,6 +5621,10 @@ def build():
           base.msk_zone = cfgCadMskZone.value;
         }}
 
+        if (activeZouitZones && activeZouitZones.length > 0) {{
+          base.zouit_zones = activeZouitZones;
+        }}
+
         if (siteMode === "cadastre") {{
           base.cad_query = cfgCadInput.value.trim();
           base.custom_area = parseFloat(cfgAreaInput.value) || 32000;
@@ -4341,6 +5644,9 @@ def build():
             base.cad_file_base64 = uploadedCadBase64;
             base.cad_filename = uploadedCadFilename;
           }}
+        }}
+        if (activeZouitZones && activeZouitZones.length > 0) {{
+          base.zouit_list = activeZouitZones;
         }}
         return base;
       }}
@@ -4433,7 +5739,20 @@ def build():
                 populateCadLayers(result.cad_info.layers, result.cad_info.boundary_layer, result.cad_info.red_lines_layer);
               }}
               if (result.cad_info.detected_msk && cfgCadMskZone) {{
-                cfgCadMskZone.value = result.cad_info.detected_msk;
+                const detMsk = result.cad_info.detected_msk;
+                let opt = Array.from(cfgCadMskZone.options).find(o => o.value === detMsk);
+                if (!opt) {{
+                  opt = document.createElement("option");
+                  opt.value = detMsk;
+                  opt.textContent = detMsk;
+                  cfgCadMskZone.appendChild(opt);
+                }}
+                cfgCadMskZone.value = detMsk;
+                const mskBadge = document.getElementById("msk-detected-badge");
+                if (mskBadge) {{
+                  mskBadge.textContent = detMsk.split(" ")[0];
+                  mskBadge.title = detMsk;
+                }}
               }}
               if (result.cadastral_number && cfgDwgAssignedCad && (!cfgDwgAssignedCad.value || cfgDwgAssignedCad.value === "63:01:0709002:2320")) {{
                 cfgDwgAssignedCad.value = result.cadastral_number;
@@ -4820,6 +6139,34 @@ def build():
       modalCloseBtn.addEventListener("click", () => reportModal.style.display = "none");
       reportModal.addEventListener("click", e => {{ if (e.target === reportModal) reportModal.style.display = "none"; }});
 
+      function updateHudKpis(tep, siteSqm) {{
+        const hudGfa = document.getElementById("hud-kpi-gfa");
+        const hudLiving = document.getElementById("hud-kpi-living");
+        const hudFar = document.getElementById("hud-kpi-far");
+        const hudBcr = document.getElementById("hud-kpi-bcr");
+        const hudApts = document.getElementById("hud-kpi-apts");
+        const hudParking = document.getElementById("hud-kpi-parking");
+        const hudGreen = document.getElementById("hud-kpi-green");
+        if (!tep || !tep.gfa) {{
+          if (hudGfa) hudGfa.textContent = "—";
+          if (hudLiving) hudLiving.textContent = "—";
+          if (hudFar) hudFar.textContent = "—";
+          if (hudBcr) hudBcr.textContent = "—";
+          if (hudApts) hudApts.textContent = "—";
+          if (hudParking) hudParking.textContent = "—";
+          if (hudGreen) hudGreen.textContent = "—";
+          return;
+        }}
+        const greenPct = siteSqm > 0 ? ((tep.green_area / siteSqm) * 100).toFixed(1) : "0";
+        if (hudGfa) hudGfa.textContent = `${{fmt(tep.gfa)}} м²`;
+        if (hudLiving) hudLiving.textContent = `${{fmt(tep.residential_area)}} м²`;
+        if (hudFar) hudFar.textContent = `Кпз ${{tep.far.toFixed(2)}}`;
+        if (hudBcr) hudBcr.textContent = `${{(tep.bcr * 100).toFixed(1)}}%`;
+        if (hudApts) hudApts.textContent = `${{fmt(tep.apartments_total)}} кв.`;
+        if (hudParking) hudParking.textContent = `${{fmt(tep.parking_ground || 0)}} / ${{fmt(tep.parking_required || 0)}} м/м`;
+        if (hudGreen) hudGreen.textContent = `${{greenPct}}%`;
+      }}
+
       // РЕНДЕР СЦЕНАРИЯ
       function renderScenario() {{
         const s = currentScenario;
@@ -4830,6 +6177,8 @@ def build():
           if (siteCoordsLabel) siteCoordsLabel.textContent = "WGS-84: [—, —]";
           if (linkYandex) linkYandex.href = "#";
           if (linkPkk) linkPkk.href = "#";
+
+          updateHudKpis(null);
 
           // Все 10 KPI карточек в нейтральное состояние
           if (kpiGfa) {{ kpiGfa.textContent = "— м²"; kpiGfaDesc.innerHTML = "Зона застройки: <strong>— м²</strong>"; kpiGfaBadge.className = "badge-status badge-info"; kpiGfaBadge.textContent = "Ожидание ввода"; }}
@@ -4846,10 +6195,23 @@ def build():
           // Очистка SVG
           if (svgSiteBound) svgSiteBound.setAttribute("d", "");
           if (svgBuildable) svgBuildable.setAttribute("d", "");
+          if (svgZouitGroup) svgZouitGroup.innerHTML = "";
           if (svgRedlinesGroup) svgRedlinesGroup.innerHTML = "";
           if (svgSectionsGroup) svgSectionsGroup.innerHTML = "";
           if (svgRoadsGroup) svgRoadsGroup.innerHTML = "";
           if (svgSubblocksGroup) svgSubblocksGroup.innerHTML = "";
+          if (svgFireRoads) svgFireRoads.setAttribute("d", "");
+          if (svgFireTurnarounds) svgFireTurnarounds.setAttribute("d", "");
+          if (svgFireCenterlines) svgFireCenterlines.innerHTML = "";
+          if (balFireVal) balFireVal.textContent = "— м²";
+          if (balFireSub) balFireSub.textContent = "Ширина 4.2–6.0 м · СП 4.13130";
+          if (balTkoVal) balTkoVal.textContent = "— шт.";
+          if (balTkoSub) balTkoSub.textContent = "Радиус 100 м · СанПиН 2.1.3684";
+          if (balParkSanVal) balParkSanVal.textContent = "— м²";
+          if (balParkSanSub) balParkSanSub.textContent = "Разрывы 10–15 м · СанПиН 2.2";
+          if (svgParkingSanBuffer) svgParkingSanBuffer.setAttribute("d", "");
+          if (svgTkoRadiusGroup) svgTkoRadiusGroup.innerHTML = "";
+          if (svgTkoSitesGroup) svgTkoSitesGroup.innerHTML = "";
           if (mapLegendItems) mapLegendItems.innerHTML = '<div style="color:var(--secondary); font-size:12px;">Участок не выбран</div>';
 
           updateInspector();
@@ -4873,6 +6235,7 @@ def build():
         const isStage1 = (!isSiteLocked) || (s.stage === 1);
 
         if (isStage1) {{
+          updateHudKpis(null);
           // 1. GFA
           kpiGfa.textContent = "— м²";
           kpiGfaDesc.innerHTML = `Зона застройки: <strong>${{fmt(s.buildable_area_sqm || 0)}} м²</strong>`;
@@ -4941,6 +6304,12 @@ def build():
           plSport.textContent = "— м²";
           plRelax.textContent = "— м²";
           plUtility.textContent = "— м²";
+          if (balFireVal) balFireVal.textContent = "— м²";
+          if (balFireSub) balFireSub.textContent = "Расчет проездов на Шаге 2";
+          if (balTkoVal) balTkoVal.textContent = "— шт.";
+          if (balTkoSub) balTkoSub.textContent = "Расчет ТКО на Шаге 2";
+          if (balParkSanVal) balParkSanVal.textContent = "— м²";
+          if (balParkSanSub) balParkSanSub.textContent = "Расчет разрывов на Шаге 2";
           balWarningsContainer.innerHTML = `<div class="warning-banner warning-info">
             <span>🧭</span><span><strong>Шаг 1 из 2: Посадка и ориентация участка.</strong> Настройте положение и угол контура на карте OSM. Нажмите «🔒 Закрепить участок и перейти к застройке» на карте или панели.</span>
           </div>`;
@@ -4950,6 +6319,7 @@ def build():
             Закрепите контур кнопкой «🔒 Закрепить участок и перейти к застройке», чтобы рассчитать корпуса и квартирографию.
           </td></tr>`;
         }} else {{
+          updateHudKpis(tep, siteSqm);
           // 1. GFA
           kpiGfa.textContent = `${{fmt(tep.gfa)}} м²`;
           kpiGfaDesc.innerHTML = `Жилая: <strong>${{fmt(tep.residential_area)}} м²</strong> · Коммерция: <strong>${{fmt(tep.commercial_area)}} м²</strong>`;
@@ -5002,8 +6372,16 @@ def build():
 
           // 7. ПАРКОВОЧНЫЕ МЕСТА
           kpiParking.textContent = `${{fmt(tep.parking_required)}} м/м`;
-          kpiParkingDesc.innerHTML = `Наземных: <strong>${{fmt(tep.parking_ground)}}</strong> · Подземных: <strong>${{fmt(tep.parking_underground)}}</strong>`;
-          kpiParkingBadge.textContent = `в т.ч. ${{fmt(tep.parking_required_guest)}} гостевых`;
+          if (tep.only_ground_parking) {{
+            const isMet = (tep.parking_norm_met !== undefined) ? tep.parking_norm_met : (tep.parking_ground >= tep.parking_required);
+            kpiParkingDesc.innerHTML = `Наземных: <strong>${{fmt(tep.parking_ground)}}</strong> · Подземный: <strong>нет</strong>`;
+            kpiParkingBadge.className = isMet ? "badge-status badge-ok" : "badge-status badge-warn";
+            kpiParkingBadge.textContent = isMet ? "100% на грунте" : `Дефицит ${{Math.max(0, tep.parking_required - tep.parking_ground)}} м/м`;
+          }} else {{
+            kpiParkingDesc.innerHTML = `Наземных: <strong>${{fmt(tep.parking_ground)}}</strong> · Подземных: <strong>${{fmt(tep.parking_underground)}}</strong>`;
+            kpiParkingBadge.className = "badge-status badge-info";
+            kpiParkingBadge.textContent = `в т.ч. ${{fmt(tep.parking_required_guest)}} гостевых`;
+          }}
 
           // 8. ОЗЕЛЕНЕНИЕ
           kpiGreen.textContent = `${{fmt(tep.green_area)}} м²`;
@@ -5036,7 +6414,20 @@ def build():
           balParkingGround.textContent = `${{fmt(s.tep.parking_ground)}} м/м`;
           balParkingGroundArea.textContent = `${{fmt(s.tep.parking_ground_area)}} м² открытых стоянок`;
 
-          if (s.tep.parking_underground > 0) {{
+          if (s.tep.only_ground_parking) {{
+            const isMet = (s.tep.parking_norm_met !== undefined) ? s.tep.parking_norm_met : (s.tep.parking_ground >= s.tep.parking_required);
+            if (isMet) {{
+              balParkingUndergroundBox.className = "warning-banner warning-info";
+              balParkingUndergroundBox.style.background = "#ecfdf5";
+              balParkingUndergroundBox.style.borderColor = "#a7f3d0";
+              balParkingUndergroundBox.style.color = "#065f46";
+              balParkingUndergroundText.innerHTML = `<strong>Режим «Только наземные парковки»:</strong> 100% мест (${{fmt(s.tep.parking_ground)}} из ${{fmt(s.tep.parking_required)}} м/м) обеспечено открытыми стоянками на земле. Подземный паркинг исключен.`;
+            }} else {{
+              const unmet = Math.max(0, s.tep.parking_required - s.tep.parking_ground);
+              balParkingUndergroundBox.className = "warning-banner warning-warn";
+              balParkingUndergroundText.innerHTML = `<strong>Режим «Только наземные парковки»:</strong> дефицит ${{unmet}} м/м на открытой территории. Подземный паркинг отключен. Рекомендуется снизить этажность или уменьшить пятно застройки.`;
+            }}
+          }} else if (s.tep.parking_underground > 0) {{
             const lvls = s.tep.underground_levels || 1;
             const lvlSuffix = lvls > 1 ? ` (${{lvls}} уровня)` : ` (1 уровень)`;
             const styloText = s.tep.green_roof_area > 0 ? ` · кровля стилобата: ${{fmt(s.tep.green_roof_area)}} м²` : ``;
@@ -5052,7 +6443,83 @@ def build():
           plRelax.textContent = `${{fmt(s.tep.playgrounds_relax)}} м²`;
           plUtility.textContent = `${{fmt(s.tep.playgrounds_utility)}} м²`;
 
+          const fire = s.fire_safety || {{}};
+          if (balFireVal) {{
+            const fArea = fire.total_area_sqm || 0;
+            balFireVal.textContent = fArea > 0 ? `${{fmt(fArea)}} м²` : "— м²";
+          }}
+          if (balFireSub) {{
+            const fLen = fire.total_length_m || 0;
+            const fTurn = fire.turnarounds_area_sqm || 0;
+            if (fLen > 0) {{
+              balFireSub.innerHTML = `Длина: <strong>${{fmt(fLen)}} м</strong> · Площадки: <strong>${{fmt(fTurn)}} м²</strong>`;
+            }} else {{
+              balFireSub.textContent = "Ширина 4.2–6.0 м · СП 4.13130";
+            }}
+          }}
+
+          const san = s.sanitary || {{}};
+          if (balTkoVal) {{
+            const tCount = san.waste_sites_count || 0;
+            const cCount = san.waste_containers_count || 0;
+            balTkoVal.textContent = tCount > 0 ? `${{tCount}} площ. (${{cCount}} баков)` : "— шт.";
+          }}
+          if (balTkoSub) {{
+            if (san.waste_sites_count > 0) {{
+              balTkoSub.innerHTML = `Покрытие: <strong>100%</strong> (R≤100м) · <strong>СанПиН 2.1</strong>`;
+            }} else {{
+              balTkoSub.textContent = "Радиус ≤100 м, от окон ≥20 м";
+            }}
+          }}
+
+          if (balParkSanVal) {{
+            const bArea = san.parking_buffer_15m_area_sqm || 0;
+            balParkSanVal.textContent = bArea > 0 ? `${{fmt(bArea)}} м²` : "— м²";
+          }}
+          if (balParkSanSub) {{
+            if (san.parking_buffer_15m_area_sqm > 0) {{
+              balParkSanSub.innerHTML = `Запретная зона для стоянок: <strong>10–15 м</strong>`;
+            }} else {{
+              balParkSanSub.textContent = "Разрыв 10–15 м от окон · Табл. 7.1.1";
+            }}
+          }}
+
           balWarningsContainer.innerHTML = "";
+          if (fire.issues && fire.issues.length > 0) {{
+            fire.issues.forEach(issue => {{
+              const div = document.createElement("div");
+              div.className = "warning-banner warning-warn";
+              div.innerHTML = `<span>🚒</span><span><strong>СП 4.13130.2020:</strong> ${{issue}}</span>`;
+              balWarningsContainer.appendChild(div);
+            }});
+          }} else if ((fire.total_length_m || 0) > 0) {{
+            const div = document.createElement("div");
+            div.className = "warning-banner warning-info";
+            div.style.background = "#ecfdf5";
+            div.style.borderColor = "#a7f3d0";
+            div.style.color = "#065f46";
+            div.innerHTML = `<span>🚒</span><span><strong>СП 4.13130.2020:</strong> круговой пожарный проезд протрассирован (ширина 4.2–6.0 м с отступом 5–8 м от стен), разворотные площадки 15×15 м сформированы. Выход за границы ЗУ отсутствует.</span>`;
+            balWarningsContainer.appendChild(div);
+          }}
+          if (san.waste_issues && san.waste_issues.length > 0) {{
+            san.waste_issues.forEach(issue => {{
+              const div = document.createElement("div");
+              div.className = "warning-banner warning-warn";
+              div.innerHTML = `<span>🗑️</span><span><strong>СанПиН 2.1.3684-21 (ТКО):</strong> ${{issue}}</span>`;
+              balWarningsContainer.appendChild(div);
+            }});
+          }}
+          if (san.summary_notes && san.summary_notes.length > 0) {{
+            san.summary_notes.forEach(note => {{
+              const div = document.createElement("div");
+              div.className = "warning-banner warning-info";
+              div.style.background = "#f0fdf4";
+              div.style.borderColor = "#86efac";
+              div.style.color = "#166534";
+              div.innerHTML = `<span>🌿</span><span>${{note}}</span>`;
+              balWarningsContainer.appendChild(div);
+            }});
+          }}
           (s.warnings || []).forEach(w => {{
             const div = document.createElement("div");
             const isUnder = w.toLowerCase().includes("подземный");
@@ -5118,6 +6585,23 @@ def build():
         svgSiteBound.setAttribute("d", s.site_path);
         svgBuildable.setAttribute("d", s.buildable_path);
 
+        if (svgZouitGroup) {{
+          svgZouitGroup.innerHTML = "";
+          (s.zouit_paths || []).forEach((zpPath, idx) => {{
+            const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            p.setAttribute("d", zpPath);
+            p.setAttribute("class", "svg-zouit");
+            const info = (s.zouit_info && s.zouit_info[idx]) || {{}};
+            const zName = info.name || `Охранная зона ${{idx + 1}}`;
+            const zArea = info.area_sqm || 0;
+            p.setAttribute("data-name", zName);
+            p.addEventListener("mouseenter", e => showZouitTooltip(zName, zArea, e));
+            p.addEventListener("mousemove", moveTooltip);
+            p.addEventListener("mouseleave", hideTooltip);
+            svgZouitGroup.appendChild(p);
+          }});
+        }}
+
         svgRedlinesGroup.innerHTML = "";
         (s.red_lines_paths || []).forEach(rlPath => {{
           const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -5166,6 +6650,64 @@ def build():
         }}
 
         updateRoadControlsVisibility();
+
+        // Пожарные проезды (СП 4.13130.2020)
+        const fireData = s.fire_safety || {{}};
+        if (svgFireRoads) {{
+          svgFireRoads.setAttribute("d", fireData.fire_roads_path || "");
+        }}
+        if (svgFireTurnarounds) {{
+          svgFireTurnarounds.setAttribute("d", fireData.fire_turnarounds_path || "");
+        }}
+        if (svgFireCenterlines) {{
+          svgFireCenterlines.innerHTML = "";
+          (fireData.fire_centerlines_paths || []).forEach(clPath => {{
+            const cl = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            cl.setAttribute("d", clPath);
+            cl.setAttribute("class", "svg-fire-cl");
+            svgFireCenterlines.appendChild(cl);
+          }});
+        }}
+        if (svgFireRoadsGroup) {{
+          svgFireRoadsGroup.style.display = showFireRoads ? "inline" : "none";
+        }}
+
+        // Санитарные нормы: стоянки и площадки ТКО
+        const sanData = s.sanitary || {{}};
+        if (svgParkingSanBuffer) {{
+          svgParkingSanBuffer.setAttribute("d", sanData.parking_buffer_15m_path || "");
+        }}
+        if (svgParkingSanGroup) {{
+          svgParkingSanGroup.style.display = showParkingSan ? "inline" : "none";
+        }}
+
+        if (svgTkoRadiusGroup) {{
+          svgTkoRadiusGroup.innerHTML = "";
+          (sanData.waste_radius_paths || []).forEach(rPath => {{
+            const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            p.setAttribute("d", rPath);
+            p.setAttribute("class", "svg-tko-radius");
+            svgTkoRadiusGroup.appendChild(p);
+          }});
+        }}
+        if (svgTkoSitesGroup) {{
+          svgTkoSitesGroup.innerHTML = "";
+          (sanData.waste_sites || []).forEach(ws => {{
+            if (ws.path) {{
+              const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+              p.setAttribute("d", ws.path);
+              p.setAttribute("class", "svg-tko-site");
+              p.setAttribute("data-id", ws.id || "");
+              const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+              title.textContent = `${{ws.label || 'ТКО'}}: ${{ws.containers_count || 4}} баков, ${{ws.area_sqm || 24}} м² (от окон ≥20м, радиус 100м)`;
+              p.appendChild(title);
+              svgTkoSitesGroup.appendChild(p);
+            }}
+          }});
+        }}
+        if (svgTkoGroup) {{
+          svgTkoGroup.style.display = showTko ? "inline" : "none";
+        }}
 
         svgSectionsGroup.innerHTML = "";
         (s.sections || []).forEach(sec => {{
@@ -5297,6 +6839,55 @@ def build():
           div.innerHTML = `<span>От 3 000 м² (светлый) до 8 000 м² (темный)</span>`;
           mapLegendItems.appendChild(div);
         }}
+
+        if (showFireRoads) {{
+          const divFire = document.createElement("div");
+          divFire.className = "legend-item";
+          divFire.style.borderTop = "1px solid var(--border)";
+          divFire.style.paddingTop = "4px";
+          divFire.style.marginTop = "4px";
+          divFire.innerHTML = `<span class="legend-chip" style="background:rgba(239,68,68,0.3); border:1px solid #ef4444;"></span><span>Пожарный проезд СП 4</span>`;
+          mapLegendItems.appendChild(divFire);
+        }}
+
+        if (showParkingSan) {{
+          const divPS = document.createElement("div");
+          divPS.className = "legend-item";
+          divPS.style.borderTop = "1px solid var(--border)";
+          divPS.style.paddingTop = "4px";
+          divPS.style.marginTop = "4px";
+          divPS.innerHTML = `<span class="legend-chip" style="background:rgba(168,85,247,0.25); border:1px dashed #9333ea;"></span><span>Санразрыв стоянок 10–15м</span>`;
+          mapLegendItems.appendChild(divPS);
+        }}
+
+        if (showTko) {{
+          const divTko = document.createElement("div");
+          divTko.className = "legend-item";
+          if (!showParkingSan && !showFireRoads) {{
+            divTko.style.borderTop = "1px solid var(--border)";
+            divTko.style.paddingTop = "4px";
+            divTko.style.marginTop = "4px";
+          }}
+          divTko.innerHTML = `<span class="legend-chip" style="background:rgba(16,185,129,0.9); border:1px solid #059669;"></span><span>Площадки ТКО (СанПиН 2.1)</span>`;
+          mapLegendItems.appendChild(divTko);
+        }}
+
+        if (currentScenario && currentScenario.zouit_paths && currentScenario.zouit_paths.length > 0) {{
+          const divZouit = document.createElement("div");
+          divZouit.className = "legend-item";
+          divZouit.style.borderTop = "1px solid var(--border)";
+          divZouit.style.paddingTop = "4px";
+          divZouit.style.marginTop = "4px";
+          divZouit.innerHTML = `<span class="legend-chip" style="background:rgba(239,68,68,0.25); border:1px dashed #ef4444;"></span><span>Охранные зоны (ЗОУИТ)</span>`;
+          mapLegendItems.appendChild(divZouit);
+        }}
+      }}
+
+      function showZouitTooltip(name, areaSqm, e) {{
+        mapTooltip.style.display = "block";
+        const aStr = areaSqm ? ` (${{Math.round(areaSqm).toLocaleString()}} м²)` : "";
+        mapTooltip.innerHTML = `<strong>🛡️ ${{escapeHtml(name)}}${{aStr}}</strong><span>Охранная зона / ЗОУИТ · Вырезано из зоны застройки</span>`;
+        moveTooltip(e);
       }}
 
       function showTooltip(sec, e) {{
@@ -5321,12 +6912,18 @@ def build():
       }}
 
       btnClearSelection.addEventListener("click", () => selectSection(null));
+      const btnCloseInspector = document.getElementById("btn-close-inspector");
+      if (btnCloseInspector) {{
+        btnCloseInspector.addEventListener("click", () => selectSection(null));
+      }}
 
       function updateInspector() {{
+        const drawer = document.getElementById("inspector-card-container");
         if (!selectedSectionId) {{
           inspectorEmpty.style.display = "flex";
           inspectorActive.style.display = "none";
           btnClearSelection.style.display = "none";
+          if (drawer) drawer.classList.remove("open");
           return;
         }}
 
@@ -5345,12 +6942,14 @@ def build():
           inspectorEmpty.style.display = "flex";
           inspectorActive.style.display = "none";
           btnClearSelection.style.display = "none";
+          if (drawer) drawer.classList.remove("open");
           return;
         }}
 
         inspectorEmpty.style.display = "none";
         inspectorActive.style.display = "flex";
         btnClearSelection.style.display = "inline-block";
+        if (drawer) drawer.classList.add("open");
 
         if (sec) {{
           inspTitle.textContent = `${{sec.building_name || 'Корпус'}} · Секция ${{sec.section_index || 1}}`;
@@ -5525,6 +7124,78 @@ def build():
           showToast("Черчение дороги отменено");
         }}
       }});
+
+      if (btnToggleFireRoads) {{
+        btnToggleFireRoads.addEventListener("click", () => {{
+          showFireRoads = !showFireRoads;
+          if (svgFireRoadsGroup) {{
+            svgFireRoadsGroup.style.display = showFireRoads ? "inline" : "none";
+          }}
+          btnToggleFireRoads.classList.toggle("btn-active", showFireRoads);
+          if (showFireRoads) {{
+            btnToggleFireRoads.style.background = "rgba(239, 68, 68, 0.15)";
+            btnToggleFireRoads.style.borderColor = "#ef4444";
+            btnToggleFireRoads.style.color = "#dc2626";
+            btnToggleFireRoads.style.fontWeight = "700";
+            showToast("🚒 Пожарные проезды и площадки 15х15м (СП 4.13130.2020) включены");
+          }} else {{
+            btnToggleFireRoads.style.background = "var(--surface)";
+            btnToggleFireRoads.style.borderColor = "var(--border)";
+            btnToggleFireRoads.style.color = "var(--text)";
+            btnToggleFireRoads.style.fontWeight = "normal";
+            showToast("Пожарные проезды скрыты");
+          }}
+          updateLegend();
+        }});
+      }}
+
+      if (btnToggleTko) {{
+        btnToggleTko.addEventListener("click", () => {{
+          showTko = !showTko;
+          if (svgTkoGroup) {{
+            svgTkoGroup.style.display = showTko ? "inline" : "none";
+          }}
+          btnToggleTko.classList.toggle("btn-active", showTko);
+          if (showTko) {{
+            btnToggleTko.style.background = "rgba(16, 185, 129, 0.15)";
+            btnToggleTko.style.borderColor = "#10b981";
+            btnToggleTko.style.color = "#047857";
+            btnToggleTko.style.fontWeight = "700";
+            showToast("🗑️ Площадки ТКО и радиусы 100м (СанПиН 2.1.3684-21) включены");
+          }} else {{
+            btnToggleTko.style.background = "var(--surface)";
+            btnToggleTko.style.borderColor = "var(--border)";
+            btnToggleTko.style.color = "var(--text)";
+            btnToggleTko.style.fontWeight = "normal";
+            showToast("Слой ТКО скрыт");
+          }}
+          updateLegend();
+        }});
+      }}
+
+      if (btnToggleParkingSan) {{
+        btnToggleParkingSan.addEventListener("click", () => {{
+          showParkingSan = !showParkingSan;
+          if (svgParkingSanGroup) {{
+            svgParkingSanGroup.style.display = showParkingSan ? "inline" : "none";
+          }}
+          btnToggleParkingSan.classList.toggle("btn-active", showParkingSan);
+          if (showParkingSan) {{
+            btnToggleParkingSan.style.background = "rgba(168, 85, 247, 0.15)";
+            btnToggleParkingSan.style.borderColor = "#a855f7";
+            btnToggleParkingSan.style.color = "#7e22ce";
+            btnToggleParkingSan.style.fontWeight = "700";
+            showToast("🛑 Санитарные разрывы открытых автостоянок (СанПиН 2.2.1/2.1.1.1200-03) включены");
+          }} else {{
+            btnToggleParkingSan.style.background = "var(--surface)";
+            btnToggleParkingSan.style.borderColor = "var(--border)";
+            btnToggleParkingSan.style.color = "var(--text)";
+            btnToggleParkingSan.style.fontWeight = "normal";
+            showToast("Слой санразрывов стоянок скрыт");
+          }}
+          updateLegend();
+        }});
+      }}
 
       if (btnDrawRoad) {{
         btnDrawRoad.addEventListener("click", () => {{
@@ -5726,6 +7397,49 @@ def build():
         }}
       }});
 
+      // Полноэкранный режим карты (Zen Mode)
+      const btnFullscreenMap = document.getElementById("btn-fullscreen-map");
+      const vpCard = document.getElementById("viewport-card-container");
+      if (btnFullscreenMap && vpCard) {{
+        btnFullscreenMap.addEventListener("click", () => {{
+          const isZen = vpCard.classList.toggle("zen-fullscreen");
+          btnFullscreenMap.textContent = isZen ? "🗗" : "⛶";
+          btnFullscreenMap.title = isZen ? "Выйти из полноэкранного режима (Esc)" : "Развернуть на весь экран (Zen Mode)";
+          window.dispatchEvent(new Event("resize"));
+          setTimeout(resetSvgView, 100);
+        }});
+      }}
+
+      // Кнопка сворачивания/разворачивания подробной сетки ТЭП
+      const btnToggleKpi = document.getElementById("btn-toggle-kpi-grid");
+      const fullKpiGrid = document.getElementById("full-kpi-grid");
+      if (btnToggleKpi && fullKpiGrid) {{
+        btnToggleKpi.addEventListener("click", () => {{
+          const isHidden = (fullKpiGrid.style.display === "none");
+          fullKpiGrid.style.display = isHidden ? "grid" : "none";
+          btnToggleKpi.innerHTML = isHidden 
+            ? "<span>▴ Свернуть карточки ТЭП</span>" 
+            : "<span>▾ Детальные карточки ТЭП</span>";
+        }});
+      }}
+
+      // Горячая клавиша Escape
+      document.addEventListener("keydown", (e) => {{
+        if (e.key === "Escape") {{
+          if (vpCard && vpCard.classList.contains("zen-fullscreen")) {{
+            vpCard.classList.remove("zen-fullscreen");
+            if (btnFullscreenMap) {{
+              btnFullscreenMap.textContent = "⛶";
+              btnFullscreenMap.title = "Развернуть на весь экран (Zen Mode)";
+            }}
+            window.dispatchEvent(new Event("resize"));
+            setTimeout(resetSvgView, 100);
+          }} else if (selectedSectionId) {{
+            selectSection(null);
+          }}
+        }}
+      }});
+
       // Таблица
       function renderTable(filterText = "") {{
         tableBody.innerHTML = "";
@@ -5764,7 +7478,8 @@ def build():
 
           tr.addEventListener("click", () => {{
             selectSection(sec.id);
-            document.querySelector(".spatial-split").scrollIntoView({{ behavior: "smooth", block: "start" }});
+            const vp = document.getElementById("viewport-card-container");
+            if (vp) vp.scrollIntoView({{ behavior: "smooth", block: "start" }});
           }});
 
           tableBody.appendChild(tr);
