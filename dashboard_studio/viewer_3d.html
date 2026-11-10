@@ -591,6 +591,10 @@
 
   let map = null;
   let mapInitialized = false;
+  // True, когда стиль карты загружен хотя бы один раз. Гейтить слои нужно именно по нему,
+  // а не по isStyleLoaded(): добавление слоёв (addSource/addLayer) сбрасывает isStyleLoaded()
+  // в false из-за pending-операций, из-за чего подложка навсегда откладывалась (баг «пропавшей подложки»)
+  let styleEverLoaded = false;
 
   function initMapIfReady() {
     if (mapInitialized) return true;
@@ -630,6 +634,7 @@
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-right');
 
     map.on('style.load', () => {
+      styleEverLoaded = true;
       initLayers();
       if (pendingBasemap) {
         switchBasemap(pendingBasemap);
@@ -637,6 +642,7 @@
     });
 
     if (map.isStyleLoaded()) {
+      styleEverLoaded = true;
       initLayers();
     }
 
@@ -688,7 +694,7 @@
   }
 
   function installLayers() {
-    if (!map || !map.isStyleLoaded()) return false;
+    if (!map || !styleEverLoaded) return false;
     const emptyFC = { type: 'FeatureCollection', features: [] };
 
     // 1. Источники данных (всегда регистрируются)
@@ -902,7 +908,10 @@
 
   function switchBasemap(key) {
     if (!key) return;
-    if (!map || !map.isStyleLoaded()) {
+    // Гейт по факту загрузки стиля, а не по isStyleLoaded(): после installLayers()
+    // флаг isStyleLoaded() сбрасывается pending-операциями слоёв, и подложка
+    // откладывалась навсегда (механизм ретрая отсутствовал)
+    if (!map || !styleEverLoaded) {
       pendingBasemap = key;
       return;
     }
@@ -1270,7 +1279,7 @@
 
     if (!map) {
       initMapIfReady();
-    } else if (map.isStyleLoaded()) {
+    } else if (styleEverLoaded) {
       installLayers();
       const badgeSurrUpd = document.getElementById('count-surroundings');
       if (badgeSurrUpd) {
