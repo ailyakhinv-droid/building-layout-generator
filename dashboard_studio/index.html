@@ -582,10 +582,18 @@
                 <span style="font-size:11.5px; color:var(--text-secondary);">Ориентация дворов:</span>
                 <select id="select-step3-court-orient" style="font-size:11px; padding:3px 8px; width:155px; border-radius:var(--radius-sm);">
                   <option value="SOUTH" selected>Юг (макс. инсоляция)</option>
-                  <option value="SOUTH_EAST">Юго-восток</option>
-                  <option value="SOUTH_WEST">Юго-запад</option>
                   <option value="EAST">Восток</option>
                 </select>
+              </div>
+              <div style="margin-top:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:11.5px; color:var(--text-secondary);">Секции в подборке:</span>
+                  <span id="hint-pref-sections" style="font-size:11px; color:var(--text-secondary);">Все типы</span>
+                </div>
+                <div id="pref-sections-container" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:5px;"></div>
+                <div style="font-size:10.5px; color:var(--text-secondary); opacity:0.85; margin-top:3px;">
+                  Отметьте нужные секции — остальные рядовые не попадут в застройку
+                </div>
               </div>
             </div>
           </div>

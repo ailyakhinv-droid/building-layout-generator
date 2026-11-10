@@ -78,7 +78,8 @@
     road_preset: 'none', // 'none' | 'longitudinal' | 'transverse' | 'cross_2x2' | 'custom'
     road_category: 'district', // 'district' | 'arterial' | 'local' | 'custom'
     typology: 'AUTO', // 'AUTO' | 'PERIMETER' | 'TOWER' | 'U_SHAPE' | 'SECTIONAL'
-    courtyard_orientation: 'SOUTH', // 'SOUTH' | 'SOUTH_EAST' | 'SOUTH_WEST' | 'EAST'
+    courtyard_orientation: 'SOUTH', // 'SOUTH' | 'EAST'
+    preferred_section_ids: [], // Whitelist секций (пусто = все типы из библиотеки)
     cascade_floors: true, // Каскадная форма с пониженными крыльями по СанПиН
     asymmetric_wings: true,
     variable_insolation: true,
@@ -501,6 +502,8 @@
     step3NormSummary: document.getElementById('step3-norm-summary'),
     chkStep3TowersMixed: document.getElementById('chk-step3-towers-mixed'),
     selectStep3CourtOrient: document.getElementById('select-step3-court-orient'),
+    prefSectionsContainer: document.getElementById('pref-sections-container'),
+    hintPrefSections: document.getElementById('hint-pref-sections'),
     sliderStep3Floors: document.getElementById('slider-step3-floors'),
     labelStep3Floors: document.getElementById('label-step3-floors'),
     valStep3FloorsTag: document.getElementById('val-step3-floors-tag'),
@@ -3182,6 +3185,44 @@
       state.courtyard_orientation = el.selectStep3CourtOrient.value;
     });
   }
+  // --- Чипы выбора секций (preferred_section_ids: whitelist для генерации) ---
+  if (el.prefSectionsContainer) {
+    (async () => {
+      let catalog = [];
+      try {
+        const resp = await fetch('/api/library');
+        if (resp.ok) {
+          const data = await resp.json();
+          catalog = data.catalog || [];
+        }
+      } catch (_) {}
+      const catOrder = { MIDDLE: 0, CORNER: 1, END: 2, TOWER: 3 };
+      catalog
+        .slice()
+        .sort((a, b) => ((catOrder[a.category] ?? 9) - (catOrder[b.category] ?? 9)) || (a.width - b.width))
+        .forEach(sec => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'cat-pill';
+          chip.setAttribute('data-id', sec.id);
+          chip.textContent = (sec.code && sec.code !== sec.id) ? sec.code : sec.name;
+          chip.title = `${sec.name}: ${sec.width}×${sec.depth} м, этажи ${sec.min_floors}–${sec.max_floors}`;
+          chip.addEventListener('click', () => {
+            chip.classList.toggle('active');
+            const id = chip.getAttribute('data-id');
+            const idx = state.preferred_section_ids.indexOf(id);
+            if (idx >= 0) state.preferred_section_ids.splice(idx, 1);
+            else state.preferred_section_ids.push(id);
+            if (el.hintPrefSections) {
+              el.hintPrefSections.textContent = state.preferred_section_ids.length
+                ? `Выбрано: ${state.preferred_section_ids.length}`
+                : 'Все типы';
+            }
+          });
+          el.prefSectionsContainer.appendChild(chip);
+        });
+    })();
+  }
   if (el.sliderStep3Floors) {
     el.sliderStep3Floors.addEventListener('input', () => {
       state.max_floors = parseInt(el.sliderStep3Floors.value, 10);
@@ -3254,6 +3295,9 @@
       only_ground_parking: !!state.only_ground_parking,
       typology: state.typology || 'AUTO',
       courtyard_orientation: state.courtyard_orientation || 'SOUTH',
+      preferred_section_ids: (state.preferred_section_ids && state.preferred_section_ids.length)
+        ? state.preferred_section_ids.slice()
+        : null,
       max_far: state.max_far || 2.5,
       max_bcr: (state.max_bcr ? state.max_bcr / 100.0 : 0.4),
       enable_red_line: state.enable_red_line || false,
