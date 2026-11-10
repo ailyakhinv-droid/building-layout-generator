@@ -609,25 +609,34 @@
 
     mapInitialized = true;
 
-    map = new maplibregl.Map({
-      container: 'map',
-      style: {
-        version: 8,
-        sources: {},
-        layers: [
-          {
-            id: 'blank-bg',
-            type: 'background',
-            paint: { 'background-color': '#f4f2ed' }
-          }
-        ]
-      },
-      center: [centerLon, centerLat],
-      zoom: initZoom,
-      pitch: 45,
-      bearing: 0,
-      antialias: true
-    });
+    try {
+      map = new maplibregl.Map({
+        container: 'map',
+        style: {
+          version: 8,
+          sources: {},
+          layers: [
+            {
+              id: 'blank-bg',
+              type: 'background',
+              paint: { 'background-color': '#f4f2ed' }
+            }
+          ]
+        },
+        center: [centerLon, centerLat],
+        zoom: initZoom,
+        pitch: 45,
+        bearing: 0,
+        antialias: true
+      });
+    } catch (err) {
+      // WebGL-контекст мог не создаться (например, вкладка в фоне) —
+      // сбрасываем флаг и позволяем ResizeObserver/'activate' повторить попытку
+      console.error('[3D Map] Карта не создана, будет повторена попытка инициализации:', err);
+      mapInitialized = false;
+      map = null;
+      return false;
+    }
     window.map = map;
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
