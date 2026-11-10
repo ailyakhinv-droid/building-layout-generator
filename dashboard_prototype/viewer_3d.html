@@ -280,11 +280,44 @@
       color: #334155;
       display: none;
     }
+  
+    .v3d-empty-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 15;
+      pointer-events: none;
+      background: rgba(244, 242, 237, 0.55);
+    }
+    .v3d-empty-card {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px 30px;
+      text-align: center;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+      pointer-events: auto;
+    }
+
   </style>
 </head>
 <body>
 <div id="map-container">
   <div id="map"></div>
+
+  <div id="v3d-empty-overlay" class="v3d-empty-overlay">
+    <div class="v3d-empty-card">
+      <div style="font-size: 34px; margin-bottom: 8px;">🏢</div>
+      <div style="font-weight: 700; font-size: 15.5px; margin-bottom: 5px; color: var(--ink);">3D-модель ожидает генерации</div>
+      <div style="font-size: 12.5px; color: var(--muted); max-width: 320px; line-height: 1.45;">
+        Выберите участок на шаге 1 и выполните рассадку корпусов на шаге 3, чтобы визуализировать объемно-пространственное решение в 3D.
+      </div>
+    </div>
+  </div>
+
   <div id="loading-msg" class="loading-notice">Загрузка 3D-сцены...</div>
 
   <button id="btn-show-panel" class="panel-toggle-btn" type="button">☰ Меню и ТЭП</button>
@@ -299,7 +332,7 @@
         <h1 class="panel-title">3D-визуализация застройки участка</h1>
         <button id="btn-hide-panel" class="close-panel-btn" title="Свернуть панель" type="button">✕</button>
       </div>
-      <div class="panel-subtitle">Кадастр: <b>72:23:0222001:16187</b></div>
+      <div class="panel-subtitle" id="v3d-subtitle">Кадастр: <b>не выбран</b></div>
       <button id="btn-reset-view" class="reset-btn" type="button">Вернуться к участку ↗</button>
     </header>
 
@@ -331,7 +364,7 @@
       <label class="toggle-row">
         <input type="checkbox" id="toggle-buildings" checked>
         <span>3D Корпуса</span>
-        <span class="count-badge">19 секц.</span>
+        <span class="count-badge" id="v3d-count-buildings">0 секц.</span>
       </label>
       <label class="toggle-row">
         <input type="checkbox" id="toggle-surroundings" checked>
@@ -370,26 +403,36 @@
     <div class="group">
       <div class="group-title">ТЭП земельного участка</div>
       <table class="tep-table">
-        <tr><td class="label">Площадь участка:</td><td class="val">44,381.1 м² (4.44 га)</td></tr>
-        <tr><td class="label">Количество корпусов:</td><td class="val">5 шт.</td></tr>
-        <tr><td class="label">Секций всего:</td><td class="val">19 шт.</td></tr>
-        <tr><td class="label">Площадь застройки:</td><td class="val">9,507.6 м²</td></tr>
-        <tr><td class="label">Плотность (FAR):</td><td class="val">2.08</td></tr>
-        <tr><td class="label">Процент застройки (BCR):</td><td class="val">21.4%</td></tr>
-        <tr><td class="label">Общая площадь (GFA):</td><td class="val">92,113.4 м²</td></tr>
-        <tr><td class="label">Жилая площадь:</td><td class="val">61,360.3 м²</td></tr>
-        <tr><td class="label">Квартир всего:</td><td class="val">1074</td></tr>
-        <tr><td class="label">Расчетное население:</td><td class="val">3 489.0 чел.</td></tr>
-        <tr><td class="label">Машиномест:</td><td class="val">537 м/м</td></tr>
-        <tr><td class="label">Доля озеленения:</td><td class="val">78.6%</td></tr>
+        <tr><td class="label">Площадь участка:</td><td class="val" id="v3d-tep-site-area">—</td></tr>
+        <tr><td class="label">Количество корпусов:</td><td class="val" id="v3d-tep-buildings-count">—</td></tr>
+        <tr><td class="label">Секций всего:</td><td class="val" id="v3d-tep-sections-count">—</td></tr>
+        <tr><td class="label">Площадь застройки:</td><td class="val" id="v3d-tep-footprint-area">—</td></tr>
+        <tr><td class="label">Плотность (FAR):</td><td class="val" id="v3d-tep-far">—</td></tr>
+        <tr><td class="label">Процент застройки (BCR):</td><td class="val" id="v3d-tep-bcr">—</td></tr>
+        <tr><td class="label">Общая площадь (GFA):</td><td class="val" id="v3d-tep-gfa">—</td></tr>
+        <tr><td class="label">Жилая площадь:</td><td class="val" id="v3d-tep-living-area">—</td></tr>
+        <tr><td class="label">Квартир всего:</td><td class="val" id="v3d-tep-apartments">—</td></tr>
+        <tr><td class="label">Расчетное население:</td><td class="val" id="v3d-tep-population">—</td></tr>
+        <tr><td class="label">Машиномест:</td><td class="val" id="v3d-tep-parking">—</td></tr>
+        <tr><td class="label">Доля озеленения:</td><td class="val" id="v3d-tep-greenery">—</td></tr>
       </table>
     </div>
   </aside>
 </div>
 
 <script type="application/json" id="city-data">
-{"boundary": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67813506441178, 57.16303123589974], [65.67790848802305, 57.16335953236914], [65.67584236255853, 57.162934075949], [65.67452554223367, 57.162662890134555], [65.67448951476996, 57.16271667831431], [65.674079, 57.162635412366605], [65.67514528071486, 57.161069], [65.67681295565188, 57.161406186335505], [65.6789554328973, 57.16184277753744], [65.67813506441178, 57.16303123589974]]]}, "properties": {"type": "boundary", "name": "Граница земельного участка", "cadastral_number": "72:23:0222001:16187", "address": "Тюменская область, г. Тюмень, район ЖК Акватория, уч. 16187", "area": 44381.1, "area_ha": 4.44}}]}, "buildable": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67804222175434, 57.163012315155314], [65.67882776726438, 57.161874304435926], [65.67677825490574, 57.16145665749665], [65.6752038153211, 57.161138322368956], [65.6742065669475, 57.16260332324836], [65.6744302589981, 57.16264760556856], [65.67443236313684, 57.162644464137514], [65.67443617127302, 57.162639550115976], [65.67444085466762, 57.16263486467593], [65.6744463674536, 57.16263045370444], [65.67445265564128, 57.16262636040055], [65.67445965764698, 57.16262262485222], [65.67446730489627, 57.16261928364369], [65.67447552249547, 57.16261636949724], [65.67448422996519, 57.1626139109527], [65.67449334202841, 57.16261193208792], [65.67450276944575, 57.162610452283], [65.6745124198894, 57.16260948603048], [65.67452219884728, 57.1626090427934], [65.67453201054879, 57.16260912691261], [65.67454175890255, 57.162609737564296], [65.67455134843766, 57.162610868768006], [65.67456068523857, 57.16261250944525], [65.67587750407567, 57.16288369495331], [65.67785058162062, 57.16328999095195], [65.67804222175434, 57.163012315155314]]]}, "properties": {"type": "buildable", "name": "Зона допустимой застройки", "area": 39347.7}}]}, "zouit": {"type": "FeatureCollection", "features": []}, "red_lines": {"type": "FeatureCollection", "features": []}, "roads": {"type": "FeatureCollection", "features": []}, "buildings": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67500490243356, 57.16193172630169], [65.675310311096, 57.16201996082515], [65.67544220824496, 57.16188517510808], [65.67538486204126, 57.16186860742164], [65.6754698193225, 57.16178178956271], [65.67522175686375, 57.161710122725694], [65.67500490243356, 57.16193172630169]]]}, "properties": {"id": "1_1", "building_id": 1, "section_index": 1, "building_name": "Корпус 1", "section_name": "Северная (С)", "full_name": "Корпус 1, Секция 1 (Северная (С))", "category": "CORNER", "category_name": "Угловая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 542.0, "gfa": 4483.0, "living_area": 3227.8, "apartments": 45, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 33444.2, "building_apartments": 386, "building_sections": 6, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#E67E22"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6761024921425, 57.162075935365436], [65.67597059499356, 57.1622107210825], [65.675310311096, 57.16201996082515], [65.67544220824496, 57.16188517510808], [65.6761024921425, 57.162075935365436]]]}, "properties": {"id": "1_2", "building_id": 1, "section_index": 2, "building_name": "Корпус 1", "section_name": "Меридиональная (М5)", "full_name": "Корпус 1, Секция 2 (Меридиональная (М5))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 14, "levels": 14, "height": 42.0, "height_m": 42.0, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 769.2, "gfa": 10436.2, "living_area": 7514.1, "apartments": 140, "has_commercial": false, "building_floors": 14, "building_height": 42.0, "building_gfa": 33444.2, "building_apartments": 386, "building_sections": 6, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.676276003656, 57.162298955605955], [65.67597059499356, 57.1622107210825], [65.6761024921425, 57.162075935365436], [65.67615983834621, 57.16209250305187], [65.67624479562745, 57.162005685192945], [65.67649285808619, 57.16207735202996], [65.676276003656, 57.162298955605955]]]}, "properties": {"id": "1_3", "building_id": 1, "section_index": 3, "building_name": "Корпус 1", "section_name": "Северная (С)", "full_name": "Корпус 1, Секция 3 (Северная (С))", "category": "CORNER", "category_name": "Угловая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 542.0, "gfa": 4483.0, "living_area": 3227.8, "apartments": 45, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 33444.2, "building_apartments": 386, "building_sections": 6, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#E67E22"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6754698193225, 57.16178178956271], [65.67522175686375, 57.161710122725694], [65.67539516282135, 57.16153291915061], [65.6756432252801, 57.161604585987625], [65.6754698193225, 57.16178178956271]]]}, "properties": {"id": "1_4", "building_id": 1, "section_index": 4, "building_name": "Корпус 1", "section_name": "Широтная (Ш2)", "full_name": "Корпус 1, Секция 4 (Широтная (Ш2))", "category": "END", "category_name": "Торцевая", "floors": 8, "levels": 8, "height": 25.5, "height_m": 25.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 379.9, "gfa": 2921.1, "living_area": 2103.2, "apartments": 32, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 33444.2, "building_apartments": 386, "building_sections": 6, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67649285808619, 57.16207735202996], [65.67624479562745, 57.162005685192945], [65.67659587480335, 57.1616469173284], [65.67684393726209, 57.16171858416542], [65.67649285808619, 57.16207735202996]]]}, "properties": {"id": "1_5", "building_id": 1, "section_index": 5, "building_name": "Корпус 1", "section_name": "Меридиональная (М5)", "full_name": "Корпус 1, Секция 5 (Меридиональная (М5))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 11, "levels": 11, "height": 33.0, "height_m": 33.0, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 769.3, "gfa": 8199.8, "living_area": 5903.9, "apartments": 110, "has_commercial": false, "building_floors": 14, "building_height": 42.0, "building_gfa": 33444.2, "building_apartments": 386, "building_sections": 6, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67684393726209, 57.16171858416542], [65.67659587480335, 57.1616469173284], [65.67676928076095, 57.16146971375332], [65.6770173432197, 57.161541380590336], [65.67684393726209, 57.16171858416542]]]}, "properties": {"id": "1_6", "building_id": 1, "section_index": 6, "building_name": "Корпус 1", "section_name": "Широтная (Ш2)", "full_name": "Корпус 1, Секция 6 (Широтная (Ш2))", "category": "END", "category_name": "Торцевая", "floors": 8, "levels": 8, "height": 25.5, "height_m": 25.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 380.0, "gfa": 2921.1, "living_area": 2103.2, "apartments": 32, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 33444.2, "building_apartments": 386, "building_sections": 6, "building_typology": "U_SHAPE", "color_building": "#2E86AB", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67662898568703, 57.162339913798604], [65.67693439434947, 57.16242814832206], [65.67706629149843, 57.16229336260499], [65.67700894529473, 57.162276794918554], [65.67709390257598, 57.16218997705962], [65.67684584011722, 57.1621183102226], [65.67662898568703, 57.162339913798604]]]}, "properties": {"id": "2_1", "building_id": 2, "section_index": 1, "building_name": "Корпус 2", "section_name": "Северная (С)", "full_name": "Корпус 2, Секция 1 (Северная (С))", "category": "CORNER", "category_name": "Угловая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 542.0, "gfa": 4483.0, "living_area": 3227.8, "apartments": 45, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 41644.1, "building_apartments": 496, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#E67E22"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67772657539598, 57.162484122862345], [65.67759467824702, 57.16261890857941], [65.67693439434947, 57.16242814832206], [65.67706629149843, 57.16229336260499], [65.67772657539598, 57.162484122862345]]]}, "properties": {"id": "2_2", "building_id": 2, "section_index": 2, "building_name": "Корпус 2", "section_name": "Меридиональная (М5)", "full_name": "Корпус 2, Секция 2 (Меридиональная (М5))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 14, "levels": 14, "height": 42.0, "height_m": 42.0, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 769.2, "gfa": 10436.2, "living_area": 7514.1, "apartments": 140, "has_commercial": false, "building_floors": 14, "building_height": 42.0, "building_gfa": 41644.1, "building_apartments": 496, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67790008690947, 57.16270714310287], [65.67759467824702, 57.16261890857941], [65.67772657539598, 57.162484122862345], [65.67778392159968, 57.16250069054879], [65.67786887888091, 57.162413872689854], [65.67811694133967, 57.16248553952687], [65.67790008690947, 57.16270714310287]]]}, "properties": {"id": "2_3", "building_id": 2, "section_index": 3, "building_name": "Корпус 2", "section_name": "Северная (С)", "full_name": "Корпус 2, Секция 3 (Северная (С))", "category": "CORNER", "category_name": "Угловая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 542.0, "gfa": 4483.0, "living_area": 3227.8, "apartments": 45, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 41644.1, "building_apartments": 496, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#E67E22"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67709390257598, 57.16218997705962], [65.67684584011722, 57.1621183102226], [65.67719691929312, 57.16175954235806], [65.67744498175188, 57.16183120919508], [65.67709390257598, 57.16218997705962]]]}, "properties": {"id": "2_4", "building_id": 2, "section_index": 4, "building_name": "Корпус 2", "section_name": "Меридиональная (М5)", "full_name": "Корпус 2, Секция 4 (Меридиональная (М5))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 11, "levels": 11, "height": 33.0, "height_m": 33.0, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 769.3, "gfa": 8199.8, "living_area": 5903.9, "apartments": 110, "has_commercial": false, "building_floors": 14, "building_height": 42.0, "building_gfa": 41644.1, "building_apartments": 496, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67744498175188, 57.16183120919508], [65.67719691929312, 57.16175954235806], [65.67737032525072, 57.16158233878298], [65.67761838770947, 57.161654005619994], [65.67744498175188, 57.16183120919508]]]}, "properties": {"id": "2_5", "building_id": 2, "section_index": 5, "building_name": "Корпус 2", "section_name": "Широтная (Ш2)", "full_name": "Корпус 2, Секция 5 (Широтная (Ш2))", "category": "END", "category_name": "Торцевая", "floors": 8, "levels": 8, "height": 25.5, "height_m": 25.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 380.0, "gfa": 2921.1, "living_area": 2103.2, "apartments": 32, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 41644.1, "building_apartments": 496, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67811694133967, 57.16248553952687], [65.67786887888091, 57.162413872689854], [65.67821995805681, 57.16205510482531], [65.67846802051557, 57.16212677166233], [65.67811694133967, 57.16248553952687]]]}, "properties": {"id": "2_6", "building_id": 2, "section_index": 6, "building_name": "Корпус 2", "section_name": "Меридиональная (М5)", "full_name": "Корпус 2, Секция 6 (Меридиональная (М5))", "category": "MIDDLE", "category_name": "Рядовая", "floors": 11, "levels": 11, "height": 33.0, "height_m": 33.0, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 769.2, "gfa": 8199.8, "living_area": 5903.9, "apartments": 110, "has_commercial": false, "building_floors": 14, "building_height": 42.0, "building_gfa": 41644.1, "building_apartments": 496, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#2E86AB"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67846802051557, 57.16212677166233], [65.67821995805681, 57.16205510482531], [65.67839336401443, 57.16187790125023], [65.67864142647316, 57.161949568087245], [65.67846802051557, 57.16212677166233]]]}, "properties": {"id": "2_7", "building_id": 2, "section_index": 7, "building_name": "Корпус 2", "section_name": "Широтная (Ш2)", "full_name": "Корпус 2, Секция 7 (Широтная (Ш2))", "category": "END", "category_name": "Торцевая", "floors": 8, "levels": 8, "height": 25.5, "height_m": 25.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 380.0, "gfa": 2921.1, "living_area": 2103.2, "apartments": 32, "has_commercial": true, "building_floors": 14, "building_height": 42.0, "building_gfa": 41644.1, "building_apartments": 496, "building_sections": 7, "building_typology": "U_SHAPE", "color_building": "#F18F01", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67705461040116, 57.16285948845345], [65.6768065479424, 57.16278782161643], [65.67695667793255, 57.16263440375613], [65.67720474039129, 57.162706070593146], [65.67705461040116, 57.16285948845345]]]}, "properties": {"id": "3_1", "building_id": 3, "section_index": 1, "building_name": "Корпус 3", "section_name": "Широтная (Ш1)", "full_name": "Корпус 3, Секция 1 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 328.9, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 28.5, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#2ECC71", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67690448041103, 57.16301290631376], [65.67665641795227, 57.16294123947674], [65.6768065479424, 57.16278782161643], [65.67705461040116, 57.16285948845345], [65.67690448041103, 57.16301290631376]]]}, "properties": {"id": "3_2", "building_id": 3, "section_index": 2, "building_name": "Корпус 3", "section_name": "Широтная (Ш1)", "full_name": "Корпус 3, Секция 2 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 328.9, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 28.5, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#2ECC71", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67606589364017, 57.16264571933939], [65.67581783118143, 57.16257405250237], [65.67596796117157, 57.16242063464207], [65.67621602363032, 57.162492301479084], [65.67606589364017, 57.16264571933939]]]}, "properties": {"id": "4_1", "building_id": 4, "section_index": 1, "building_name": "Корпус 4", "section_name": "Широтная (Ш1)", "full_name": "Корпус 4, Секция 1 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 28.5, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#9B59B6", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67591576365004, 57.16279913719969], [65.67566770119129, 57.162727470362675], [65.67581783118143, 57.16257405250237], [65.67606589364017, 57.16264571933939], [65.67591576365004, 57.16279913719969]]]}, "properties": {"id": "4_2", "building_id": 4, "section_index": 2, "building_name": "Корпус 4", "section_name": "Широтная (Ш1)", "full_name": "Корпус 4, Секция 2 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 28.5, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#9B59B6", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.67510045970253, 57.16240815750452], [65.67485239724378, 57.162336490667506], [65.67500252723393, 57.162183072807196], [65.67525058969267, 57.16225473964421], [65.67510045970253, 57.16240815750452]]]}, "properties": {"id": "5_1", "building_id": 5, "section_index": 1, "building_name": "Корпус 5", "section_name": "Широтная (Ш1)", "full_name": "Корпус 5, Секция 1 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 28.5, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#E74C3C", "color_category": "#8E44AD"}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6749503297124, 57.162561575364826], [65.67470226725365, 57.16248990852781], [65.67485239724378, 57.162336490667506], [65.67510045970253, 57.16240815750452], [65.6749503297124, 57.162561575364826]]]}, "properties": {"id": "5_2", "building_id": 5, "section_index": 2, "building_name": "Корпус 5", "section_name": "Широтная (Ш1)", "full_name": "Корпус 5, Секция 2 (Широтная (Ш1))", "category": "END", "category_name": "Торцевая", "floors": 9, "levels": 9, "height": 28.5, "height_m": 28.5, "floor_height": 3.0, "min_height": 0.0, "footprint_area": 329.0, "gfa": 2837.5, "living_area": 2043.0, "apartments": 36, "has_commercial": true, "building_floors": 9, "building_height": 28.5, "building_gfa": 5675.0, "building_apartments": 64, "building_sections": 2, "building_typology": "LINEAR", "color_building": "#E74C3C", "color_category": "#8E44AD"}}]}, "surroundings": {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6798901, 57.158675], [65.6799171, 57.1589522], [65.6801643, 57.1589449], [65.680158, 57.1588583], [65.6801443, 57.1586691], [65.6798901, 57.158675]]]}, "properties": {"id": "osm_91544121", "name": "Камчатская улица, 201 с2", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6777392, 57.1578519], [65.6778477, 57.1578521], [65.6778499, 57.1575765], [65.6777414, 57.1575763], [65.6777392, 57.1578519]]]}, "properties": {"id": "osm_91544129", "name": "Здание (yes)", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6799407, 57.1604029], [65.680153, 57.1604001], [65.6801363, 57.1600221], [65.679924, 57.1600248], [65.6799407, 57.1604029]]]}, "properties": {"id": "osm_91544131", "name": "Здание (yes)", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6799047, 57.1595235], [65.6801151, 57.1595208], [65.6800963, 57.1590943], [65.6798859, 57.159097], [65.6799047, 57.1595235]]]}, "properties": {"id": "osm_91544144", "name": "Камчатская улица, 201 с3", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.672487, 57.1583614], [65.6730826, 57.1584896], [65.6732166, 57.1583064], [65.672621, 57.1581782], [65.672487, 57.1583614]]]}, "properties": {"id": "osm_91544179", "name": "Камчатская улица, 189", "building_type": "yes", "levels": 3, "floors": 3, "height": 9.0, "height_m": 9.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6745415, 57.1583809], [65.6742369, 57.1583216], [65.67406, 57.1582871], [65.6736561, 57.1582084], [65.6733621, 57.1586522], [65.6742475, 57.1588247], [65.6745415, 57.1583809]]]}, "properties": {"id": "osm_91544184", "name": "Камчатская улица, Полимер", "building_type": "industrial", "levels": 3, "floors": 3, "height": 9.0, "height_m": 9.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6799189, 57.1598782], [65.6801383, 57.1598758], [65.6801318, 57.1597027], [65.6804694, 57.1596989], [65.680465, 57.1595828], [65.6799081, 57.1595889], [65.6799189, 57.1598782]]]}, "properties": {"id": "osm_91544190", "name": "Здание (yes)", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6802623, 57.1578231], [65.680251, 57.1576391], [65.6808357, 57.1576285], [65.680847, 57.1578126], [65.6802623, 57.1578231]]]}, "properties": {"id": "osm_590942660", "name": "Камчатская улица, 195", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6804472, 57.1598273], [65.6804432, 57.1600067], [65.6805835, 57.1600078], [65.6805855, 57.1598295], [65.6804472, 57.1598273]]]}, "properties": {"id": "osm_614279748", "name": "Камчатская улица, 201/1", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6801672, 57.1586751], [65.6801616, 57.1585457], [65.6803657, 57.1585435], [65.6803712, 57.1586721], [65.6801672, 57.1586751]]]}, "properties": {"id": "osm_614279749", "name": "Здание (yes)", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6804443, 57.1589727], [65.6804319, 57.1588134], [65.6805491, 57.1588119], [65.6805601, 57.1589704], [65.6804443, 57.1589727]]]}, "properties": {"id": "osm_614279750", "name": "Здание (yes)", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6799171, 57.1589522], [65.6798831, 57.1589532], [65.6798845, 57.1590071], [65.6803464, 57.1589981], [65.680338, 57.1588545], [65.680158, 57.1588583], [65.6801643, 57.1589449], [65.6799171, 57.1589522]]]}, "properties": {"id": "osm_614279751", "name": "Здание (yes)", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6739559, 57.1577643], [65.6739534, 57.1579085], [65.6740764, 57.1579091], [65.6740788, 57.157765], [65.6739559, 57.1577643]]]}, "properties": {"id": "osm_743211985", "name": "Здание (yes)", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6756063, 57.1608266], [65.6759839, 57.1602938], [65.6761243, 57.1600956], [65.6769242, 57.1602624], [65.676832, 57.1603924], [65.6764534, 57.1603135], [65.676283, 57.160278], [65.6762338, 57.1603474], [65.6761869, 57.1604178], [65.6758649, 57.1608683], [65.6758573, 57.1608789], [65.6756063, 57.1608266]]]}, "properties": {"id": "osm_743211987", "name": "улица Павла Никольского, 2", "building_type": "apartments", "levels": 10, "floors": 10, "height": 30.0, "height_m": 30.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6744584, 57.1614307], [65.6748165, 57.1609374], [65.6751682, 57.1610124], [65.6751053, 57.1610991], [65.6750664, 57.1611526], [65.6749208, 57.1611215], [65.6748801, 57.1611776], [65.6749152, 57.1611851], [65.6746996, 57.1614822], [65.6744584, 57.1614307]]]}, "properties": {"id": "osm_933689999", "name": "улица Павла Никольского, 6", "building_type": "apartments", "levels": 10, "floors": 10, "height": 30.0, "height_m": 30.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6780984, 57.1613315], [65.6781797, 57.1613497], [65.6782207, 57.1612954], [65.6781395, 57.1612773], [65.6780984, 57.1613315]]]}, "properties": {"id": "osm_1022850960", "name": "Здание (service)", "building_type": "service", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6771571, 57.1610032], [65.6771321, 57.1609982], [65.6771659, 57.1609482], [65.6771909, 57.1609532], [65.6771571, 57.1610032]]]}, "properties": {"id": "osm_1068830289", "name": "Здание (yes)", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6765567, 57.1593098], [65.6770607, 57.1586145], [65.6777439, 57.1587602], [65.6776203, 57.1589307], [65.6772279, 57.158847], [65.6769821, 57.159186], [65.6783363, 57.1594748], [65.6782017, 57.1596605], [65.6765567, 57.1593098]]]}, "properties": {"id": "osm_1068830316", "name": "улица Судостроителей, 87", "building_type": "construction", "levels": 17, "floors": 17, "height": 51.0, "height_m": 51.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6711806, 57.1583684], [65.6712184, 57.1583084], [65.6713515, 57.158333], [65.6713136, 57.1583931], [65.6711806, 57.1583684]]]}, "properties": {"id": "osm_1096960504", "name": "Здание (yes)", "building_type": "yes", "levels": 1, "floors": 1, "height": 3.0, "height_m": 3.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6786791, 57.1611309], [65.6787682, 57.1611516], [65.678735, 57.1611936], [65.6791579, 57.1612917], [65.6792903, 57.1613224], [65.6793068, 57.1613263], [65.6792979, 57.1613375], [65.6795185, 57.1613887], [65.6799034, 57.161478], [65.6799343, 57.1614388], [65.680013, 57.1614571], [65.6802425, 57.1611663], [65.6803073, 57.1610841], [65.6800112, 57.1610154], [65.6799535, 57.1610885], [65.6798687, 57.161196], [65.6797855, 57.1613014], [65.6796088, 57.1612604], [65.6794249, 57.1612177], [65.6794429, 57.1611947], [65.6794024, 57.1611853], [65.6792686, 57.1611542], [65.6790348, 57.1611], [65.6790973, 57.1610208], [65.6791838, 57.1609113], [65.679242, 57.1608375], [65.6789753, 57.1607756], [65.678919, 57.160847], [65.6788317, 57.1609576], [65.6788184, 57.1609545], [65.6786791, 57.1611309]]]}, "properties": {"id": "osm_1124056440", "name": "улица Павла Никольского, 14", "building_type": "apartments", "levels": 10, "floors": 10, "height": 30.0, "height_m": 30.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6793228, 57.1622624], [65.6794508, 57.1621004], [65.6796911, 57.1621562], [65.6799744, 57.1622221], [65.6801723, 57.1622681], [65.6802076, 57.1622235], [65.6803315, 57.1620666], [65.6804415, 57.1619275], [65.6807246, 57.1619922], [65.68051, 57.1622637], [65.6805254, 57.1622673], [65.6803798, 57.1624514], [65.6802563, 57.1624227], [65.6802185, 57.1624705], [65.6793785, 57.1622753], [65.6793228, 57.1622624]]]}, "properties": {"id": "osm_1124056441", "name": "улица Павла Никольского, 10 к1", "building_type": "apartments", "levels": 10, "floors": 10, "height": 30.0, "height_m": 30.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6748064, 57.1607749], [65.6748431, 57.1607267], [65.6749893, 57.1607594], [65.6749525, 57.1608077], [65.6748064, 57.1607749]]]}, "properties": {"id": "osm_1201019757", "name": "Здание (roof)", "building_type": "roof", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.680013, 57.1614571], [65.6799733, 57.1615053], [65.680462, 57.1616198], [65.6805442, 57.1615166], [65.6804767, 57.1615008], [65.6807301, 57.1611827], [65.6806951, 57.1611745], [65.6803073, 57.1610841], [65.680013, 57.1614571]]]}, "properties": {"id": "osm_1392294655", "name": "Здание (parking)", "building_type": "parking", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6790348, 57.1611], [65.6794024, 57.1611853], [65.6794429, 57.1611947], [65.6794249, 57.1612177], [65.6797855, 57.1613014], [65.6800112, 57.1610154], [65.6797907, 57.1609647], [65.679242, 57.1608375], [65.6790348, 57.1611]]]}, "properties": {"id": "osm_1392294656", "name": "Здание (parking)", "building_type": "parking", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6773129, 57.1602317], [65.6773929, 57.1602465], [65.6774157, 57.1602101], [65.6773357, 57.1601954], [65.6773129, 57.1602317]]]}, "properties": {"id": "osm_1428443478", "name": "Здание (pavilion)", "building_type": "pavilion", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6680611, 57.1613116], [65.6680079, 57.1615126], [65.6684702, 57.1615486], [65.6685233, 57.1613475], [65.6680611, 57.1613116]]]}, "properties": {"id": "osm_1428445039", "name": "Здание (construction)", "building_type": "construction", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6676747, 57.1607389], [65.667529, 57.1609574], [65.6679176, 57.1610337], [65.6680634, 57.1608151], [65.6676747, 57.1607389]]]}, "properties": {"id": "osm_1428445040", "name": "Здание (construction)", "building_type": "construction", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6671443, 57.1611511], [65.6670102, 57.1613673], [65.6674163, 57.1614414], [65.6675504, 57.1612251], [65.6671443, 57.1611511]]]}, "properties": {"id": "osm_1428445041", "name": "Здание (construction)", "building_type": "construction", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6778711, 57.1588388], [65.677893, 57.1588961], [65.6779656, 57.1588879], [65.6779436, 57.1588306], [65.6778711, 57.1588388]]]}, "properties": {"id": "osm_1481188902", "name": "Здание (yes)", "building_type": "yes", "levels": 2, "floors": 2, "height": 6.0, "height_m": 6.0, "min_height": 0.0, "is_surrounding": true}}, {"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [[[65.6742475, 57.1588247], [65.6753406, 57.1590377], [65.6756346, 57.1585939], [65.6745415, 57.1583809], [65.6742475, 57.1588247]]]}, "properties": {"id": "osm_1534140410", "name": "Камчатская улица, Полимер", "building_type": "industrial", "levels": 3, "floors": 3, "height": 9.0, "height_m": 9.0, "min_height": 0.0, "is_surrounding": true}}]}}
+{
+  "boundary": {"type": "FeatureCollection", "features": []},
+  "buildable": {"type": "FeatureCollection", "features": []},
+  "zouit": {"type": "FeatureCollection", "features": []},
+  "red_lines": {"type": "FeatureCollection", "features": []},
+  "roads": {"type": "FeatureCollection", "features": []},
+  "parking": {"type": "FeatureCollection", "features": []},
+  "buildings": {"type": "FeatureCollection", "features": []},
+  "surroundings": {"type": "FeatureCollection", "features": []}
+}
 </script>
+
 <script>
   let DATA = JSON.parse(document.getElementById('city-data').textContent);
   window.DATA = DATA;
@@ -489,15 +532,15 @@
     return [[minLon, minLat], [maxLon, maxLat]];
   }
 
-  let siteBounds = computeBounds([DATA.boundary, DATA.buildings]) || [[30.33, 59.93], [30.34, 59.94]];
-  let centerLon = (siteBounds[0][0] + siteBounds[1][0]) / 2;
-  let centerLat = (siteBounds[0][1] + siteBounds[1][1]) / 2;
+  let siteBounds = computeBounds([DATA.boundary, DATA.buildings]);
+  let centerLon = siteBounds ? (siteBounds[0][0] + siteBounds[1][0]) / 2 : 37.6173;
+  let centerLat = siteBounds ? (siteBounds[0][1] + siteBounds[1][1]) / 2 : 55.7558;
 
   // Оценка начального зума по размеру участка
   const dLon = siteBounds[1][0] - siteBounds[0][0];
   const dLat = siteBounds[1][1] - siteBounds[0][1];
   const maxSpan = Math.max(dLon, dLat);
-  let initZoom = 16.5;
+  let initZoom = siteBounds ? 16.5 : 9.0;
   if (maxSpan > 0.05) initZoom = 12.5;
   else if (maxSpan > 0.02) initZoom = 14.0;
   else if (maxSpan > 0.008) initZoom = 15.2;
@@ -860,6 +903,9 @@
 
   function fitToData(animated = true) {
     if (!map) return;
+    if (!siteBounds && (!DATA || (!DATA.boundary?.features?.length && !DATA.buildings?.features?.length))) {
+      return; // No bounds yet, keep initial neutral view
+    }
     map.resize();
     const container = map.getContainer();
     const cWidth = container ? container.clientWidth : window.innerWidth;
@@ -1045,10 +1091,84 @@
     }
   }
 
+  
+  function updateTepTable(tep, buildingsFC) {
+    if (!tep && buildingsFC && buildingsFC.features && buildingsFC.features.length) {
+      let gfa = 0, living = 0, fp = 0, apts = 0;
+      const bSet = new Set();
+      buildingsFC.features.forEach(f => {
+        const p = f.properties || {};
+        gfa += (p.gfa || 0);
+        living += (p.living_area || 0);
+        fp += (p.footprint_area || 0);
+        apts += (p.apartments || 0);
+        if (p.building_name) bSet.add(p.building_name);
+      });
+      tep = {
+        buildings_count: bSet.size || 1,
+        sections_count: buildingsFC.features.length,
+        footprint_area: fp,
+        gfa: gfa,
+        residential_area: living,
+        apartments_total: apts,
+        population: Math.round(living / 28.2)
+      };
+    }
+
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = (val !== undefined && val !== null && val !== '') ? val : '—';
+    };
+
+    if (tep) {
+      const siteArea = tep.site_area || (DATA.boundary && DATA.boundary.features[0] && DATA.boundary.features[0].properties && DATA.boundary.features[0].properties.area) || 0;
+      const siteAreaHa = siteArea ? (siteArea / 10000).toFixed(2) : '—';
+      setVal('v3d-tep-site-area', siteArea ? `${Number(siteArea).toLocaleString('ru-RU', {maximumFractionDigits: 1})} м² (${siteAreaHa} га)` : '—');
+      setVal('v3d-tep-buildings-count', tep.buildings_count ? `${tep.buildings_count} шт.` : '—');
+      setVal('v3d-tep-sections-count', tep.sections_count ? `${tep.sections_count} шт.` : '—');
+      setVal('v3d-tep-footprint-area', tep.footprint_area ? `${Number(tep.footprint_area).toLocaleString('ru-RU', {maximumFractionDigits: 1})} м²` : '—');
+      setVal('v3d-tep-far', tep.far != null ? Number(tep.far).toFixed(2) : (siteArea && tep.gfa ? (tep.gfa / siteArea).toFixed(2) : '—'));
+      const bcrPct = tep.bcr_percent != null ? Number(tep.bcr_percent).toFixed(1) : (tep.bcr != null ? (tep.bcr * 100).toFixed(1) : (siteArea && tep.footprint_area ? (tep.footprint_area / siteArea * 100).toFixed(1) : null));
+      setVal('v3d-tep-bcr', bcrPct != null ? `${bcrPct}%` : '—');
+      setVal('v3d-tep-gfa', tep.gfa ? `${Number(tep.gfa).toLocaleString('ru-RU', {maximumFractionDigits: 1})} м²` : '—');
+      setVal('v3d-tep-living-area', (tep.residential_area || tep.living_area) ? `${Number(tep.residential_area || tep.living_area).toLocaleString('ru-RU', {maximumFractionDigits: 1})} м²` : '—');
+      setVal('v3d-tep-apartments', (tep.apartments_total || tep.apartments) ? `${tep.apartments_total || tep.apartments}` : '—');
+      setVal('v3d-tep-population', tep.population ? `${Number(tep.population).toLocaleString('ru-RU', {maximumFractionDigits: 0})} чел.` : '—');
+      setVal('v3d-tep-parking', (tep.parking_places != null || tep.parking_slots_required != null) ? `${tep.parking_places || tep.parking_slots_required} м/м` : '—');
+      const greenPct = tep.greenery_area_pct != null ? `${Number(tep.greenery_area_pct).toFixed(1)}%` : (tep.greenery_pct != null ? `${Number(tep.greenery_pct).toFixed(1)}%` : '—');
+      setVal('v3d-tep-greenery', greenPct);
+    } else {
+      ['v3d-tep-site-area', 'v3d-tep-buildings-count', 'v3d-tep-sections-count', 'v3d-tep-footprint-area',
+       'v3d-tep-far', 'v3d-tep-bcr', 'v3d-tep-gfa', 'v3d-tep-living-area', 'v3d-tep-apartments',
+       'v3d-tep-population', 'v3d-tep-parking', 'v3d-tep-greenery'].forEach(id => setVal(id, '—'));
+    }
+  }
+
   function updateViewerData(newData) {
     if (!newData) return;
     DATA = newData;
     window.DATA = newData;
+
+    const overlay = document.getElementById('v3d-empty-overlay');
+    const hasBuildings = DATA.buildings && DATA.buildings.features && DATA.buildings.features.length > 0;
+    const hasBoundary = DATA.boundary && DATA.boundary.features && DATA.boundary.features.length > 0;
+    if (overlay) {
+      overlay.style.display = (hasBuildings || hasBoundary) ? 'none' : 'flex';
+    }
+
+    const badgeBld = document.getElementById('v3d-count-buildings');
+    if (badgeBld) {
+      badgeBld.textContent = `${(DATA.buildings && DATA.buildings.features) ? DATA.buildings.features.length : 0} секц.`;
+    }
+
+    const subTitle = document.getElementById('v3d-subtitle');
+    if (subTitle) {
+      const cad = DATA.cadastral_number || (DATA.boundary && DATA.boundary.features[0] && DATA.boundary.features[0].properties && DATA.boundary.features[0].properties.cadastral_number) || (hasBoundary ? 'Сгенерированный участок' : 'не выбран');
+      subTitle.innerHTML = `Кадастр: <b>${cad}</b>`;
+    }
+
+    updateTepTable(DATA.tep, DATA.buildings);
+
     const newBounds = computeBounds([DATA.boundary, DATA.buildings]);
     if (newBounds) {
       siteBounds = newBounds;
@@ -1064,7 +1184,9 @@
       if (badgeSurrUpd) {
         badgeSurrUpd.textContent = `${(DATA.surroundings && DATA.surroundings.features) ? DATA.surroundings.features.length : 0} зд.`;
       }
-      setTimeout(() => fitToData(true), 60);
+      if (hasBuildings || hasBoundary) {
+        setTimeout(() => fitToData(true), 60);
+      }
     }
   }
 
@@ -1109,10 +1231,14 @@
       if (mapEl) ro.observe(mapEl);
     }
 
-    // 3. Ожидание через requestAnimationFrame (страховка)
+    // 3. Ожидание через requestAnimationFrame (страховка с лимитом попыток)
+    let waitAttempts = 0;
     function waitForContainer() {
       if (!initMapIfReady()) {
-        requestAnimationFrame(waitForContainer);
+        waitAttempts++;
+        if (waitAttempts < 20) {
+          requestAnimationFrame(waitForContainer);
+        }
       }
     }
     requestAnimationFrame(waitForContainer);

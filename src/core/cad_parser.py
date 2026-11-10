@@ -104,10 +104,6 @@ def extract_cadastral_info_from_doc(doc: Any, filename: str = "") -> list[str]:
                 txt = getattr(e, "text", "")
             if txt:
                 for c in cad_regex.findall(txt):
-                    # Если демо-номер 63:01:0709002:2320 найден как метка, но имя файла указывает на другой регион
-                    fn_low = (filename or "").lower()
-                    if c == "63:01:0709002:2320" and any(k in fn_low for k in ["тюмен", "72", "москв", "77", "спб", "петербург", "78"]):
-                        continue
                     if c not in found:
                         found.append(c)
     except Exception:

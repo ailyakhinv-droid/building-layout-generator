@@ -61,6 +61,7 @@ from src.geo.msk_converter import (
     detect_msk_by_coordinates,
     msk_to_wgs84_coords,
     wgs84_to_msk_coords,
+    resolve_zone_preset,
     MSK_PRESETS,
 )
 
@@ -280,20 +281,11 @@ def _create_site_from_params(
             except Exception:
                 pass
 
-        # Фильтруем фиктивный номер 63:01:0709002:2320 если имя файла явно указывает на другой регион/город
-        fn_lower = (cad_filename or "").lower()
-        if detected_cad == "63:01:0709002:2320" and any(k in fn_lower for k in ["тюмен", "72", "москв", "77", "спб", "петербург", "78", "ижевск", "18", "казан", "16"]):
-            detected_cad = None
-
-        # Если файл свежезагружен (cad_file_b64 передан) и в нем обнаружен кадастровый номер,
-        # он имеет приоритет над старым assigned_cad из предыдущего файла/сессии
+        # Если в файле обнаружен кадастровый номер — он имеет наивысший приоритет
         if cad_file_b64 and detected_cad:
             assigned_cad = detected_cad
-        elif not assigned_cad or assigned_cad == "63:01:0709002:2320":
-            if detected_cad:
-                assigned_cad = detected_cad
-            else:
-                assigned_cad = ""
+        elif not assigned_cad:
+            assigned_cad = detected_cad or ""
 
         if assigned_cad:
             reg_name, dist_name, resolved_norm_id, c_lat, c_lon = smart_resolve_location(assigned_cad)
@@ -343,20 +335,20 @@ def _create_site_from_params(
 
             # Определение системы координат МСК
             is_msk = abs(site.base_offset[0]) > 500 or abs(site.base_offset[1]) > 500
-            requested_msk = params.get("msk_zone")
-            if requested_msk and requested_msk in MSK_PRESETS:
-                detected_msk = requested_msk
-            elif reg_code:
-                detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
-                if not detected_msk:
-                    detected_msk = detect_msk_by_coordinates(site.base_offset[0], site.base_offset[1], region_hint=reg_code)
-            else:
-                detected_msk = detect_msk_by_coordinates(site.base_offset[0], site.base_offset[1])
+            requested_msk = (params.get("msk_zone") or "").strip()
 
+            detected_msk = None
+            # 1. Если пользователь явно выбрал МСК вручную, уважаем его выбор
+            if requested_msk:
+                detected_msk, _ = resolve_zone_preset(requested_msk)
+
+            # 2. Если МСК не выбрана явно (авторежим), определяем по коду региона кадастрового номера
             if not detected_msk and reg_code:
                 detected_msk = get_msk_key_for_region(reg_code, site.base_offset[0], site.base_offset[1])
-            if not detected_msk:
-                detected_msk = next(iter(MSK_PRESETS.keys()))
+
+            # 3. Если всё ещё не определено — эвристика по величинам координат (с подсказкой региона)
+            if not detected_msk and reg_code:
+                detected_msk = detect_msk_by_coordinates(site.base_offset[0], site.base_offset[1], region_hint=reg_code)
 
             if detected_msk in MSK_PRESETS:
                 preset = MSK_PRESETS[detected_msk]
@@ -377,27 +369,30 @@ def _create_site_from_params(
                 exp_c = (c_lat, c_lon)
 
             is_manual_override = (
-                override_lat != 0.0 and override_lon != 0.0
-                and not (abs(override_lat - 53.2502) < 0.001 and abs(override_lon - 50.3184) < 0.001 and is_msk and "63" not in detected_msk)
+                override_lat != 0.0 and override_lon != 0.0 and bool(params.get("user_has_moved_site"))
             )
             if is_manual_override:
                 site.geo_center = (override_lat, override_lon)
                 site.georef_source = "Ручные координаты WGS-84"
-            elif is_msk:
+            elif is_msk and detected_msk:
+                cad_swap_xy = bool(params.get("cad_swap_xy", False))
                 cad_lat, cad_lon = msk_to_wgs84_coords(
                     site.base_offset[0],
                     site.base_offset[1],
                     detected_msk,
-                    axis_order="auto",
+                    axis_order="swap" if cad_swap_xy else "auto",
                     expected_center=exp_c,
                 )
                 site.geo_center = (cad_lat, cad_lon)
                 site.georef_source = f"По координатам чертежа ({detected_msk})"
-            else:
+            elif c_lat != 0.0 and c_lon != 0.0:
                 site.geo_center = (c_lat, c_lon)
                 site.georef_source = "По кадастровому номеру / адресу"
+            else:
+                site.geo_center = (55.751244, 37.618423)
+                site.georef_source = "Требуется выбор зоны МСК"
 
-            final_cad_num = assigned_cad if assigned_cad and assigned_cad != "63:01:0709002:2320" else (params.get("assigned_cad_query") or cad_meta.get("detected_cadastre") or f"Чертёж: {cad_filename}")
+            final_cad_num = assigned_cad or (params.get("assigned_cad_query") or cad_meta.get("detected_cadastre") or f"Чертёж: {cad_filename}")
             site.cadastral_number = final_cad_num
             site.address = f"{parcel_region_name}, {parcel_district_name} ({final_cad_num})"
             parcel_address = site.address
@@ -523,8 +518,8 @@ def _create_site_from_params(
                         "lat": round(site.geo_center[0], 6),
                         "lon": round(site.geo_center[1], 6),
                     },
-                    "calibrated_pkk": gpzu_meta.get("calibrated_pkk", False),
-                    "pkk_shift_m": gpzu_meta.get("pkk_shift_m", 0.0),
+                    "calibrated_pkk": False,
+                    "pkk_shift_m": 0.0,
                     "area_sqm": round(site.area, 1),
                     "area_ha": round(site.area / 10000.0, 2),
                 }
@@ -587,39 +582,39 @@ def _create_site_from_params(
                 is_sub_msk = abs(sub_site.base_offset[0]) > 500 or abs(sub_site.base_offset[1]) > 500
                 det_sub_msk = None
                 if is_sub_msk and (override_lat == 0.0 or override_lon == 0.0):
-                    requested_msk = params.get("msk_zone")
-                    if requested_msk and requested_msk in MSK_PRESETS:
-                        det_sub_msk = requested_msk
+                    requested_msk = (params.get("msk_zone") or "").strip()
+                    if requested_msk:
+                        det_sub_msk, _ = resolve_zone_preset(requested_msk)
                     else:
                         sub_det_cad = sub_meta.get("detected_cadastre")
-                        effective_cad = sub_det_cad if (sub_det_cad and sub_det_cad != "63:01:0709002:2320") else cad_query
+                        effective_cad = sub_det_cad or cad_query
                         c_comps = parse_cadastral_components(effective_cad)
                         c_reg = c_comps.get("region_code") if c_comps else None
                         if c_reg:
                             det_sub_msk = get_msk_key_for_region(c_reg, sub_site.base_offset[0], sub_site.base_offset[1])
-                        if not det_sub_msk:
+                        if not det_sub_msk and c_reg:
                             det_sub_msk = detect_msk_by_coordinates(sub_site.base_offset[0], sub_site.base_offset[1], region_hint=c_reg)
-                        if not det_sub_msk:
-                            det_sub_msk = next(iter(MSK_PRESETS.keys()))
 
-                    exp_lat, exp_lon = auto_lat, auto_lon
-                    sub_det_cad = sub_meta.get("detected_cadastre")
-                    if sub_det_cad and sub_det_cad != "63:01:0709002:2320":
-                        _, _, _, c_lat_sub, c_lon_sub = smart_resolve_location(sub_det_cad)
-                        if c_lat_sub != 0.0 and c_lon_sub != 0.0:
-                            exp_lat, exp_lon = c_lat_sub, c_lon_sub
-                            site.cadastral_number = sub_det_cad
-                    if (exp_lat == 0.0 or exp_lon == 0.0) and det_sub_msk in MSK_PRESETS:
-                        preset = MSK_PRESETS[det_sub_msk]
-                        exp_lat, exp_lon = preset["default_lat"], preset["default_lon"]
-                    sub_lat, sub_lon = msk_to_wgs84_coords(
-                        sub_site.base_offset[0],
-                        sub_site.base_offset[1],
-                        det_sub_msk,
-                        axis_order="auto",
-                        expected_center=(exp_lat, exp_lon),
-                    )
-                    site.geo_center = (sub_lat, sub_lon)
+                    if det_sub_msk:
+                        exp_lat, exp_lon = auto_lat, auto_lon
+                        sub_det_cad = sub_meta.get("detected_cadastre")
+                        if sub_det_cad:
+                            _, _, _, c_lat_sub, c_lon_sub = smart_resolve_location(sub_det_cad)
+                            if c_lat_sub != 0.0 and c_lon_sub != 0.0:
+                                exp_lat, exp_lon = c_lat_sub, c_lon_sub
+                                site.cadastral_number = sub_det_cad
+                        if (exp_lat == 0.0 or exp_lon == 0.0) and det_sub_msk in MSK_PRESETS:
+                            preset = MSK_PRESETS[det_sub_msk]
+                            exp_lat, exp_lon = preset["default_lat"], preset["default_lon"]
+                        sub_cad_swap = bool(params.get("cad_swap_xy", False))
+                        sub_lat, sub_lon = msk_to_wgs84_coords(
+                            sub_site.base_offset[0],
+                            sub_site.base_offset[1],
+                            det_sub_msk,
+                            axis_order="swap" if sub_cad_swap else "auto",
+                            expected_center=(exp_lat, exp_lon),
+                        )
+                        site.geo_center = (sub_lat, sub_lon)
 
                 site.georef_source = f"Контур из чертежа {cad_filename} ({site.area:,.0f} м²)"
                 site.cad_info = {
@@ -642,8 +637,8 @@ def _create_site_from_params(
                         "lat": round(site.geo_center[0], 6),
                         "lon": round(site.geo_center[1], 6),
                     },
-                    "calibrated_pkk": gpzu_meta.get("calibrated_pkk", False),
-                    "pkk_shift_m": gpzu_meta.get("pkk_shift_m", 0.0),
+                    "calibrated_pkk": False,
+                    "pkk_shift_m": 0.0,
                     "area_sqm": round(site.area, 1),
                     "area_ha": round(site.area / 10000.0, 2),
                 }

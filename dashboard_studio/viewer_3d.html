@@ -1,0 +1,1358 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>3D-визуализация застройки участка</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+  <style>
+    :root {
+      --ink: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --panel-bg: rgba(255, 255, 255, 0.96);
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: var(--ink);
+      background: #f4f2ed;
+      overflow: hidden;
+    }
+    #map-container {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 100%;
+      background: #f4f2ed;
+    }
+    #map {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #f4f2ed;
+    }
+    .panel-toggle-btn {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 30;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--ink);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      cursor: pointer;
+      display: none;
+    }
+    .ui-panel {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      z-index: 20;
+      width: 320px;
+      max-height: calc(100% - 28px);
+      overflow-y: auto;
+      background: var(--panel-bg);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(226, 232, 240, 0.9);
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+      font-size: 13px;
+      transition: transform 0.25s ease, opacity 0.25s ease;
+    }
+    .ui-panel.collapsed {
+      transform: translateX(-340px);
+      opacity: 0;
+      pointer-events: none;
+    }
+    .panel-header {
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 4px;
+    }
+    .panel-title {
+      font-size: 15.5px;
+      font-weight: 700;
+      letter-spacing: -0.2px;
+      margin: 0;
+      color: var(--ink);
+    }
+    .close-panel-btn {
+      background: transparent;
+      border: none;
+      font-size: 16px;
+      color: var(--muted);
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .panel-subtitle {
+      font-size: 11.5px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .reset-btn {
+      margin-top: 8px;
+      width: 100%;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .reset-btn:hover {
+      background: #dbeafe;
+      color: var(--accent-hover);
+    }
+    .group {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .group:last-child {
+      border-bottom: none;
+    }
+    .group-title {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin-bottom: 8px;
+    }
+    select {
+      width: 100%;
+      padding: 7px 10px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--ink);
+      outline: none;
+      cursor: pointer;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-height: 28px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .toggle-row input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .toggle-row .count-badge {
+      margin-left: auto;
+      font-size: 11px;
+      color: #64748b;
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+    .slider-wrap {
+      margin-top: 8px;
+    }
+    .slider-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #475569;
+      margin-bottom: 4px;
+    }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+    .tep-table {
+      width: 100%;
+      font-size: 12px;
+      border-collapse: collapse;
+      margin-top: 4px;
+    }
+    .tep-table td {
+      padding: 4px 0;
+      border-bottom: 1px dashed #f1f5f9;
+    }
+    .tep-table td.label {
+      color: var(--muted);
+    }
+    .tep-table td.val {
+      text-align: right;
+      font-weight: 600;
+      color: var(--ink);
+      font-variant-numeric: tabular-nums;
+    }
+    .legend-box {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-top: 6px;
+      font-size: 11.5px;
+      color: #475569;
+    }
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .legend-chip {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .maplibregl-popup-content {
+      border-radius: 10px;
+      padding: 12px 14px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.18);
+      border: 1px solid #e2e8f0;
+      font-size: 12.5px;
+      line-height: 1.45;
+      min-width: 230px;
+    }
+    .popup-title {
+      font-weight: 700;
+      font-size: 13.5px;
+      color: #0f172a;
+      margin-bottom: 6px;
+      padding-bottom: 4px;
+      border-bottom: 2px solid var(--accent);
+    }
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 3px 0;
+    }
+    .popup-label { color: #64748b; }
+    .popup-val { font-weight: 600; color: #1e293b; }
+    .compass-hint {
+      position: absolute;
+      bottom: 14px;
+      right: 14px;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.92);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      color: #475569;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      pointer-events: none;
+    }
+    .loading-notice {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 5;
+      background: rgba(255, 255, 255, 0.94);
+      padding: 14px 22px;
+      border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      font-size: 13.5px;
+      font-weight: 600;
+      color: #334155;
+      display: none;
+    }
+  
+    .v3d-empty-overlay {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 15;
+      pointer-events: none;
+      background: rgba(244, 242, 237, 0.55);
+    }
+    .v3d-stage-pill {
+      position: absolute;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.88);
+      color: #fff;
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      z-index: 10;
+      pointer-events: auto;
+    }
+    .v3d-stage-pill button {
+      background: #2563eb;
+      color: #fff;
+      border: none;
+      border-radius: 12px;
+      padding: 3px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .v3d-stage-pill button:hover {
+      background: #1d4ed8;
+    }
+
+    .v3d-empty-card {
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px 30px;
+      text-align: center;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+      pointer-events: auto;
+    }
+
+  </style>
+</head>
+<body>
+<div id="map-container">
+  <div id="map"></div>
+
+  <div id="v3d-empty-overlay" class="v3d-empty-overlay">
+    <div class="v3d-empty-card">
+      <div style="font-size: 34px; margin-bottom: 8px;">🏢</div>
+      <div style="font-weight: 700; font-size: 15.5px; margin-bottom: 5px; color: var(--ink);">Участок не выбран</div>
+      <div style="font-size: 12.5px; color: var(--muted); max-width: 320px; line-height: 1.45;">
+        Задайте кадастровый номер или загрузите чертеж / ГПЗУ на Шаге 1, чтобы отобразить 3D-модель территории.
+      </div>
+    </div>
+  </div>
+
+  <div id="v3d-stage-pill" class="v3d-stage-pill" style="display: none;"></div>
+
+  <div id="loading-msg" class="loading-notice">Загрузка 3D-сцены...</div>
+
+  <button id="btn-show-panel" class="panel-toggle-btn" type="button">☰ Меню и ТЭП</button>
+
+  <div class="compass-hint">
+    🖱️ ПКМ / Ctrl + ЛКМ — вращение и наклон | Колесико — зум
+  </div>
+
+  <aside id="ui-panel" class="ui-panel">
+    <header class="panel-header">
+      <div class="panel-header-top">
+        <h1 class="panel-title">3D-визуализация застройки участка</h1>
+        <button id="btn-hide-panel" class="close-panel-btn" title="Свернуть панель" type="button">✕</button>
+      </div>
+      <div class="panel-subtitle" id="v3d-subtitle">Кадастр: <b>не выбран</b></div>
+      <button id="btn-reset-view" class="reset-btn" type="button">Вернуться к участку ↗</button>
+    </header>
+
+    <div class="group">
+      <div class="group-title">Картографическая подложка</div>
+      <select id="select-basemap">
+        <option value="osm" selected>OpenStreetMap (Схема)</option>
+        <option value="light">Светлая архитектурная (OSM Light)</option>
+        <option value="satellite">Спутник (Esri World Imagery)</option>
+        <option value="dark">Тёмная подложка (Esri Dark)</option>
+        <option value="none">Без подложки (Холст)</option>
+      </select>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Раскраска 3D-зданий</div>
+      <select id="select-color-mode">
+        <option value="floors">По этажности (Градиент)</option>
+        <option value="buildings">По корпусам</option>
+        <option value="categories">По типам секций</option>
+        <option value="neutral">Нейтральный архитектурный</option>
+      </select>
+
+      <div id="legend-wrap" class="legend-box"></div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Слои генплана</div>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-buildings" checked>
+        <span>3D Корпуса</span>
+        <span class="count-badge" id="v3d-count-buildings">0 секц.</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-surroundings" checked>
+        <span>Окружение (OSM)</span>
+        <span class="count-badge" id="count-surroundings">0 зд.</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-roads" checked>
+        <span>Улично-дорожная сеть</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-buildable" checked>
+        <span>Зона допустимой застройки</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-boundary" checked>
+        <span>Граница участка</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-redlines" checked>
+        <span>Красные линии</span>
+      </label>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Фильтр по этажности</div>
+      <div class="slider-wrap">
+        <div class="slider-label">
+          <span>Мин. этажей:</span>
+          <b id="val-floor-min">1</b>
+        </div>
+        <input type="range" id="slider-floor-min" min="1" max="35" value="1" step="1">
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">ТЭП земельного участка</div>
+      <table class="tep-table">
+        <tr><td class="label">Площадь участка:</td><td class="val" id="v3d-tep-site-area">—</td></tr>
+        <tr><td class="label">Количество корпусов:</td><td class="val" id="v3d-tep-buildings-count">—</td></tr>
+        <tr><td class="label">Секций всего:</td><td class="val" id="v3d-tep-sections-count">—</td></tr>
+        <tr><td class="label">Площадь застройки:</td><td class="val" id="v3d-tep-footprint-area">—</td></tr>
+        <tr><td class="label">Плотность (FAR):</td><td class="val" id="v3d-tep-far">—</td></tr>
+        <tr><td class="label">Процент застройки (BCR):</td><td class="val" id="v3d-tep-bcr">—</td></tr>
+        <tr><td class="label">Общая площадь (GFA):</td><td class="val" id="v3d-tep-gfa">—</td></tr>
+        <tr><td class="label">Жилая площадь:</td><td class="val" id="v3d-tep-living-area">—</td></tr>
+        <tr><td class="label">Квартир всего:</td><td class="val" id="v3d-tep-apartments">—</td></tr>
+        <tr><td class="label">Расчетное население:</td><td class="val" id="v3d-tep-population">—</td></tr>
+        <tr><td class="label">Машиномест:</td><td class="val" id="v3d-tep-parking">—</td></tr>
+        <tr><td class="label">Доля озеленения:</td><td class="val" id="v3d-tep-greenery">—</td></tr>
+      </table>
+    </div>
+  </aside>
+</div>
+
+<script type="application/json" id="city-data">
+{
+  "boundary": {"type": "FeatureCollection", "features": []},
+  "buildable": {"type": "FeatureCollection", "features": []},
+  "zouit": {"type": "FeatureCollection", "features": []},
+  "red_lines": {"type": "FeatureCollection", "features": []},
+  "roads": {"type": "FeatureCollection", "features": []},
+  "parking": {"type": "FeatureCollection", "features": []},
+  "buildings": {"type": "FeatureCollection", "features": []},
+  "surroundings": {"type": "FeatureCollection", "features": []}
+}
+</script>
+
+<script>
+  let DATA = JSON.parse(document.getElementById('city-data').textContent);
+  window.DATA = DATA;
+
+  const BASEMAP_CONFIGS = {
+    light: {
+      sourceId: 'carto-light-tiles',
+      sourceDef: {
+        type: 'raster',
+        tiles: [
+          'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+          'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+          'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png'
+        ],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+      },
+      paint: {}
+    },
+    osm: {
+      sourceId: 'osm-tiles',
+      sourceDef: {
+        type: 'raster',
+        tiles: [
+          'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+        ],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      },
+      paint: {}
+    },
+    satellite: {
+      sourceId: 'esri-sat',
+      sourceDef: {
+        type: 'raster',
+        tiles: [
+          'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+        ],
+        tileSize: 256,
+        attribution: '&copy; Esri &mdash; World Imagery'
+      },
+      paint: {}
+    },
+    dark: {
+      sourceId: 'carto-dark-tiles',
+      sourceDef: {
+        type: 'raster',
+        tiles: [
+          'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+          'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
+          'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
+        ],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: '&copy; OpenStreetMap &copy; CARTO'
+      },
+      paint: {}
+    },
+    none: null
+  };
+
+  // Вычисление точного Bounding Box и геометрического центра
+  function computeBounds(fcList) {
+    let minLon = 180, minLat = 90, maxLon = -180, maxLat = -90;
+    let count = 0;
+
+    function walk(coords) {
+      if (Array.isArray(coords) && coords.length >= 2 && typeof coords[0] === 'number' && typeof coords[1] === 'number') {
+        const lon = coords[0];
+        const lat = coords[1];
+        if (lon < minLon) minLon = lon;
+        if (lon > maxLon) maxLon = lon;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        count++;
+      } else if (Array.isArray(coords)) {
+        coords.forEach(walk);
+      }
+    }
+
+    fcList.forEach(fc => {
+      if (fc && fc.features) {
+        fc.features.forEach(f => {
+          if (f.geometry && f.geometry.coordinates) {
+            walk(f.geometry.coordinates);
+          }
+        });
+      }
+    });
+
+    if (count === 0) return null;
+    return [[minLon, minLat], [maxLon, maxLat]];
+  }
+
+  let siteBounds = computeBounds([DATA.boundary, DATA.buildings]);
+  let centerLon = siteBounds ? (siteBounds[0][0] + siteBounds[1][0]) / 2 : 37.6173;
+  let centerLat = siteBounds ? (siteBounds[0][1] + siteBounds[1][1]) / 2 : 55.7558;
+
+  // Оценка начального зума по размеру участка
+  const dLon = siteBounds ? (siteBounds[1][0] - siteBounds[0][0]) : 0.01;
+  const dLat = siteBounds ? (siteBounds[1][1] - siteBounds[0][1]) : 0.01;
+  const maxSpan = Math.max(dLon, dLat);
+  let initZoom = siteBounds ? 16.5 : 9.0;
+  if (siteBounds) {
+    if (maxSpan > 0.05) initZoom = 12.5;
+    else if (maxSpan > 0.02) initZoom = 14.0;
+    else if (maxSpan > 0.008) initZoom = 15.2;
+    else if (maxSpan > 0.003) initZoom = 16.2;
+    else initZoom = 16.8;
+  }
+
+  const initBasemapKey = 'osm';
+
+  if (!window.maplibregl) {
+    document.getElementById('loading-msg').style.display = 'block';
+    document.getElementById('loading-msg').innerText = 'Не удалось загрузить библиотеку 3D-карты MapLibre GL.';
+  }
+
+  let map = null;
+  let mapInitialized = false;
+
+  function initMapIfReady() {
+    if (mapInitialized) return true;
+    const container = document.getElementById('map');
+    if (!container) return false;
+    const cWidth = container.clientWidth;
+    const cHeight = container.clientHeight;
+    // Если контейнер скрыт (display: none или размер 0) — откладываем создание карты
+    if (cWidth < 50 || cHeight < 50) {
+      return false;
+    }
+
+    mapInitialized = true;
+
+    map = new maplibregl.Map({
+      container: 'map',
+      style: {
+        version: 8,
+        sources: {},
+        layers: [
+          {
+            id: 'blank-bg',
+            type: 'background',
+            paint: { 'background-color': '#f4f2ed' }
+          }
+        ]
+      },
+      center: [centerLon, centerLat],
+      zoom: initZoom,
+      pitch: 45,
+      bearing: 0,
+      antialias: true
+    });
+    window.map = map;
+
+    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+    map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-right');
+
+    map.on('style.load', () => {
+      initLayers();
+      if (pendingBasemap) {
+        switchBasemap(pendingBasemap);
+      }
+    });
+
+    if (map.isStyleLoaded()) {
+      initLayers();
+    }
+
+    setupControls();
+
+    setTimeout(() => fitToData(false), 80);
+    return true;
+  }
+
+  const COLOR_EXPRESSIONS = {
+    floors: [
+      'interpolate', ['linear'], ['to-number', ['get', 'floors'], 1],
+      1, '#38bdf8',
+      5, '#3b82f6',
+      9, '#10b981',
+      12, '#f59e0b',
+      16, '#f97316',
+      24, '#ef4444'
+    ],
+    buildings: ['coalesce', ['get', 'color_building'], '#3b82f6'],
+    categories: ['coalesce', ['get', 'color_category'], '#2E86AB'],
+    neutral: '#cbd5e1'
+  };
+
+  function updateLegend(mode) {
+    const el = document.getElementById('legend-wrap');
+    if (!el) return;
+    if (mode === 'floors') {
+      el.innerHTML = `
+        <div class="legend-row"><span class="legend-chip" style="background:#38bdf8"></span> 1–4 этажа</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#3b82f6"></span> 5–8 этажей</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#10b981"></span> 9–11 этажей</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#f59e0b"></span> 12–15 этажей</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#f97316"></span> 16–23 этажа</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#ef4444"></span> 24+ этажей</div>
+      `;
+    } else if (mode === 'categories') {
+      el.innerHTML = `
+        <div class="legend-row"><span class="legend-chip" style="background:#2E86AB"></span> Рядовая секция</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#E67E22"></span> Угловая секция</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#8E44AD"></span> Торцевая секция</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#9B59B6"></span> Точечная башня</div>
+      `;
+    } else if (mode === 'buildings') {
+      el.innerHTML = '<div style="color:#64748b;font-size:11px;">Каждый корпус окрашен индивидуальным цветом</div>';
+    } else {
+      el.innerHTML = '<div style="color:#64748b;font-size:11px;">Монохромный архитектурный стиль</div>';
+    }
+  }
+
+  function installLayers() {
+    if (!map || !map.isStyleLoaded()) return false;
+    const emptyFC = { type: 'FeatureCollection', features: [] };
+
+    // 1. Источники данных (всегда регистрируются)
+    if (!map.getSource('boundary')) {
+      map.addSource('boundary', { type: 'geojson', data: DATA.boundary || emptyFC });
+    } else if (DATA.boundary) {
+      map.getSource('boundary').setData(DATA.boundary);
+    }
+
+    if (!map.getSource('buildable')) {
+      map.addSource('buildable', { type: 'geojson', data: DATA.buildable || emptyFC });
+    } else if (DATA.buildable) {
+      map.getSource('buildable').setData(DATA.buildable);
+    }
+
+    if (!map.getSource('zouit')) {
+      map.addSource('zouit', { type: 'geojson', data: DATA.zouit || emptyFC });
+    } else if (DATA.zouit) {
+      map.getSource('zouit').setData(DATA.zouit);
+    }
+
+    if (!map.getSource('red_lines')) {
+      map.addSource('red_lines', { type: 'geojson', data: DATA.red_lines || emptyFC });
+    } else if (DATA.red_lines) {
+      map.getSource('red_lines').setData(DATA.red_lines);
+    }
+
+    if (!map.getSource('roads')) {
+      map.addSource('roads', { type: 'geojson', data: DATA.roads || emptyFC });
+    } else if (DATA.roads) {
+      map.getSource('roads').setData(DATA.roads);
+    }
+
+    if (!map.getSource('surroundings')) {
+      map.addSource('surroundings', { type: 'geojson', data: DATA.surroundings || emptyFC });
+    } else if (DATA.surroundings) {
+      map.getSource('surroundings').setData(DATA.surroundings);
+    }
+
+    if (!map.getSource('buildings')) {
+      map.addSource('buildings', { type: 'geojson', data: DATA.buildings || emptyFC });
+    } else if (DATA.buildings) {
+      map.getSource('buildings').setData(DATA.buildings);
+    }
+
+    // Слой-разделитель: плоские векторные слои (граница, дороги, красные линии)
+    // должны ВСЕГДА ложиться НИЖЕ 3D-зданий и фонового окружения
+    const beforeVectorId = (map.getLayer('surroundings-3d') && 'surroundings-3d') ||
+                           (map.getLayer('buildings-3d') && 'buildings-3d') ||
+                           undefined;
+
+    // 2. Граница участка (полупрозрачная заливка + контрастная линия)
+    if (!map.getLayer('boundary-fill')) {
+      map.addLayer({
+        id: 'boundary-fill',
+        type: 'fill',
+        source: 'boundary',
+        paint: {
+          'fill-color': '#3b82f6',
+          'fill-opacity': 0.12
+        }
+      }, beforeVectorId);
+    }
+    if (!map.getLayer('boundary-line')) {
+      map.addLayer({
+        id: 'boundary-line',
+        type: 'line',
+        source: 'boundary',
+        paint: {
+          'line-color': '#0369a1',
+          'line-width': 3.5
+        }
+      }, beforeVectorId);
+    }
+
+    // 3. Зона допустимой застройки
+    if (!map.getLayer('buildable-fill')) {
+      map.addLayer({
+        id: 'buildable-fill',
+        type: 'fill',
+        source: 'buildable',
+        paint: {
+          'fill-color': '#22c55e',
+          'fill-opacity': 0.10
+        }
+      }, beforeVectorId);
+    }
+    if (!map.getLayer('buildable-line')) {
+      map.addLayer({
+        id: 'buildable-line',
+        type: 'line',
+        source: 'buildable',
+        paint: {
+          'line-color': '#16a34a',
+          'line-width': 2.0
+        }
+      }, beforeVectorId);
+    }
+
+    // ЗОУИТ (охранные зоны и ограничения)
+    if (!map.getLayer('zouit-fill')) {
+      map.addLayer({
+        id: 'zouit-fill',
+        type: 'fill',
+        source: 'zouit',
+        paint: {
+          'fill-color': '#ef4444',
+          'fill-opacity': 0.20
+        }
+      }, beforeVectorId);
+    }
+    if (!map.getLayer('zouit-line')) {
+      map.addLayer({
+        id: 'zouit-line',
+        type: 'line',
+        source: 'zouit',
+        paint: {
+          'line-color': '#dc2626',
+          'line-width': 2.0,
+          'line-dasharray': [3, 2]
+        }
+      }, beforeVectorId);
+    }
+
+    // 4. Красные линии
+    if (!map.getLayer('redlines-line')) {
+      map.addLayer({
+        id: 'redlines-line',
+        type: 'line',
+        source: 'red_lines',
+        paint: {
+          'line-color': '#ef4444',
+          'line-width': 2.5
+        }
+      }, beforeVectorId);
+    }
+
+    // 5. Внутриквартальные дороги (УДС)
+    if (!map.getLayer('roads-buffer-fill')) {
+      map.addLayer({
+        id: 'roads-buffer-fill',
+        type: 'fill',
+        source: 'roads',
+        filter: ['==', ['get', 'type'], 'road_buffer'],
+        paint: {
+          'fill-color': '#94a3b8',
+          'fill-opacity': 0.35
+        }
+      }, beforeVectorId);
+    }
+    if (!map.getLayer('roads-fill')) {
+      map.addLayer({
+        id: 'roads-fill',
+        type: 'fill',
+        source: 'roads',
+        filter: ['==', ['get', 'type'], 'road_corridor'],
+        paint: {
+          'fill-color': '#334155',
+          'fill-opacity': 0.95
+        }
+      }, beforeVectorId);
+    }
+    if (!map.getLayer('roads-line')) {
+      map.addLayer({
+        id: 'roads-line',
+        type: 'line',
+        source: 'roads',
+        filter: ['==', ['get', 'type'], 'road_centerline'],
+        paint: {
+          'line-color': '#ffffff',
+          'line-width': 2.0,
+          'line-dasharray': [3, 3]
+        }
+      }, beforeVectorId);
+    }
+
+    // 6. Окружающая застройка (OSM)
+    if (!map.getLayer('surroundings-3d')) {
+      map.addLayer({
+        id: 'surroundings-3d',
+        type: 'fill-extrusion',
+        source: 'surroundings',
+        paint: {
+          'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
+          'fill-extrusion-base': 0,
+          'fill-extrusion-color': '#cbd5e1',
+          'fill-extrusion-opacity': 0.78
+        }
+      }, map.getLayer('buildings-3d') ? 'buildings-3d' : undefined);
+    }
+
+    // 7. 3D-здания проекта (экструзия)
+    if (!map.getLayer('buildings-3d')) {
+      const colorSelect = document.getElementById('select-color-mode');
+      const colorMode = (colorSelect && colorSelect.value) || 'floors';
+      map.addLayer({
+        id: 'buildings-3d',
+        type: 'fill-extrusion',
+        source: 'buildings',
+        paint: {
+          'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
+          'fill-extrusion-base': ['to-number', ['coalesce', ['get', 'min_height'], 0], 0],
+          'fill-extrusion-color': COLOR_EXPRESSIONS[colorMode] || COLOR_EXPRESSIONS.floors,
+          'fill-extrusion-opacity': 0.95
+        }
+      });
+    }
+  }
+
+  let pendingBasemap = 'osm';
+
+  function switchBasemap(key) {
+    if (!key) return;
+    if (!map || !map.isStyleLoaded()) {
+      pendingBasemap = key;
+      return;
+    }
+    pendingBasemap = null;
+
+    if (map.getLayer('basemap-raster')) {
+      map.removeLayer('basemap-raster');
+    }
+
+    const sel = document.getElementById('select-basemap');
+    if (sel && sel.value !== key) {
+      sel.value = key;
+    }
+
+    if (key === 'none') {
+      return;
+    }
+
+    const cfg = BASEMAP_CONFIGS[key];
+    if (!cfg) return;
+
+    if (!map.getSource(cfg.sourceId)) {
+      map.addSource(cfg.sourceId, cfg.sourceDef);
+    }
+
+    // Подложка ВСЕГДА кладется под самый нижний векторный слой участка
+    const candidateIds = [
+      'boundary-fill', 'boundary-line', 'buildable-fill', 'buildable-line',
+      'zouit-fill', 'zouit-line', 'redlines-line',
+      'roads-buffer-fill', 'roads-fill', 'roads-line',
+      'surroundings-3d', 'buildings-3d'
+    ];
+    let beforeId = undefined;
+    for (const id of candidateIds) {
+      if (map.getLayer(id)) {
+        beforeId = id;
+        break;
+      }
+    }
+
+    try {
+      map.addLayer({
+        id: 'basemap-raster',
+        type: 'raster',
+        source: cfg.sourceId,
+        paint: cfg.paint || {}
+      }, beforeId);
+    } catch (err) {
+      console.warn('[3D Basemap] Placement before ' + beforeId + ' failed, appending:', err);
+      try {
+        map.addLayer({
+          id: 'basemap-raster',
+          type: 'raster',
+          source: cfg.sourceId,
+          paint: cfg.paint || {}
+        });
+      } catch (e2) {
+        console.error('[3D Basemap] Critical addLayer error:', e2);
+      }
+    }
+  }
+
+  function initLayers() {
+    installLayers();
+    switchBasemap(initBasemapKey);
+    updateLegend(document.getElementById('select-color-mode')?.value || 'floors');
+  }
+
+  function fitToData(animated = true) {
+    if (!map) return;
+    if (!siteBounds && (!DATA || (!DATA.boundary?.features?.length && !DATA.buildings?.features?.length))) {
+      return; // No bounds yet, keep initial neutral view
+    }
+    map.resize();
+    const container = map.getContainer();
+    const cWidth = container ? container.clientWidth : window.innerWidth;
+    const cHeight = container ? container.clientHeight : window.innerHeight;
+    if (cWidth < 50 || cHeight < 50) return;
+
+    const panel = document.getElementById('ui-panel');
+    const isPanelVisible = panel && !panel.classList.contains('collapsed');
+    const leftPad = isPanelVisible && cWidth > 680 ? Math.min(340, Math.floor(cWidth * 0.35)) : 30;
+    const rightPad = Math.min(40, Math.floor(cWidth * 0.08));
+    const vPad = Math.min(50, Math.floor(cHeight * 0.12));
+
+    try {
+      map.fitBounds(siteBounds, {
+        padding: { top: vPad, bottom: vPad, left: leftPad, right: rightPad },
+        pitch: 45,
+        bearing: 0,
+        duration: animated ? 800 : 0,
+        maxZoom: 18.0
+      });
+    } catch (err) {
+      console.warn("fitBounds warning:", err);
+    }
+  }
+
+  let controlsConfigured = false;
+  function setupControls() {
+    if (controlsConfigured) return;
+    controlsConfigured = true;
+
+    // Панель: скрыть/показать
+    const uiPanel = document.getElementById('ui-panel');
+    const btnHide = document.getElementById('btn-hide-panel');
+    const btnShow = document.getElementById('btn-show-panel');
+
+    const isEmbedded = !false;
+    if (isEmbedded || window.innerWidth < 720) {
+      if (uiPanel) {
+        uiPanel.classList.add('collapsed');
+        if (btnShow) btnShow.style.display = 'block';
+      }
+    }
+
+    if (btnHide && btnShow && uiPanel) {
+      btnHide.addEventListener('click', () => {
+        uiPanel.classList.add('collapsed');
+        btnShow.style.display = 'block';
+        setTimeout(() => fitToData(true), 250);
+      });
+      btnShow.addEventListener('click', () => {
+        uiPanel.classList.remove('collapsed');
+        btnShow.style.display = 'none';
+        setTimeout(() => fitToData(true), 250);
+      });
+    }
+
+    // Сброс ракурса
+    const btnReset = document.getElementById('btn-reset-view');
+    if (btnReset) {
+      btnReset.addEventListener('click', () => fitToData(true));
+    }
+
+    // Смена подложки
+    const selBasemap = document.getElementById('select-basemap');
+    if (selBasemap) {
+      selBasemap.addEventListener('change', (e) => {
+        switchBasemap(e.target.value);
+      });
+    }
+
+    // Смена палитры
+    const selColor = document.getElementById('select-color-mode');
+    if (selColor) {
+      selColor.addEventListener('change', (e) => {
+        const mode = e.target.value;
+        updateLegend(mode);
+        if (map && map.getLayer('buildings-3d')) {
+          map.setPaintProperty('buildings-3d', 'fill-extrusion-color', COLOR_EXPRESSIONS[mode]);
+        }
+      });
+    }
+
+    // Фильтр этажности
+    const floorSlider = document.getElementById('slider-floor-min');
+    const floorVal = document.getElementById('val-floor-min');
+    if (floorSlider && floorVal) {
+      floorSlider.addEventListener('input', (e) => {
+        const minF = parseInt(e.target.value, 10);
+        floorVal.textContent = minF;
+        if (map && map.getLayer('buildings-3d')) {
+          map.setFilter('buildings-3d', ['>=', ['to-number', ['get', 'floors'], 1], minF]);
+        }
+      });
+    }
+
+    // Чекбоксы слоев
+    function setupToggle(checkboxId, layerIds) {
+      const cb = document.getElementById(checkboxId);
+      if (!cb) return;
+      cb.addEventListener('change', (e) => {
+        const vis = e.target.checked ? 'visible' : 'none';
+        layerIds.forEach(id => {
+          if (map && map.getLayer(id)) {
+            map.setLayoutProperty(id, 'visibility', vis);
+          }
+        });
+      });
+    }
+    setupToggle('toggle-buildings', ['buildings-3d']);
+    setupToggle('toggle-surroundings', ['surroundings-3d']);
+    setupToggle('toggle-roads', ['roads-fill', 'roads-line', 'roads-buffer-fill']);
+    setupToggle('toggle-boundary', ['boundary-line', 'boundary-fill']);
+    const surrCntInit = (DATA.surroundings && DATA.surroundings.features) ? DATA.surroundings.features.length : 0;
+    const badgeSurrInit = document.getElementById('count-surroundings');
+    if (badgeSurrInit) badgeSurrInit.textContent = `${surrCntInit} зд.`;
+    setupToggle('toggle-buildable', ['buildable-line', 'buildable-fill']);
+    setupToggle('toggle-redlines', ['redlines-line']);
+
+    // Popup карточки при клике
+    const popup = new maplibregl.Popup({
+      closeButton: true,
+      closeOnClick: true,
+      maxWidth: '310px'
+    });
+
+    if (map) {
+      map.on('click', 'surroundings-3d', (e) => {
+        if (!e.features.length) return;
+        const p = e.features[0].properties;
+        const content = `
+          <div class="popup-title">${p.name || 'Окружающее здание'}</div>
+          <div class="popup-row"><span class="popup-label">Тип объекта:</span><span class="popup-val">${p.building_type || 'Здание'}</span></div>
+          <div class="popup-row"><span class="popup-label">Этажность:</span><span class="popup-val">${p.levels || p.floors || '-'} эт. (${p.height || '-'} м)</span></div>
+          <div class="popup-row"><span class="popup-label">Источник:</span><span class="popup-val" style="color:#64748b;">OpenStreetMap (OSM)</span></div>
+          <div style="margin-top:6px;padding-top:4px;border-top:1px dashed #cbd5e1;font-size:11px;color:#64748b;">
+            Существующая фоновая застройка окружения
+          </div>
+        `;
+        popup.setLngLat(e.lngLat).setHTML(content).addTo(map);
+      });
+
+      map.on('mouseenter', 'surroundings-3d', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'surroundings-3d', () => {
+        map.getCanvas().style.cursor = '';
+      });
+
+      map.on('click', 'buildings-3d', (e) => {
+        if (!e.features.length) return;
+        const p = e.features[0].properties;
+
+        const content = `
+          <div class="popup-title">${p.full_name}</div>
+          <div class="popup-row"><span class="popup-label">Тип секции:</span><span class="popup-val">${p.category_name}</span></div>
+          <div class="popup-row"><span class="popup-label">Этажность:</span><span class="popup-val">${p.floors} эт. (h = ${p.height} м)</span></div>
+          <div class="popup-row"><span class="popup-label">Высота типового этажа:</span><span class="popup-val">${p.floor_height} м</span></div>
+          <div class="popup-row"><span class="popup-label">Площадь пятна:</span><span class="popup-val">${p.footprint_area} м²</span></div>
+          <div class="popup-row"><span class="popup-label">Общая площадь (GFA):</span><span class="popup-val">${p.gfa} м²</span></div>
+          <div class="popup-row"><span class="popup-label">Жилая площадь:</span><span class="popup-val">${p.living_area} м²</span></div>
+          <div class="popup-row"><span class="popup-label">Квартир в секции:</span><span class="popup-val">${p.apartments} шт.</span></div>
+          <div class="popup-row"><span class="popup-label">1-й этаж коммерция:</span><span class="popup-val">${p.has_commercial ? 'Да' : 'Нет'}</span></div>
+          <div style="margin-top:6px;padding-top:4px;border-top:1px dashed #cbd5e1;font-size:11px;color:#64748b;">
+            <b>${p.building_name}</b>: этажность ${p.building_floors} эт. (${p.building_height} м), ${p.building_sections} секц.
+          </div>
+        `;
+
+        popup.setLngLat(e.lngLat).setHTML(content).addTo(map);
+
+        if (window.parent && window.parent !== window) {
+          try {
+            window.parent.postMessage({ type: 'section_click', section_id: p.id || p.section_id }, '*');
+          } catch (_) {}
+        }
+      });
+
+      map.on('mouseenter', 'buildings-3d', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'buildings-3d', () => {
+        map.getCanvas().style.cursor = '';
+      });
+    }
+  }
+
+  
+  function updateTepTable(tep, buildingsFC) {
+    if (!tep && buildingsFC && buildingsFC.features && buildingsFC.features.length) {
+      let gfa = 0, living = 0, fp = 0, apts = 0;
+      const bSet = new Set();
+      buildingsFC.features.forEach(f => {
+        const p = f.properties || {};
+        gfa += (p.gfa || 0);
+        living += (p.living_area || 0);
+        fp += (p.footprint_area || 0);
+        apts += (p.apartments || 0);
+        if (p.building_name) bSet.add(p.building_name);
+      });
+      tep = {
+        buildings_count: bSet.size || 1,
+        sections_count: buildingsFC.features.length,
+        footprint_area: fp,
+        gfa: gfa,
+        residential_area: living,
+        apartments_total: apts,
+        population: Math.round(living / 28.2)
+      };
+    }
+
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = (val !== undefined && val !== null && val !== '') ? val : '—';
+    };
+
+    if (tep) {
+      const siteArea = tep.site_area || (DATA.boundary && DATA.boundary.features[0] && DATA.boundary.features[0].properties && DATA.boundary.features[0].properties.area) || 0;
+      const siteAreaHa = siteArea ? (siteArea / 10000).toFixed(2) : '—';
+      setVal('v3d-tep-site-area', siteArea ? `${Number(siteArea).toLocaleString('ru-RU', {maximumFractionDigits: 1})} м² (${siteAreaHa} га)` : '—');
+      setVal('v3d-tep-buildings-count', tep.buildings_count ? `${tep.buildings_count} шт.` : '—');
+      setVal('v3d-tep-sections-count', tep.sections_count ? `${tep.sections_count} шт.` : '—');
+      setVal('v3d-tep-footprint-area', tep.footprint_area ? `${Number(tep.footprint_area).toLocaleString('ru-RU', {maximumFractionDigits: 1})} м²` : '—');
+      setVal('v3d-tep-far', tep.far != null ? Number(tep.far).toFixed(2) : (siteArea && tep.gfa ? (tep.gfa / siteArea).toFixed(2) : '—'));
+      const bcrPct = tep.bcr_percent != null ? Number(tep.bcr_percent).toFixed(1) : (tep.bcr != null ? (tep.bcr * 100).toFixed(1) : (siteArea && tep.footprint_area ? (tep.footprint_area / siteArea * 100).toFixed(1) : null));
+      setVal('v3d-tep-bcr', bcrPct != null ? `${bcrPct}%` : '—');
+      setVal('v3d-tep-gfa', tep.gfa ? `${Number(tep.gfa).toLocaleString('ru-RU', {maximumFractionDigits: 1})} м²` : '—');
+      setVal('v3d-tep-living-area', (tep.residential_area || tep.living_area) ? `${Number(tep.residential_area || tep.living_area).toLocaleString('ru-RU', {maximumFractionDigits: 1})} м²` : '—');
+      setVal('v3d-tep-apartments', (tep.apartments_total || tep.apartments) ? `${tep.apartments_total || tep.apartments}` : '—');
+      setVal('v3d-tep-population', tep.population ? `${Number(tep.population).toLocaleString('ru-RU', {maximumFractionDigits: 0})} чел.` : '—');
+      setVal('v3d-tep-parking', (tep.parking_places != null || tep.parking_slots_required != null) ? `${tep.parking_places || tep.parking_slots_required} м/м` : '—');
+      const greenPct = tep.greenery_area_pct != null ? `${Number(tep.greenery_area_pct).toFixed(1)}%` : (tep.greenery_pct != null ? `${Number(tep.greenery_pct).toFixed(1)}%` : '—');
+      setVal('v3d-tep-greenery', greenPct);
+    } else {
+      ['v3d-tep-site-area', 'v3d-tep-buildings-count', 'v3d-tep-sections-count', 'v3d-tep-footprint-area',
+       'v3d-tep-far', 'v3d-tep-bcr', 'v3d-tep-gfa', 'v3d-tep-living-area', 'v3d-tep-apartments',
+       'v3d-tep-population', 'v3d-tep-parking', 'v3d-tep-greenery'].forEach(id => setVal(id, '—'));
+    }
+  }
+
+  function updateViewerData(newData) {
+    if (!newData) return;
+    DATA = newData;
+    window.DATA = newData;
+
+    const overlay = document.getElementById('v3d-empty-overlay');
+    const hasBuildings = DATA.buildings && DATA.buildings.features && DATA.buildings.features.length > 0;
+    const hasBoundary = DATA.boundary && DATA.boundary.features && DATA.boundary.features.length > 0;
+    if (overlay) {
+      overlay.style.display = (hasBuildings || hasBoundary) ? 'none' : 'flex';
+    }
+
+    const badgeBld = document.getElementById('v3d-count-buildings');
+    if (badgeBld) {
+      badgeBld.textContent = `${(DATA.buildings && DATA.buildings.features) ? DATA.buildings.features.length : 0} секц.`;
+    }
+
+    const subTitle = document.getElementById('v3d-subtitle');
+    if (subTitle) {
+      const cad = DATA.cadastral_number || (DATA.boundary && DATA.boundary.features[0] && DATA.boundary.features[0].properties && DATA.boundary.features[0].properties.cadastral_number) || (hasBoundary ? 'Сгенерированный участок' : 'не выбран');
+      subTitle.innerHTML = `Кадастр: <b>${cad}</b>`;
+    }
+
+    updateTepTable(DATA.tep, DATA.buildings);
+
+    const newBounds = computeBounds([DATA.boundary, DATA.buildings]);
+    if (newBounds) {
+      siteBounds = newBounds;
+      centerLon = (siteBounds[0][0] + siteBounds[1][0]) / 2;
+      centerLat = (siteBounds[0][1] + siteBounds[1][1]) / 2;
+    }
+
+    const stagePill = document.getElementById('v3d-stage-pill');
+    if (stagePill) {
+      if (hasBuildings) {
+        stagePill.style.display = 'none';
+      } else if (hasBoundary) {
+        stagePill.style.display = 'flex';
+        stagePill.innerHTML = `<span>📍 Границы участка и УДС загружены</span><button type="button" id="v3d-btn-gen">⚡ Сгенерировать застройку</button>`;
+        const btn = document.getElementById('v3d-btn-gen');
+        if (btn) {
+          btn.onclick = () => {
+            try {
+              if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'requestGenerate' }, '*');
+              }
+            } catch (_) {}
+          };
+        }
+      } else {
+        stagePill.style.display = 'none';
+      }
+    }
+
+    if (!map) {
+      initMapIfReady();
+    } else if (map.isStyleLoaded()) {
+      installLayers();
+      const badgeSurrUpd = document.getElementById('count-surroundings');
+      if (badgeSurrUpd) {
+        badgeSurrUpd.textContent = `${(DATA.surroundings && DATA.surroundings.features) ? DATA.surroundings.features.length : 0} зд.`;
+      }
+      if (hasBuildings || hasBoundary) {
+        setTimeout(() => fitToData(true), 60);
+      }
+    } else {
+      map.once('style.load', () => {
+        installLayers();
+        if (hasBuildings || hasBoundary) {
+          setTimeout(() => fitToData(true), 60);
+        }
+      });
+    }
+  }
+
+  // Единый слушатель сообщений от родительского окна
+  window.addEventListener('message', function(e) {
+    if (!e.data) return;
+    if (e.data.type === 'loadData' && e.data.data) {
+      updateViewerData(e.data.data);
+      if (e.data.basemap && map) {
+        switchBasemap(e.data.basemap);
+      }
+    } else if (e.data.type === 'activate' || e.data.type === 'resize') {
+      if (!map) {
+        initMapIfReady();
+      } else {
+        map.resize();
+        setTimeout(function() { map.resize(); fitToData(false); }, 50);
+        setTimeout(function() { map.resize(); fitToData(false); }, 250);
+      }
+    }
+  });
+
+  // 1. Попытка немедленной инициализации карты (если контейнер уже имеет размер)
+  if (!initMapIfReady()) {
+    // 2. ResizeObserver отслеживает появление контейнера (снятие display: none)
+    if (window.ResizeObserver) {
+      let roTimer = null;
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 50 && entry.contentRect.height > 50) {
+            if (!map) {
+              initMapIfReady();
+            } else {
+              map.resize();
+              clearTimeout(roTimer);
+              roTimer = setTimeout(() => fitToData(false), 80);
+            }
+          }
+        }
+      });
+      const mapEl = document.getElementById('map');
+      if (mapEl) ro.observe(mapEl);
+    }
+
+    // 3. Ожидание через requestAnimationFrame (страховка с лимитом попыток)
+    let waitAttempts = 0;
+    function waitForContainer() {
+      if (!initMapIfReady()) {
+        waitAttempts++;
+        if (waitAttempts < 20) {
+          requestAnimationFrame(waitForContainer);
+        }
+      }
+    }
+    requestAnimationFrame(waitForContainer);
+  } else {
+    window.addEventListener('resize', () => {
+      if (map) map.resize();
+    });
+  }
+
+  // Оповещаем родительский дашборд о готовности фрейма к приёму данных
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'viewer3dReady' }, '*');
+    }
+  } catch(_) {}
+</script>
+</body>
+</html>

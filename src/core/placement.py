@@ -2220,8 +2220,8 @@ class PlacementEngine:
         try:
             footprint = building.footprint
             target = getattr(self, "_active_block_poly", None) or self.site.buildable_area
-            # Строгое вхождение без наезда на нормативный отступ
-            return target.contains(footprint)
+            # Допустимое вхождение с толерантностью к положению на линии застройки (covers)
+            return target.buffer(1e-3).covers(footprint)
         except Exception:
             return False
 

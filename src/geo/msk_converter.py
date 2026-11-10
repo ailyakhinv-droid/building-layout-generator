@@ -35,12 +35,12 @@ MSK_PRESETS: dict[str, dict[str, Any]] = {
         "city": "Самара",
         "central_meridian": 49.03333333333333,  # 49° 02' E
         "latitude_of_origin": 0.0,
-        "false_northing": -5514743.504,
+        "false_northing": -5509414.70,
         "false_easting": 1300000.0,
         "scale_factor": 1.0,
         # Алиасы ключей для обратной совместимости
         "L0_deg": 49.03333333333333,
-        "x0": -5514743.504,
+        "x0": -5509414.70,
         "y0": 1300000.0,
         "default_lat": 53.2502,
         "default_lon": 50.3184,
@@ -50,11 +50,11 @@ MSK_PRESETS: dict[str, dict[str, Any]] = {
         "city": "Тольятти",
         "central_meridian": 52.03333333333333,  # 52° 02' E
         "latitude_of_origin": 0.0,
-        "false_northing": -5514743.504,
+        "false_northing": -5509414.70,
         "false_easting": 2300000.0,
         "scale_factor": 1.0,
         "L0_deg": 52.03333333333333,
-        "x0": -5514743.504,
+        "x0": -5509414.70,
         "y0": 2300000.0,
         "default_lat": 53.5078,
         "default_lon": 49.4204,
@@ -715,7 +715,7 @@ def msk_to_wgs84_coords(
 
     # Варианты False Northing (X0)
     x0_options = [p["x0"]]
-    for alt_x0 in [-5514743.504, -5711057.63, -5414743.504, -5714743.504, -5914743.504, -6000000.0, -4514743.504]:
+    for alt_x0 in [-5509414.70, -5514743.504, -5711057.63, -5414743.504, -5714743.504, -5914743.504, -6000000.0, -4514743.504]:
         if alt_x0 not in x0_options:
             x0_options.append(alt_x0)
 
@@ -750,9 +750,40 @@ def msk_to_wgs84_coords(
             if alt_l0 not in l0_options:
                 l0_options.append(alt_l0)
 
+    # ── 1. Сначала пробуем строго канонические параметры выбранной зоны МСК ───
+    # Если пользователь или система определили конкретный пресет МСК,
+    # мы обязаны сначала проверить проекцию с его ГОСТ-параметрами (x0, y0, L0),
+    # а не перебирать чужие датумы/смещения, смещающие участок на десятки километров.
+    canonical_best: tuple[float, float] | None = None
+    canonical_min_dist = float("inf")
+    cos_lat = math.cos(math.radians(exp_lat))
+
+    for n_raw, e_raw, desc in base_pairs:
+        e_candidates = [e_raw]
+        if e_raw < 1000000.0:
+            if e_raw > 300000.0:
+                e_candidates.append(e_raw + zone_num * 1000000.0)
+            else:
+                e_candidates.append(e_raw + p["y0"])
+        for e in e_candidates:
+            try:
+                lat, lon = _single_gk_inverse(n_raw, e, p)
+                if 41.0 <= lat <= 78.0 and 19.0 <= lon <= 180.0:
+                    dlat = (lat - exp_lat) * 111.0
+                    dlon = (lon - exp_lon) * 111.0 * cos_lat
+                    dist_km = math.sqrt(dlat * dlat + dlon * dlon)
+                    # Если точка лежит в пределах разумного охвата региона (до 500 км)
+                    if dist_km < canonical_min_dist and dist_km <= 500.0:
+                        canonical_min_dist = dist_km
+                        canonical_best = (round(lat, 6), round(lon, 6))
+            except Exception:
+                pass
+
+    if canonical_best is not None:
+        return canonical_best
+
     best_point: tuple[float, float] | None = None
     min_dist_km = float("inf")
-    cos_lat = math.cos(math.radians(exp_lat))
 
     for n_raw, e_raw, desc in base_pairs:
         # Варианты восстановления усечённых координат Востока
@@ -859,13 +890,9 @@ def detect_msk_by_coordinates(
     if v_small < 100000 and v_large < 150000:
         return "МСК-78 (Санкт-Петербург)"
 
-    # Для любых координат пробуем сопоставить с зарегистрированными пресетами
-    for k, p in MSK_PRESETS.items():
-        base_y = p.get("false_easting", 0.0)
-        if base_y > 1000000.0:
-            if abs(v_large - base_y) < 350000.0 and 200000.0 <= v_small <= 850000.0:
-                return k
-
+    # Для общих зональных координат МСК без указания субъекта РФ
+    # эвристика не может однозначно выбрать регион (диапазоны зон 1..4 идентичны по всей России).
+    # Возвращаем None, чтобы система запросила явный выбор МСК у пользователя.
     return None
 
 

@@ -1,52 +1,128 @@
+
+/* Контейнер верхней панели холста (предотвращает наложение кнопок видов и слоев) */
+.canvas-top-bar {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  z-index: 40;
+  pointer-events: none;
+  flex-wrap: wrap;
+}
+.canvas-top-bar > * {
+  pointer-events: auto;
+  flex-shrink: 0;
+}
 /* ==========================================================================
    URBAN / TEP STUDIO — ШАГ 1: ПОСАДКА И ПРОВЕРКА УЧАСТКА
    Craft standard: Impeccable (Tool-grade precision, Autodesk Forma / TestFit)
    ========================================================================== */
 
 :root {
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --font-sans: 'Geist', var(--default-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif);
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
-  /* Dark CAD Slate Palette */
-  --bg-app: #080c14;
-  --bg-panel: #0f172a;
-  --bg-panel-subtle: #141e33;
-  --bg-surface: #1e293b;
-  --bg-surface-hover: #27354d;
-  --bg-surface-active: #334155;
-  --bg-input: #0a0f1d;
+  /* Radix Themes Dark CAD Palette (Slate + Cyan Accent) */
+  /* Tool-Grade CAD Slate Hierarchy (Sharp Layered Contrast) */
+  --bg-app: #070a12;            /* Canvas background - deep obsidian */
+  --bg-panel: #0d1424;          /* Header, left & right panels - dark navy slate */
+  --bg-panel-subtle: #131e36;   /* Elevated cards/tool-sections inside panels */
+  --bg-surface: #1a2744;        /* Button/chip resting surface */
+  --bg-surface-hover: #24375e;  /* Surface hover */
+  --bg-surface-active: #2f477a; /* Surface active */
+  --bg-input: #080d19;          /* Inset/sunken input fields */
 
-  --border-muted: #1e293b;
-  --border-default: #283548;
-  --border-strong: #3b4e6d;
+  --border-muted: #17223b;      /* Internal subtle dividers */
+  --border-default: #223352;    /* Crisp structural 1px boundaries */
+  --border-strong: #364e7a;     /* Accent & highlighted borders */
 
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
-  --text-on-accent: #020617;
+  --text-primary: #f8fafc;      /* Crisp high-contrast headings & values */
+  --text-secondary: #9ab1d1;    /* Clear readable labels */
+  --text-muted: #5e769c;        /* Helper hints & placeholders */
+  --text-on-accent: #020617;    /* Inverted text on cyan */
 
-  --accent: #38bdf8;          /* Electric Sky */
+  --accent: #38bdf8;            /* Electric Sky / Cyan CAD Accent */
   --accent-hover: #7dd3fc;
-  --accent-muted: rgba(56, 189, 248, 0.12);
-  --accent-border: rgba(56, 189, 248, 0.35);
+  --accent-muted: rgba(56, 189, 248, 0.14);
+  --accent-border: rgba(56, 189, 248, 0.40);
 
   --success: #34d399;
   --success-bg: rgba(52, 211, 153, 0.12);
-  --success-border: rgba(52, 211, 153, 0.3);
+  --success-border: rgba(52, 211, 153, 0.35);
 
   --warning: #fbbf24;
   --warning-bg: rgba(251, 191, 36, 0.12);
-  --warning-border: rgba(251, 191, 36, 0.3);
+  --warning-border: rgba(251, 191, 36, 0.35);
 
   --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.12);
+  --danger-border: rgba(248, 113, 113, 0.35);
 
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
+  --radius-pill: 18px;
+
+  --card-shadow: 0 4px 16px rgba(0, 0, 0, 0.40), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --bg-canvas-overlay: rgba(13, 20, 36, 0.94);
+  --shadow-canvas-overlay: 0 6px 20px rgba(0, 0, 0, 0.50), 0 0 0 1px #223352;
+  --bg-canvas-empty: radial-gradient(circle at center, #111a2e 0%, #070a12 100%);
+  --bg-empty-card: rgba(13, 20, 36, 0.96);
 
   --header-height: 48px;
   --sidebar-width: 360px;
   --right-panel-width: 340px;
+}
+
+/* ==========================================================================
+   RADIX THEMES LIGHT BLUEPRINT PALETTE (Slate Paper + High Contrast Ink)
+   ========================================================================== */
+:root[data-theme="light"],
+[data-theme="light"],
+.light-theme {
+  --bg-app: var(--gray-2, #f5f5f5);              /* Canvas */
+  --bg-panel: var(--color-panel-solid, #ffffff);  /* Paper */
+  --bg-panel-subtle: var(--gray-1, #fafafa);     /* Surface Alt */
+  --bg-surface: var(--color-panel-solid, #ffffff);
+  --bg-surface-hover: var(--gray-3, #f5f5f5);
+  --bg-surface-active: var(--gray-4, #ebebeb);
+  --bg-input: var(--gray-1, #fafafa);
+
+  --border-muted: var(--gray-4, #f0f0f0);
+  --border-default: var(--gray-6, #e5e5e5);      /* Hairline */
+  --border-strong: var(--gray-7, #d4d4d4);
+
+  --text-primary: var(--gray-12, #0a0a0a);        /* Ink */
+  --text-secondary: var(--gray-11, #525252);
+  --text-muted: var(--gray-10, #737373);          /* Mid Gray */
+  --text-on-accent: var(--accent-contrast, #ffffff);
+
+  --accent: var(--accent-9, #171717);
+  --accent-hover: var(--accent-10, #0a0a0a);
+  --accent-muted: var(--accent-a3, rgba(23, 23, 23, 0.05));
+  --accent-border: var(--accent-a6, rgba(23, 23, 23, 0.18));
+
+  --success: var(--green-9, #16a34a);
+  --success-bg: var(--green-a3, rgba(22, 163, 74, 0.08));
+  --success-border: var(--green-a6, rgba(22, 163, 74, 0.25));
+
+  --warning: var(--amber-9, #d97706);
+  --warning-bg: var(--amber-a3, rgba(217, 119, 6, 0.08));
+  --warning-border: var(--amber-a6, rgba(217, 119, 6, 0.25));
+
+  --danger: var(--ruby-9, #e7000b);
+  --danger-bg: var(--ruby-a3, rgba(231, 0, 11, 0.08));
+  --danger-border: var(--ruby-a6, rgba(231, 0, 11, 0.25));
+
+  --card-shadow: var(--shadow-2, 0 0 0 1px rgba(23, 23, 23, 0.05), 0 1px 3px rgba(0, 0, 0, 0.08));
+  --bg-canvas-overlay: var(--color-panel-translucent, rgba(255, 255, 255, 0.94));
+  --shadow-canvas-overlay: var(--shadow-3, 0 4px 16px rgba(0, 0, 0, 0.08));
+  --bg-canvas-empty: radial-gradient(circle at center, #ffffff 0%, var(--gray-2, #ebebeb) 100%);
+  --bg-empty-card: var(--color-panel-solid, #ffffff);
 }
 
 *, *::before, *::after {
@@ -101,7 +177,7 @@ html, body {
   font-weight: 700;
   font-size: 13.5px;
   letter-spacing: 0.04em;
-  color: #fff;
+  color: var(--text-primary);
   text-decoration: none;
 }
 
@@ -143,7 +219,7 @@ html, body {
 
 .stepper-step.active {
   background: var(--bg-surface-active);
-  color: #fff;
+  color: var(--text-primary);
   font-weight: 600;
 }
 
@@ -175,6 +251,33 @@ html, body {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.theme-toggle-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.theme-toggle-btn .theme-icon {
+  font-size: 12px;
+  line-height: 1;
 }
 
 .status-indicator {
@@ -247,7 +350,7 @@ html, body {
 .panel-hero-title {
   font-size: 14px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -305,6 +408,7 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .tool-section-head {
@@ -369,6 +473,7 @@ input[type="number"]:focus,
 select:focus,
 textarea:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 /* Custom Range Slider */
@@ -420,7 +525,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 .angle-btn:hover {
-  color: #fff;
+  color: var(--text-primary);
   background: var(--bg-surface-hover);
   border-color: var(--border-strong);
 }
@@ -518,19 +623,21 @@ input[type="range"]::-webkit-slider-thumb:hover {
   overflow: hidden;
 }
 
-/* Переключатель видов в левом верхнем углу холста */
+/* Переключатель видов холста */
 .canvas-view-toggle {
-  position: absolute;
-  top: 14px;
-  left: 16px;
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  margin: 0 !important;
+  transform: none !important;
   z-index: 30;
   display: flex;
-  background: rgba(15, 23, 42, 0.92);
+  background: var(--bg-canvas-overlay);
   backdrop-filter: blur(8px);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   padding: 3px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: var(--shadow-canvas-overlay);
 }
 
 .canvas-tab-btn {
@@ -622,19 +729,19 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at center, #0e1726 0%, #080c14 100%);
+  background: var(--bg-canvas-empty);
   z-index: 10;
   padding: 24px;
 }
 
 .empty-state-card {
   max-width: 440px;
-  background: rgba(15, 23, 42, 0.9);
+  background: var(--bg-empty-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   padding: 32px 28px;
   text-align: center;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-canvas-overlay);
 }
 
 .empty-state-icon {
@@ -653,7 +760,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .empty-state-title {
   font-size: 16px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-primary);
   margin-bottom: 8px;
 }
 
@@ -678,7 +785,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 
 #pane-osm {
-  background: #0b1120;
+  background: var(--bg-app);
 }
 
 #iframe-osm {
@@ -710,11 +817,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
   z-index: 30;
   display: flex;
   flex-direction: column;
-  background: rgba(15, 23, 42, 0.92);
+  background: var(--bg-canvas-overlay);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: var(--shadow-canvas-overlay);
 }
 
 .zoom-tool-btn {
@@ -734,7 +841,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .zoom-tool-btn:hover {
   background: var(--bg-surface-hover);
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .zoom-tool-btn + .zoom-tool-btn {
@@ -750,13 +857,14 @@ input[type="range"]::-webkit-slider-thumb:hover {
   display: flex;
   align-items: center;
   gap: 10px;
-  background: rgba(15, 23, 42, 0.9);
+  background: var(--bg-canvas-overlay);
   border: 1px solid var(--border-default);
   padding: 6px 12px;
   border-radius: var(--radius-sm);
   font-size: 11px;
   color: var(--text-secondary);
   pointer-events: none;
+  box-shadow: var(--shadow-canvas-overlay);
 }
 
 .compass-tag {
@@ -799,7 +907,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .right-panel-title {
   font-size: 13.5px;
   font-weight: 700;
-  color: #fff;
+  color: var(--text-primary);
 }
 
 .right-panel-desc {
@@ -919,4 +1027,908 @@ input[type="range"]::-webkit-slider-thumb:hover {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--accent-muted);
+}
+
+/* ==========================================================================
+   THEME SWITCHING TRANSITIONS & SHADCN LIGHT POLISH
+   ========================================================================== */
+body,
+.studio-header,
+.left-panel,
+.right-panel,
+.tool-section,
+.empty-state-card,
+.canvas-view-toggle,
+.canvas-status-bar,
+.canvas-zoom-buttons,
+.theme-toggle-btn,
+.mode-segmented-control,
+.mode-btn,
+input,
+select,
+textarea {
+  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+[data-theme="light"] .tool-section {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .file-dropzone {
+  background: #fafafa;
+  border-color: #d4d4d4;
+}
+
+[data-theme="light"] .file-dropzone:hover {
+  background: #f5f5f5;
+  border-color: #0a0a0a;
+}
+
+[data-theme="light"] input[type="text"]:focus,
+[data-theme="light"] input[type="number"]:focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus {
+  border-color: #0a0a0a;
+  box-shadow: 0 0 0 1px #0a0a0a;
+}
+
+[data-theme="light"] .mode-btn.active {
+  background: #0a0a0a;
+  color: #fafafa;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .btn-primary-action {
+  background: #0a0a0a;
+  color: #ffffff;
+}
+
+[data-theme="light"] .btn-primary-action:hover {
+  background: #262626;
+}
+
+[data-theme="light"] .stepper-container {
+  background: #f0f0f0;
+}
+
+[data-theme="light"] .stepper-step.active {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .passport-table td.cell-accent {
+  color: #0a0a0a;
+  font-weight: 700;
+}
+
+
+/* ==========================================================================
+   ШАГ 2: СТИЛИ НАРЕЗКИ УДС, ПРЕСЕТОВ И ПОДКВАРТАЛОВ
+   ========================================================================== */
+
+/* Сетка пресетов УДС */
+.road-presets-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.road-preset-btn {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  padding: 8px 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.road-preset-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+.road-preset-btn.active {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-border);
+}
+
+.preset-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.preset-name {
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.preset-sub {
+  font-size: 8.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.road-preset-btn.active .preset-sub {
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+/* Категории улиц (pills) */
+.category-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.cat-pill {
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.cat-pill:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.cat-pill.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Карточки начерченных улиц */
+.custom-road-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  transition: all 0.15s ease;
+}
+
+.custom-road-item:hover {
+  border-color: var(--accent-border);
+}
+
+.custom-road-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.custom-road-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.custom-road-meta {
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.custom-road-del {
+  background: transparent;
+  border: none;
+  color: var(--danger);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: all 0.15s;
+}
+
+.custom-road-del:hover {
+  background: var(--danger-bg);
+}
+
+/* Кнопка черчения в активном режиме */
+#btn-draw-road.active {
+  background: var(--success) !important;
+  border-color: var(--success-border) !important;
+  color: #020617 !important;
+  animation: pulse-border 1.5s infinite;
+}
+
+@keyframes pulse-border {
+  0% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0.6); }
+  70% { box-shadow: 0 0 0 6px rgba(52, 211, 153, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, 0); }
+}
+
+/* Таблица подкварталов */
+.sub-blocks-table th,
+.sub-blocks-table td {
+  padding: 6px 8px !important;
+  font-size: 11px !important;
+}
+
+.sub-block-row {
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.sub-block-row:hover {
+  background: rgba(16, 185, 129, 0.15) !important;
+}
+
+.sub-block-row.active {
+  background: rgba(16, 185, 129, 0.25) !important;
+}
+
+.block-num-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--bg-surface);
+  border: 1.5px solid #10b981;
+  color: #10b981;
+  font-weight: 700;
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+/* 2D CAD SVG Элементы УДС */
+.sub-block-poly {
+  transition: fill 0.2s ease, stroke-width 0.2s ease, filter 0.2s ease;
+  cursor: pointer;
+}
+
+.sub-block-poly:hover,
+.sub-block-poly.highlighted {
+  fill: rgba(16, 185, 129, 0.3) !important;
+  stroke: #10b981 !important;
+  stroke-width: 3.5 !important;
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.7));
+}
+
+.road-handle {
+  cursor: grab;
+  transition: r 0.15s ease;
+}
+
+.road-handle:hover {
+  r: 10 !important;
+}
+
+.road-handle:active {
+  cursor: grabbing;
+}
+
+.road-handle-mid {
+  cursor: move;
+  transition: transform 0.15s ease;
+}
+
+.road-handle-mid:hover {
+  stroke-width: 3 !important;
+}
+
+#svg-canvas.drawing-mode {
+  cursor: crosshair !important;
+}
+
+/* Тема Light для Шага 2 */
+[data-theme="light"] .road-preset-btn {
+  background: #ffffff;
+  border-color: #e5e5e5;
+  color: #525252;
+}
+
+[data-theme="light"] .road-preset-btn:hover {
+  background: #f5f5f5;
+  border-color: #d4d4d4;
+  color: #0a0a0a;
+}
+
+[data-theme="light"] .road-preset-btn.active {
+  background: #0a0a0a;
+  border-color: #0a0a0a;
+  color: #ffffff;
+}
+
+[data-theme="light"] .road-preset-btn.active .preset-sub {
+  color: #d4d4d4;
+}
+
+[data-theme="light"] .cat-pill {
+  background: #ffffff;
+  border-color: #e5e5e5;
+  color: #525252;
+}
+
+[data-theme="light"] .cat-pill.active {
+  background: #0a0a0a;
+  border-color: #0a0a0a;
+  color: #ffffff;
+}
+
+.step-panel-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1;
+}
+
+
+/* ==========================================================================
+   МОДАЛЬНОЕ ОКНО ГПЗУ И ЗОУИТ
+   ========================================================================== */
+.modal-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(8, 12, 20, 0.85);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+  overscroll-behavior: contain;
+}
+
+.modal-box {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 860px;
+  height: min(88vh, 850px);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+  color: var(--text-primary);
+  transform: translateZ(0);
+  contain: paint;
+}
+
+.modal-header {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-panel);
+  flex-shrink: 0;
+}
+
+.modal-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 18px 20px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-family: var(--font-sans);
+  display: flex;
+  flex-direction: column;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+.modal-body::-webkit-scrollbar {
+  width: 6px;
+}
+.modal-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.modal-body::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+.zone-coords-textarea,
+.zouit-manual-coords {
+  overscroll-behavior: contain;
+  contain: strict;
+}
+
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-panel);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.modal-close {
+  background: transparent;
+  border: 0;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color 0.15s;
+}
+
+.modal-close:hover {
+  color: var(--text-primary);
+}
+
+/* Карточки зон ГПЗУ */
+.gpzu-zone-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s;
+}
+
+.gpzu-zone-card:hover {
+  border-color: var(--border-strong);
+}
+
+/* Строки параметров застройки */
+.gpzu-param-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  gap: 12px;
+}
+
+.gpzu-param-row:hover {
+  border-color: var(--border-strong);
+}
+
+/* Карточки ЗОУИТ */
+.zouit-item-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color 0.15s;
+}
+
+.zouit-item-card:hover {
+  border-color: var(--danger-border);
+}
+
+/* Статусные бейджи */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+
+.badge-ok {
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: var(--success);
+}
+
+.badge-warn {
+  background: var(--warning-bg);
+  border: 1px solid var(--warning-border);
+  color: var(--warning);
+}
+
+.badge-neutral {
+  background: rgba(148, 163, 184, 0.1);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+}
+
+.badge-accent {
+  background: var(--accent-muted);
+  border: 1px solid var(--accent-border);
+  color: var(--accent);
+}
+
+/* Светлая тема для модального окна */
+[data-theme="light"] .modal-backdrop {
+  background: rgba(15, 23, 42, 0.45);
+}
+
+[data-theme="light"] .modal-box {
+  background: #ffffff;
+  border-color: #e5e5e5;
+  color: #0a0a0a;
+}
+
+[data-theme="light"] .modal-header,
+[data-theme="light"] .modal-footer {
+  background: #fafafa;
+  border-color: #e5e5e5;
+}
+
+[data-theme="light"] .gpzu-zone-card,
+[data-theme="light"] .gpzu-param-row,
+[data-theme="light"] .zouit-item-card {
+  background: #f5f5f5;
+  border-color: #e5e5e5;
+}
+
+
+/* ==========================================================================
+   3D VIEWER PANE & CANVAS LOADING SPINNER
+   ========================================================================== */
+#pane-3d {
+  background: var(--bg-app);
+}
+
+#iframe-3d {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.canvas-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(10, 15, 29, 0.85);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  pointer-events: auto;
+}
+
+.loading-spinner {
+  width: 42px;
+  height: 42px;
+  border: 3.5px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: studio-spin 0.8s linear infinite;
+}
+
+@keyframes studio-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* SVG Buildings & Sections Styling */
+.cad-building-poly {
+  cursor: pointer;
+  transition: opacity 0.15s, stroke-width 0.15s;
+}
+
+.cad-building-poly:hover {
+  opacity: 0.95;
+  stroke: #ffffff;
+  stroke-width: 2px;
+}
+
+.cad-section-poly {
+  cursor: pointer;
+  transition: opacity 0.15s, stroke-width 0.15s;
+}
+
+.cad-section-poly:hover {
+  opacity: 0.95;
+  stroke: #ffffff;
+  stroke-width: 1.5px;
+}
+
+.cad-parking-bay {
+  fill: rgba(148, 163, 184, 0.25);
+  stroke: #94a3b8;
+  stroke-width: 0.8;
+}
+
+.cad-fire-road {
+  fill: none;
+  stroke: #ef4444;
+  stroke-width: 2.5;
+  stroke-dasharray: 6, 4;
+}
+
+.cad-fire-turnaround {
+  fill: rgba(239, 68, 68, 0.15);
+  stroke: #ef4444;
+  stroke-width: 2;
+}
+
+
+/* Выделение секции (инспектор) */
+.cad-section-poly.selected-section {
+  stroke: #fbbf24 !important;
+  stroke-width: 3.5px !important;
+  stroke-dasharray: 4, 2;
+  filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.8));
+}
+
+/* Активная строка сценария в матрице вариантов */
+.active-scenario-row {
+  background: rgba(37, 99, 235, 0.1) !important;
+  font-weight: 700;
+  border-left: 3px solid var(--accent);
+}
+
+.clickable-row {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.clickable-row:hover {
+  background: var(--bg-surface-hover);
+}
+
+/* Санитарные зоны и ТКО */
+.svg-tko-radius {
+  fill: rgba(16, 185, 129, 0.06);
+  stroke: rgba(16, 185, 129, 0.4);
+  stroke-width: 1;
+  stroke-dasharray: 3, 3;
+  pointer-events: none;
+}
+
+.svg-tko-site {
+  fill: #10b981;
+  stroke: #065f46;
+  stroke-width: 1.2;
+  cursor: pointer;
+}
+
+.svg-tko-site:hover {
+  fill: #34d399;
+}
+
+.svg-parking-san-buffer {
+  fill: rgba(239, 68, 68, 0.12);
+  stroke: rgba(239, 68, 68, 0.45);
+  stroke-width: 1;
+  stroke-dasharray: 4, 3;
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   БОКОВОЙ ИНДИКАТОР ПЕРЕБОРА ВАРИАНТОВ (TOP-1 OPTIMIZATION)
+   ========================================================================== */
+.opt-side-card {
+  position: absolute;
+  top: 56px;
+  right: 18px;
+  width: 320px;
+  background: var(--bg-surface);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md, 10px);
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--accent-glow);
+  padding: 14px 16px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: auto;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  font-family: inherit;
+}
+.opt-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.opt-card-pulse {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.7);
+  animation: optPulse 1.4s infinite cubic-bezier(0.66, 0, 0, 1);
+  display: inline-block;
+}
+@keyframes optPulse {
+  0% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.7); transform: scale(0.95); }
+  70% { box-shadow: 0 0 0 8px rgba(14, 165, 233, 0); transform: scale(1.1); }
+  100% { box-shadow: 0 0 0 0 rgba(14, 165, 233, 0); transform: scale(0.95); }
+}
+.opt-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-canvas);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border-default);
+}
+.opt-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #0284c7 0%, #0ea5e9 50%, #38bdf8 100%);
+  border-radius: 999px;
+  transition: width 0.15s ease-out;
+}
+.opt-status-msg {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.opt-mini-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr 0.9fr;
+  gap: 6px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.opt-mini-box {
+  display: flex;
+  flex-direction: column;
+}
+.opt-mini-lbl {
+  font-size: 9.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.opt-mini-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+}
+.opt-compliance-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.opt-tag {
+  font-size: 9.5px;
+  font-weight: 600;
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--success);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* ==========================================================================
+   БЫСТРЫЕ ПЕРЕКЛЮЧАТЕЛИ ВИДИМОСТИ ИНЖЕНЕРНЫХ СЛОЕВ (ХОЛСТ)
+   ========================================================================== */
+.canvas-layers-bar {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  margin: 0 !important;
+  transform: none !important;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  z-index: 30;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+[data-theme="light"] .canvas-layers-bar {
+  background: #ffffff;
+  border-color: #e5e5e5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .layer-pill-btn {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  color: #334155;
+}
+[data-theme="light"] .layer-pill-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+[data-theme="light"] .layer-pill-btn.active {
+  background: #ffffff;
+  border-color: #0284c7;
+  color: #0284c7;
+  box-shadow: 0 0 0 1px rgba(2, 132, 199, 0.25);
+}
+[data-theme="light"] .layer-pill-btn:not(.active) {
+  opacity: 0.5;
+  border-style: dashed;
+}
+.layers-bar-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 0 4px;
+}
+.layer-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-panel);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.layer-pill-btn:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+.layer-pill-btn.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-glow);
+}
+.layer-pill-btn:not(.active) {
+  opacity: 0.45;
+  filter: grayscale(0.8);
+  border-style: dashed;
+}
+.layer-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
 }

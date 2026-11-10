@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>URBAN / TEP STUDIO — Шаг 1: Посадка и проверка участка</title>
-  <link rel="stylesheet" href="style.css">
+  <title>URBAN / TEP STUDIO — Генератор застройки и мастер-планирования</title>
+  <link rel="stylesheet" href="radix-themes.css">
+  <link rel="stylesheet" href="style.css?v=2.2">
 </head>
-<body>
+<body class="radix-themes dark-theme">
 
 <div class="studio-app">
 
@@ -28,18 +29,29 @@
 
     <!-- PIPELINE STEPPER -->
     <div class="stepper-container">
-      <div class="stepper-step active" id="stepper-step-1">
+      <div class="stepper-step active" id="stepper-step-1" role="button" tabindex="0" title="Вернуться к посадке и ориентации ЗУ">
         <span class="stepper-circle">1</span>
         <span>Шаг 1: Посадка ЗУ</span>
       </div>
       <span class="stepper-arrow">→</span>
-      <div class="stepper-step" id="stepper-step-2" style="opacity: 0.5;">
+      <div class="stepper-step" id="stepper-step-2" style="opacity: 0.6;" role="button" tabindex="0" title="Нарезка улично-дорожной сети и подкварталов">
         <span class="stepper-circle">2</span>
-        <span>Шаг 2: Застройка и ТЭП</span>
+        <span>Шаг 2: Нарезка УДС</span>
+      </div>
+      <span class="stepper-arrow">→</span>
+      <div class="stepper-step" id="stepper-step-3" style="opacity: 0.35;" role="button" tabindex="0" title="Генерация застройки и ТЭП (Шаг 3)">
+        <span class="stepper-circle">3</span>
+        <span>Шаг 3: Застройка и ТЭП</span>
       </div>
     </div>
 
     <div class="header-actions">
+      <!-- Theme Switcher Toggle (shadcn Light / CAD Dark) -->
+      <button class="theme-toggle-btn" id="btn-theme-toggle" type="button" title="Переключить тему оформления (Светлая shadcn / Тёмная CAD)">
+        <span class="theme-icon" id="theme-icon">☀️</span>
+        <span class="theme-label" id="theme-label">Тема</span>
+      </button>
+
       <div class="status-indicator">
         <span class="status-dot"></span>
         <span id="backend-status-text">Бэкенд активен</span>
@@ -53,208 +65,608 @@
   <div class="studio-workspace">
 
     <!-- --------------------------------------------------------------------
-         LEFT PANEL (360px): ШАГ 1 — ВЫБОР РЕЖИМА И ПОСАДКА
+         LEFT PANEL (360px): ШАГИ 1 И 2
          -------------------------------------------------------------------- -->
     <aside class="left-panel">
-      <div class="panel-scroll-content">
 
-        <div class="panel-hero">
-          <div class="panel-hero-title">
-            <span>Шаг 1: Посадка участка</span>
-            <span class="val-tag" id="panel-hero-area">— га</span>
-          </div>
-          <div class="panel-hero-desc">
-            Введите кадастровый номер ЗУ в формате 00:00:0000000:0000, загрузите чертеж CAD (.DXF) или оцифруйте контур по спутнику.
-          </div>
-        </div>
+      <!-- ==================================================================
+           ШАГ 1: ПОСАДКА И ПРОВЕРКА УЧАСТКА
+           ================================================================== -->
+      <div id="panel-step-1-content" class="step-panel-container">
+        <div class="panel-scroll-content">
 
-        <!-- 1. ВЫБОР РЕЖИМА ВВОДА (3 РЕЖИМА) -->
-        <div class="tool-section">
-          <div class="tool-section-head">
-            <span>Источник данных ЗУ</span>
-          </div>
-          <div class="mode-segmented-control">
-            <button class="mode-btn active" id="btn-mode-cadastre" data-mode="cadastre">1. Кадастр</button>
-            <button class="mode-btn" id="btn-mode-cad" data-mode="cad">2. CAD</button>
-            <button class="mode-btn" id="btn-mode-points" data-mode="points">3. Точки</button>
+          <div class="panel-hero">
+            <div class="panel-hero-title">
+              <span>Шаг 1: Посадка участка</span>
+              <span class="val-tag" id="panel-hero-area">— га</span>
+            </div>
+            <div class="panel-hero-desc">
+              Введите кадастровый номер ЗУ в формате 00:00:0000000:0000, загрузите чертеж CAD (.DXF) или оцифруйте контур по спутнику.
+            </div>
           </div>
 
-          <!-- PANE 1: КАДАСТР -->
-          <div class="mode-pane active" id="pane-mode-cadastre">
-            <div class="form-group">
-              <label class="form-label" for="input-cad-num">Кадастровый номер ЗУ</label>
-              <div style="display: flex; gap: 6px;">
-                <input type="text" id="input-cad-num" placeholder="00:00:0000000:0000" autocomplete="off">
-                <button class="angle-btn" id="btn-fetch-pkk" style="white-space: nowrap; padding: 6px 10px; font-weight:600;" title="Запросить контур из Публичной кадастровой карты Росреестра">🌐 ПКК</button>
-              </div>
-              <div id="pkk-badge" style="display:none; font-size:11px; color:var(--success); margin-top:2px;">✓ Границы подтверждены Росреестром</div>
+          <!-- 1. ВЫБОР РЕЖИМА ВВОДА (3 РЕЖИМА) -->
+          <div class="tool-section">
+            <div class="tool-section-head">
+              <span>Источник данных ЗУ</span>
+            </div>
+            <div class="mode-segmented-control">
+              <button class="mode-btn active" id="btn-mode-cadastre" data-mode="cadastre">1. Кадастр</button>
+              <button class="mode-btn" id="btn-mode-cad" data-mode="cad">2. CAD</button>
+              <button class="mode-btn" id="btn-mode-points" data-mode="points">3. Точки</button>
             </div>
 
-            <div style="display:flex; gap:6px;">
-              <button class="btn-primary-action" id="btn-load-cadastre" style="flex:1; padding:8px 12px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
-                <span>🔍 Посадить участок</span>
+            <!-- PANE 1: КАДАСТР -->
+            <div class="mode-pane active" id="pane-mode-cadastre">
+              <div class="form-group">
+                <label class="form-label" for="input-cad-num">Кадастровый номер ЗУ</label>
+                <div style="display: flex; gap: 6px;">
+                  <input type="text" id="input-cad-num" placeholder="00:00:0000000:0000" autocomplete="off">
+                  <button class="angle-btn" id="btn-fetch-pkk" style="white-space: nowrap; padding: 6px 10px; font-weight:600;" title="Запросить контур из Публичной кадастровой карты Росреестра">🌐 ПКК</button>
+                </div>
+                <div id="pkk-badge" style="display:none; font-size:11px; color:var(--success); margin-top:2px;">✓ Границы подтверждены Росреестром</div>
+              </div>
+
+              <div style="display:flex; gap:6px;">
+                <button class="btn-primary-action" id="btn-load-cadastre" style="flex:1; padding:8px 12px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
+                  <span>🔍 Посадить участок</span>
+                </button>
+              </div>
+
+              <!-- Загрузка выписки ГПЗУ / ЕГРН -->
+              <div class="file-dropzone" id="cad-gpzu-dropzone" style="margin-top: 6px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="12" y1="18" x2="12" y2="12"></line>
+                  <polyline points="9 15 12 12 15 15"></polyline>
+                </svg>
+                <div class="file-dropzone-text" id="cad-gpzu-dropzone-text">Загрузить выписку ГПЗУ (.PDF / .XLSX / .TXT)</div>
+                <div class="file-dropzone-hint">Автоматически извлечет кадастровый номер и координаты контура</div>
+                <input type="file" id="cad-gpzu-file-input" accept=".pdf,.xlsx,.xls,.docx,.txt" style="display:none">
+              </div>
+              <div id="cad-gpzu-status-badge" style="display:none; font-size:11px; color:var(--success); margin-top:2px; font-weight:600;"></div>
+              <button type="button" class="angle-btn" id="btn-open-gpzu-modal-cad" style="display:none; width:100%; margin-top:4px; padding:6px; font-size:11px; font-weight:600; color:var(--accent); justify-content:center;">
+                📑 Инспектор ГПЗУ и ЗОУИТ
+              </button>
+
+              <div class="form-group" style="margin-top:6px;">
+                <label class="form-label" for="input-custom-area">Площадь ЗУ при отсутствии геометрии (м²)</label>
+                <input type="number" id="input-custom-area" value="42500" step="500">
+              </div>
+
+              <div class="form-group">
+                <div class="form-label">
+                  <span>Ручные координаты WGS-84</span>
+                  <button class="angle-btn" id="btn-pick-point-cadastre" style="padding: 2px 7px; font-size:11px;" title="Кликнуть на карте для выбора центра">📍 На карте</button>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+                  <input type="number" id="input-manual-lat" step="0.00001" placeholder="Широта (Lat)">
+                  <input type="number" id="input-manual-lon" step="0.00001" placeholder="Долгота (Lon)">
+                </div>
+              </div>
+            </div>
+
+            <!-- PANE 2: CAD / DXF -->
+            <div class="mode-pane" id="pane-mode-cad">
+              <div class="file-dropzone" id="dxf-dropzone">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <div class="file-dropzone-text" id="dxf-dropzone-text">Загрузить чертеж съемки (.DXF)</div>
+                <div class="file-dropzone-hint">AutoCAD DXF с полилиниями границы</div>
+                <input type="file" id="dxf-file-input" accept=".dxf" style="display:none">
+              </div>
+
+              <div class="form-group" id="cad-layers-group" style="display:none;">
+                <label class="form-label" for="select-cad-layer">Слой границы ЗУ</label>
+                <select id="select-cad-layer">
+                  <option value="">— Авто-выбор слоя границы —</option>
+                </select>
+              </div>
+
+              <div class="form-group" id="cad-redline-group" style="display:none;">
+                <label class="form-label" for="select-cad-redline">Слой красных линий</label>
+                <select id="select-cad-redline">
+                  <option value="">— Авто-выбор красных линий —</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <div class="form-label">
+                  <span>Зона МСК</span>
+                  <span class="val-tag" id="msk-detected-badge" style="display:none;">МСК</span>
+                </div>
+                <select id="select-msk-zone">
+                  <option value="" selected>— Автоопределение МСК по чертежу / кадастру —</option>
+                  <option value="МСК-63 Зона 1 (Самара)">МСК-63 Зона 1 (Самара)</option>
+                  <option value="МСК-63 Зона 2 (Тольятти)">МСК-63 Зона 2 (Тольятти)</option>
+                  <option value="МСК-72 Зона 1 (Тюмень)">МСК-72 Зона 1 (Тюмень)</option>
+                  <option value="МСК г. Тюмени">МСК г. Тюмени</option>
+                  <option value="МСК-72 Зона 2 (Тобольск / Ишим)">МСК-72 Зона 2 (Тобольск / Ишим)</option>
+                  <option value="МСК-50 Зона 1 (МО Запад)">МСК-50 Зона 1 (МО Запад)</option>
+                  <option value="МСК-50 Зона 2 (МО Восток)">МСК-50 Зона 2 (МО Восток)</option>
+                  <option value="МСК-77 (Москва)">МСК-77 (Москва)</option>
+                  <option value="МСК-78 (Санкт-Петербург)">МСК-78 (Санкт-Петербург)</option>
+                  <option value="МСК-16 Зона 1 (Татарстан)">МСК-16 Зона 1 (Татарстан)</option>
+                  <option value="МСК-66 Зона 1 (Свердловская обл.)">МСК-66 Зона 1 (Екатеринбург)</option>
+                  <option value="МСК-23 Зона 1 (Краснодар)">МСК-23 Зона 1 (Краснодар)</option>
+                  <option value="МСК-18 Зона 1 (Удмуртия)">МСК-18 Зона 1 (Удмуртия)</option>
+                  <option value="МСК-18 Зона 2 (Ижевск)">МСК-18 Зона 2 (Ижевск)</option>
+                </select>
+              </div>
+
+                            <div class="form-group" style="margin-top: 8px;">
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 11.5px; color: var(--text-secondary);">
+                  <input type="checkbox" id="chk-cad-swap-xy" style="cursor: pointer;">
+                  <span>🔄 Поменять оси X ↔ Y (Север / Восток)</span>
+                </label>
+              </div>
+
+              <div class="form-group">
+                <label class="form-label" for="input-cad-assigned">Привязанный кадастровый номер (для норм)</label>
+                <input type="text" id="input-cad-assigned" placeholder="Например: 63:01:0415004:577 или 72:23:0222001:16187">
+              </div>
+            </div>
+
+            <!-- PANE 3: ТОЧКИ / ГПЗУ -->
+            <div class="mode-pane" id="pane-mode-points">
+              <button class="angle-btn" id="btn-digitize-map" style="padding:9px; font-weight:600; width:100%; justify-content:center; background:var(--bg-surface); border-color:var(--accent-border);">
+                ✏️ Оцифровать контур по спутнику
+              </button>
+              <div id="digitize-status-badge" style="display:none; font-size:11px; color:var(--success); margin-top:4px; font-weight:600;"></div>
+
+              <div class="form-group" style="margin-top:8px;">
+                <label class="form-label" for="textarea-coords">Каталог координат X, Y (ГПЗУ / ЕГРН / WGS-84)</label>
+                <textarea id="textarea-coords" rows="4" placeholder="1  485230.12  1354120.45&#10;2  485450.60  1354310.80&#10;3  485210.00  1354450.00"></textarea>
+                <button class="angle-btn" id="btn-apply-coords" style="margin-top:4px; padding:6px; width:100%; justify-content:center;">Применить координаты</button>
+              </div>
+
+              <div class="file-dropzone" id="gpzu-dropzone" style="margin-top:6px;">
+                <div class="file-dropzone-text" id="gpzu-dropzone-text">Или загрузите файл ГПЗУ (.PDF / .XLSX)</div>
+                <div class="file-dropzone-hint">Автоматически распознает поворотные точки</div>
+                <input type="file" id="gpzu-file-input" accept=".pdf,.xlsx,.txt" style="display:none">
+              </div>
+              <button type="button" class="angle-btn" id="btn-open-gpzu-modal-points" style="display:none; width:100%; margin-top:4px; padding:6px; font-size:11px; font-weight:600; color:var(--accent); justify-content:center;">
+                📑 Инспектор ГПЗУ и ЗОУИТ
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. ПОСАДКА, ОРИЕНТАЦИЯ И ОТСТУПЫ -->
+          <div class="tool-section">
+            <div class="tool-section-head">
+              <span>Ориентация и посадка ЗУ</span>
+            </div>
+
+            <!-- Поворот участка -->
+            <div class="form-group">
+              <div class="form-label">
+                <span>Угол поворота</span>
+                <span class="val-tag" id="val-rotation">0.0°</span>
+              </div>
+              <input type="range" id="slider-rotation" min="-180" max="180" step="0.5" value="0">
+            </div>
+            <div class="angle-grid">
+              <button class="angle-btn" data-rot="-90">-90°</button>
+              <button class="angle-btn" data-rot="0">0° (Север)</button>
+              <button class="angle-btn" data-rot="90">+90°</button>
+            </div>
+
+            <div style="margin-top:6px;">
+              <button class="angle-btn" id="btn-reset-landing" style="width:100%; padding:6px; color:var(--warning); font-weight:600; justify-content:center;">
+                ↺ Сбросить поворот и смещение
               </button>
             </div>
 
-            <div class="cad-quick-hints">
-              <span class="cad-hint-label">Примеры ЗУ:</span>
-              <button type="button" class="cad-hint-chip" data-cad="63:01:0709002:2320" title="Самара, Зубчаниновка (4.25 га)">63:01:0709002:2320</button>
-              <button type="button" class="cad-hint-chip" data-cad="72:23:0222001:16187" title="Тюмень, ЖК «Акватория» (4.44 га)">72:23:0222001:16187</button>
-              <button type="button" class="cad-hint-chip" data-cad="77:17:0120316:1024" title="Москва, Коммунарка (3.60 га)">77:17:0120316:1024</button>
-              <button type="button" class="cad-hint-chip" data-cad="78:34:0004286:115" title="Санкт-Петербург, Приморский (3.40 га)">78:34:0004286:115</button>
+            <!-- Отступы от границ -->
+            <div class="form-group" style="margin-top:10px;">
+              <div class="form-label">
+                <span>Отступ от границы ЗУ</span>
+                <span class="val-tag" id="val-boundary-setback">6 м</span>
+              </div>
+              <input type="range" id="slider-boundary-setback" min="3" max="15" step="1" value="6">
             </div>
 
-            <div class="form-group" style="margin-top:6px;">
-              <label class="form-label" for="input-custom-area">Площадь ЗУ при отсутствии геометрии (м²)</label>
-              <input type="number" id="input-custom-area" value="42500" step="500">
-            </div>
-
+            <!-- Отступы от красных линий -->
             <div class="form-group">
               <div class="form-label">
-                <span>Ручные координаты WGS-84</span>
-                <button class="angle-btn" id="btn-pick-point-cadastre" style="padding: 2px 7px; font-size:11px;" title="Кликнуть на карте для выбора центра">📍 На карте</button>
+                <span>Отступ от красных линий</span>
+                <span class="val-tag" id="val-redline-setback">5 м</span>
               </div>
-              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
-                <input type="number" id="input-manual-lat" step="0.00001" placeholder="Широта (Lat)">
-                <input type="number" id="input-manual-lon" step="0.00001" placeholder="Долгота (Lon)">
+              <input type="range" id="slider-redline-setback" min="3" max="10" step="1" value="5">
+            </div>
+
+            <label class="switch-label">
+              <input type="checkbox" id="chk-redlines">
+              <span>Учитывать красные линии улиц</span>
+            </label>
+            <label class="switch-label">
+              <input type="checkbox" id="chk-zouit" checked>
+              <span>Учитывать охранные зоны (ЗОУИТ)</span>
+            </label>
+            <div class="zouit-status-card" id="zouit-active-banner" style="display:none; margin-top:8px; padding:8px 10px; background:rgba(239, 68, 68, 0.08); border:1px solid rgba(239, 68, 68, 0.3); border-radius:var(--radius-sm); font-size:11.5px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-weight:600; color:var(--danger);">🛡️ ЗОУИТ: <span id="zouit-active-count">0</span> зон</span>
+                <span id="zouit-active-area" style="font-family:var(--font-mono); color:var(--text-primary); font-weight:600;">0 м²</span>
+              </div>
+              <div style="color:var(--text-secondary); font-size:10.5px; margin-top:2px;" id="zouit-active-desc">
+                Зоны ограничений вырезаны из пятна застройки
               </div>
             </div>
           </div>
 
-          <!-- PANE 2: CAD / DXF -->
-          <div class="mode-pane" id="pane-mode-cad">
-            <div class="file-dropzone" id="dxf-dropzone">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                <polyline points="17 8 12 3 7 8"></polyline>
-                <line x1="12" y1="3" x2="12" y2="15"></line>
-              </svg>
-              <div class="file-dropzone-text" id="dxf-dropzone-text">Загрузить чертеж съемки (.DXF)</div>
-              <div class="file-dropzone-hint">AutoCAD DXF с полилиниями границы</div>
-              <input type="file" id="dxf-file-input" accept=".dxf" style="display:none">
+        </div>
+
+        <!-- ФИКСАЦИЯ УЧАСТКА ДЛЯ ПЕРЕХОДА К ШАГУ 2 -->
+        <div class="panel-footer" id="panel-step-1-footer">
+          <button class="btn-lock-site" id="btn-lock-site">
+            <span>🔒</span>
+            <span id="btn-lock-text">Зафиксировать посадку и перейти к УДС →</span>
+          </button>
+        </div>
+      </div> <!-- /#panel-step-1-content -->
+
+      <!-- ==================================================================
+           ШАГ 2: НАРЕЗКА УЛИЧНО-ДОРОЖНОЙ СЕТИ (УДС) И ПОДКВАРТАЛОВ
+           ================================================================== -->
+      <div id="panel-step-2-content" class="step-panel-container" style="display: none;">
+        <div class="panel-scroll-content">
+
+          <div class="panel-hero">
+            <div class="panel-hero-title">
+              <span>Шаг 2: Нарезка УДС</span>
+              <span class="val-tag" id="panel-hero-blocks">— кварталов</span>
+            </div>
+            <div class="panel-hero-desc">
+              Формирование улично-дорожной сети по СП 42.13330 / СП 4.13130, расчет коридоров улиц, строительных отступов и разбивка ЗУ на планировочные кварталы.
+            </div>
+          </div>
+
+          <!-- 1. ТИПОВЫЕ СХЕМЫ УДС (ПРЕСЕТЫ) -->
+          <div class="tool-section">
+            <div class="tool-section-head">
+              <span>Схема улично-дорожной сети</span>
+              <span class="val-tag" id="val-preset-badge">Сетка</span>
+            </div>
+            <div class="road-presets-grid">
+              <button class="road-preset-btn active" data-preset="none" id="preset-btn-none">
+                <div class="preset-icon">◻</div>
+                <div class="preset-name">Без дорог</div>
+                <div class="preset-sub">1 массив</div>
+              </button>
+              <button class="road-preset-btn" data-preset="longitudinal" id="preset-btn-long">
+                <div class="preset-icon">⬌</div>
+                <div class="preset-name">Продольная</div>
+                <div class="preset-sub">2 квартала</div>
+              </button>
+              <button class="road-preset-btn" data-preset="transverse" id="preset-btn-trans">
+                <div class="preset-icon">⬍</div>
+                <div class="preset-name">Поперечная</div>
+                <div class="preset-sub">2 квартала</div>
+              </button>
+              <button class="road-preset-btn" data-preset="cross_2x2" id="preset-btn-cross">
+                <div class="preset-icon">⊞</div>
+                <div class="preset-name">Сетка 2×2</div>
+                <div class="preset-sub">4 квартала</div>
+              </button>
+              <button class="road-preset-btn" data-preset="custom" id="preset-btn-custom">
+                <div class="preset-icon">✏️</div>
+                <div class="preset-name">На чертеже</div>
+                <div class="preset-sub">CAD Вектор</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. НОРМАТИВНАЯ КАТЕГОРИЯ И ГАБАРИТЫ УЛИЦЫ -->
+          <div class="tool-section">
+            <div class="tool-section-head">
+              <span>Параметры улицы (СП 42.13330)</span>
+              <span class="val-tag" id="val-category-pill-tag">Внутриквартальная</span>
             </div>
 
-            <div class="form-group" id="cad-layers-group" style="display:none;">
-              <label class="form-label" for="select-cad-layer">Слой границы ЗУ</label>
-              <select id="select-cad-layer">
-                <option value="">— Авто-выбор слоя границы —</option>
-              </select>
+            <div class="category-pills">
+              <button class="cat-pill active" data-cat="district" title="Внутриквартальная жилая улица (15 м / отступ 4 м)">Внутриквартальная 15м</button>
+              <button class="cat-pill" data-cat="arterial" title="Магистральная улица районного значения (22 м / отступ 6 м)">Магистральная 22м</button>
+              <button class="cat-pill" data-cat="local" title="Пожарный проезд СП 4.13130 (8 м / отступ 3 м)">Проезд 8м</button>
+              <button class="cat-pill" data-cat="custom" title="Пользовательская ручная настройка">Настраиваемая</button>
             </div>
 
-            <div class="form-group" id="cad-redline-group" style="display:none;">
-              <label class="form-label" for="select-cad-redline">Слой красных линий</label>
-              <select id="select-cad-redline">
-                <option value="">— Авто-выбор красных линий —</option>
-              </select>
+            <!-- Ширина улицы -->
+            <div class="form-group" style="margin-top: 10px;">
+              <div class="form-label">
+                <span>Ширина коридора улицы</span>
+                <span class="val-tag" id="val-road-width">15.0 м</span>
+              </div>
+              <input type="range" id="slider-road-width" min="6" max="30" step="0.5" value="15">
             </div>
 
+            <!-- Строительный отступ от улицы -->
             <div class="form-group">
               <div class="form-label">
-                <span>Зона МСК</span>
-                <span class="val-tag" id="msk-detected-badge" style="display:none;">МСК</span>
+                <span>Строительный отступ от УДС</span>
+                <span class="val-tag" id="val-road-setback">4.0 м</span>
               </div>
-              <select id="select-msk-zone">
-                <option value="МСК-63 Зона 1" selected>МСК-63 Зона 1 (Самара)</option>
-                <option value="МСК-72 Зона 1">МСК-72 Зона 1 (Тюмень)</option>
-                <option value="МСК-50 Зона 2">МСК-50 Зона 2 (Подмосковье)</option>
-                <option value="МСК-77">МСК-77 (Москва)</option>
-                <option value="МСК-64 Зона 1">МСК-64 Зона 1 (Саратов)</option>
-                <option value="МСК-23 Зона 2">МСК-23 Зона 2 (Краснодар)</option>
-                <option value="МСК-16 Зона 1">МСК-16 Зона 1 (Казань)</option>
-                <option value="МСК-18 Зона 2">МСК-18 Зона 2 (Удмуртия)</option>
+              <input type="range" id="slider-road-setback" min="3" max="10" step="0.5" value="4">
+            </div>
+
+            <!-- Положение оси улицы (для продольной/поперечной) -->
+            <div class="form-group" id="group-road-pos">
+              <div class="form-label">
+                <span>Смещение оси улицы</span>
+                <span class="val-tag" id="val-road-pos">50%</span>
+              </div>
+              <input type="range" id="slider-road-pos" min="20" max="80" step="1" value="50">
+            </div>
+
+            <!-- Смещение сетки X и Y (для cross_2x2) -->
+            <div class="form-group" id="group-road-pos-grid" style="display:none;">
+              <div class="form-label">
+                <span>Смещение сетки X / Y</span>
+                <span class="val-tag" id="val-road-pos-xy">50% / 50%</span>
+              </div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                <input type="range" id="slider-road-pos-x" min="20" max="80" step="1" value="50" title="Ось X">
+                <input type="range" id="slider-road-pos-y" min="20" max="80" step="1" value="50" title="Ось Y">
+              </div>
+            </div>
+          </div>
+
+
+
+        <!-- 3. ИНТЕРАКТИВНОЕ ЧЕРЧЕНИЕ УЛИЦ НА 2D CAD ПЛАНЕ -->
+          <div class="tool-section">
+            <div class="tool-section-head">
+              <span>Интерактивное черчение на CAD</span>
+              <span class="val-tag" id="val-custom-count">0 улиц</span>
+            </div>
+
+            <div style="display: flex; gap: 6px;">
+              <button class="btn-primary-action" id="btn-draw-road" style="flex: 1; padding: 8px 12px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
+                <span id="btn-draw-icon">✏️</span>
+                <span id="btn-draw-text">Начертить улицу на плане</span>
+              </button>
+              <button class="angle-btn" id="btn-clear-roads" style="padding: 8px 10px; color: var(--danger); font-weight:600;" title="Очистить все начерченные улицы">↺ Сброс</button>
+            </div>
+
+            <div class="draw-road-hint" id="draw-road-hint" style="margin-top: 8px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.4; padding: 8px; background: rgba(56, 189, 248, 0.05); border: 1px dashed var(--accent-border); border-radius: var(--radius-sm);">
+              Кликните <b>«Начертить улицу»</b>, затем укажите начальную и конечную точку на 2D CAD чертеже.
+            </div>
+
+            <div id="custom-roads-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+              <!-- Список начерченных улиц -->
+            </div>
+          </div>
+
+        </div>
+
+        <!-- ФУТЕР ШАГА 2: НАВИГАЦИЯ -->
+        <div class="panel-footer" style="display: flex; gap: 8px;">
+          <button class="angle-btn" id="btn-step2-back" style="flex: 1; padding: 10px 8px; font-weight:600; justify-content:center;">
+            ← К посадке ЗУ
+          </button>
+          <button class="btn-primary-action" id="btn-step2-proceed" style="flex: 1.3; padding: 10px 8px; font-weight:600; justify-content:center; background: var(--success); border-color: var(--success-border); color: #020617;">
+            ✓ К застройке (Шаг 3) →
+          </button>
+        </div>
+      </div> <!-- /#panel-step-2-content -->
+
+      <!-- ==================================================================
+           ШАГ 3: ГЕНЕРАЦИЯ ЗАСТРОЙКИ И ТЭП
+           ================================================================== -->
+      <div class="step-panel-container" id="panel-step-3-content" style="display: none;">
+        <div class="panel-scroll-content">
+          
+          <div class="panel-hero">
+            <div class="panel-hero-title">
+              <span>Шаг 3: Застройка и ТЭП</span>
+              <span class="val-tag" id="panel-hero-step3-tag">Генерация</span>
+            </div>
+            <div class="panel-hero-desc">
+              Генерация объемно-пространственных решений в границах подкварталов с учетом инсоляции (СанПиН) и пожарных норм (СП 4.13130).
+            </div>
+          </div>
+
+          <!-- Карточка активных регламентов застройки -->
+          <div class="tool-section">
+            <div class="tool-section-head">
+              <span>Утвержденные регламенты</span>
+              <button type="button" class="angle-btn" id="btn-step3-edit-regs" style="font-size:10.5px; padding:2px 8px; color:var(--accent); font-weight:600;">
+                ⚙️ Изменить правила
+              </button>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:11.5px;">
+              <div style="background:var(--bg-surface); padding:6px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-default);">
+                <span style="color:var(--text-secondary); font-size:10px;">Этажность / высота:</span>
+                <div style="font-weight:700; color:var(--text-primary); font-family:var(--font-mono);" id="step3-card-floors">14 эт. (50.0 м)</div>
+              </div>
+              <div style="background:var(--bg-surface); padding:6px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-default);">
+                <span style="color:var(--text-secondary); font-size:10px;">Плотность (КПО):</span>
+                <div style="font-weight:700; color:var(--text-primary); font-family:var(--font-mono);" id="step3-card-far">2.50</div>
+              </div>
+              <div style="background:var(--bg-surface); padding:6px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-default);">
+                <span style="color:var(--text-secondary); font-size:10px;">Застройка (Кз):</span>
+                <div style="font-weight:700; color:var(--text-primary); font-family:var(--font-mono);" id="step3-card-bcr">40.0%</div>
+              </div>
+              <div style="background:var(--bg-surface); padding:6px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-default);">
+                <span style="color:var(--text-secondary); font-size:10px;">Озеленение:</span>
+                <div style="font-weight:700; color:var(--text-primary); font-family:var(--font-mono);" id="step3-card-green">≥ 25%</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- РЕГИОНАЛЬНЫЙ НОРМАТИВ ГРАДОСТРОИТЕЛЬНОГО ПРОЕКТИРОВАНИЯ (РНГП/МНГП) -->
+          <div class="tool-section">
+            <div class="tool-section-head">
+              <span>Норматив региона (РНГП / МНГП)</span>
+              <span class="val-tag" id="badge-step3-norm-tag">СП 42</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <select id="select-step3-regional-norm" class="select-custom" style="width:100%; font-size:11.5px; padding:6px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-default); background:var(--bg-surface); color:var(--text-primary);">
+                <option value="russia_sp42" selected>РФ — СП 42.13330.2016 (базовый)</option>
+                <option value="moscow_mngp">Москва — МНГП № 945-ПП</option>
+                <option value="moscow_oblast_rngp">Московская область — РНГП МО № 713/30</option>
+                <option value="spb_rngp">Санкт-Петербург — РНГП СПб</option>
+                <option value="tyumen_mngp">Тюмень — МНГП г. Тюмени</option>
               </select>
-            </div>
-
-            <div class="form-group">
-              <label class="form-label" for="input-cad-assigned">Привязанный кадастровый номер (для норм)</label>
-              <input type="text" id="input-cad-assigned" placeholder="63:01:0709002:2320">
+              <div id="step3-norm-summary" style="font-size:10.5px; color:var(--text-secondary); background:rgba(37,99,235,0.04); border:1px solid rgba(37,99,235,0.15); border-radius:var(--radius-sm); padding:6px 8px; line-height:1.4;">
+                350 м/м на 1000 жителей (25% гостевые), 25.0 м² жилья на человека, норма озеленения ≥ 25%.
+              </div>
             </div>
           </div>
 
-          <!-- PANE 3: ТОЧКИ / ГПЗУ -->
-          <div class="mode-pane" id="pane-mode-points">
-            <button class="angle-btn" id="btn-digitize-map" style="padding:9px; font-weight:600; width:100%; justify-content:center; background:var(--bg-surface); border-color:var(--accent-border);">
-              ✏️ Оцифровать контур по спутнику
+          <!-- 1. ТИПОЛОГИЯ ЗАСТРОЙКИ (ПРИНЦИПЫ ОБЫЧНОГО ДАШБОРДА) -->
+          <div class="tool-section">
+            <div class="tool-section-head">
+              <span>Типология застройки</span>
+              <span class="val-tag" id="val-typology-tag">Квартальная (AUTO)</span>
+            </div>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+              <button type="button" class="road-preset-btn active typology-btn" data-typology="AUTO" style="padding:7px 6px; grid-column: span 2;">
+                <div class="preset-icon">✨</div>
+                <div class="preset-name">Квартальная / Смешанная (AUTO)</div>
+                <div class="preset-sub">Оптимальная посадка под форму ЗУ</div>
+              </button>
+              <button type="button" class="road-preset-btn typology-btn" data-typology="PERIMETER" style="padding:7px 6px;">
+                <div class="preset-icon">🏢</div>
+                <div class="preset-name">Периметр (R2)</div>
+                <div class="preset-sub">Урбан-блоки</div>
+              </button>
+              <button type="button" class="road-preset-btn typology-btn" data-typology="TOWER" style="padding:7px 6px;">
+                <div class="preset-icon">🏙️</div>
+                <div class="preset-name">Башни (Towers)</div>
+                <div class="preset-sub">Акцентная</div>
+              </button>
+              <button type="button" class="road-preset-btn typology-btn" data-typology="U_SHAPE" style="padding:7px 6px;">
+                <div class="preset-icon">🪟</div>
+                <div class="preset-name">П-образные дворы</div>
+                <div class="preset-sub">Уютные дворы</div>
+              </button>
+              <button type="button" class="road-preset-btn typology-btn" data-typology="SECTIONAL" style="padding:7px 6px;">
+                <div class="preset-icon">🏛️</div>
+                <div class="preset-name">Секционная</div>
+                <div class="preset-sub">Широтные корпуса</div>
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. ПРИНЦИПЫ ЗАСТРОЙКИ И ИНСОЛЯЦИИ (СП 42 / СанПиН) -->
+          <div class="tool-section">
+            <div class="tool-section-head">
+              <span>Принципы застройки и нормы</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <label class="switch-label">
+                <input type="checkbox" id="chk-step3-cascade" checked>
+                <span>Каскадная этажность (СанПиН инсоляция)</span>
+              </label>
+              <label class="switch-label">
+                <input type="checkbox" id="chk-step3-car-free" checked>
+                <span>Концепция «Двор без машин» (СП 113)</span>
+              </label>
+              <label class="switch-label" title="Исключить подземный паркинг: этажность и параметры застройки калибруются под 100% размещение открытых стоянок на земле по СП 42 / РНГП">
+                <input type="checkbox" id="chk-step3-only-ground">
+                <span>🅿️ Все паркинги на участке (без подземного)</span>
+              </label>
+              <label class="switch-label" title="Разрешить размещение открытых парковок в охранных зонах СЗЗ и полосах дорог по СанПиН 2.2.1/2.1.1.1200-03">
+                <input type="checkbox" id="chk-step3-allow-zouit">
+                <span>🛡️ Разрешить парковки в ЗОУИТ/СЗЗ (по СанПиН)</span>
+              </label>
+              <label class="switch-label">
+                <input type="checkbox" id="chk-step3-towers-mixed" checked>
+                <span>Допускать башни-акценты в смешанной</span>
+              </label>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+                <span style="font-size:11.5px; color:var(--text-secondary);">Ориентация дворов:</span>
+                <select id="select-step3-court-orient" style="font-size:11px; padding:3px 8px; width:155px; border-radius:var(--radius-sm);">
+                  <option value="SOUTH" selected>Юг (макс. инсоляция)</option>
+                  <option value="SOUTH_EAST">Юго-восток</option>
+                  <option value="SOUTH_WEST">Юго-запад</option>
+                  <option value="EAST">Восток</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. ЭТАЖНОСТЬ И ПАРАМЕТРЫ РАСЧЕТА -->
+          <div class="tool-section">
+            <div class="tool-section-head">
+              <span>Параметры корпусов</span>
+              <span class="val-tag" id="val-step3-floors-tag">14 эт. (42 м)</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px; color:var(--text-secondary);">
+                  <span>Базовая этажность</span>
+                  <span id="label-step3-floors" style="font-weight:700; color:var(--accent);">14 эт.</span>
+                </div>
+                <input type="range" id="slider-step3-floors" min="4" max="25" value="14" step="1" style="width:100%;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px; color:var(--text-secondary);">
+                  <span>Строительный отступ от границ ЗУ (СП 42)</span>
+                  <span id="label-step3-setback" style="font-weight:700; color:var(--text-primary);">6.0 м</span>
+                </div>
+                <input type="range" id="slider-step3-setback" min="3" max="15" value="6" step="0.5" style="width:100%;">
+              </div>
+              <div>
+                <div style="display:flex; justify-content:space-between; font-size:11px; margin-bottom:4px; color:var(--text-secondary);">
+                  <span>Макс. секций в корпусе</span>
+                  <span id="label-step3-max-sections" style="font-weight:700; color:var(--accent);">8 секций</span>
+                </div>
+                <input type="range" id="slider-step3-max-sections" min="2" max="12" value="8" step="1" style="width:100%;">
+                <div style="display:flex; justify-content:space-between; font-size:9.5px; color:var(--text-muted); margin-top:2px;">
+                  <span>2 (башни)</span>
+                  <span>4–6 (комфорт)</span>
+                  <span>8 (стандарт)</span>
+                  <span>12 (длинные)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+            <button class="btn-primary-action" id="btn-generate-layout" style="width: 100%; padding: 11px; font-weight: 700; font-size: 13px; justify-content: center; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff;">
+              ⚡ Сгенерировать застройку
             </button>
-            <div id="digitize-status-badge" style="display:none; font-size:11px; color:var(--success); margin-top:4px; font-weight:600;"></div>
+            <button type="button" class="angle-btn" id="btn-run-maximize" style="width: 100%; padding: 9px; font-weight: 700; font-size: 11.5px; justify-content: center; background: rgba(37,99,235,0.08); border: 1px solid var(--accent); color: var(--accent);">
+              ⚡ Выжать максимум по закону (Top-1)
+            </button>
+          </div>
 
-            <div class="form-group" style="margin-top:8px;">
-              <label class="form-label" for="textarea-coords">Каталог координат X, Y (ГПЗУ / ЕГРН / WGS-84)</label>
-              <textarea id="textarea-coords" rows="4" placeholder="1  485230.12  1354120.45&#10;2  485450.60  1354310.80&#10;3  485210.00  1354450.00"></textarea>
-              <button class="angle-btn" id="btn-apply-coords" style="margin-top:4px; padding:6px; width:100%; justify-content:center;">Применить координаты</button>
+          <!-- Панель экспорта документации (Шаг 3) -->
+          <div class="tool-section" style="margin-top:12px;">
+            <div class="tool-section-head">
+              <span>Экспорт документации</span>
             </div>
-
-            <div class="file-dropzone" id="gpzu-dropzone" style="margin-top:6px;">
-              <div class="file-dropzone-text" id="gpzu-dropzone-text">Или загрузите файл ГПЗУ (.PDF / .XLSX)</div>
-              <div class="file-dropzone-hint">Автоматически распознает поворотные точки</div>
-              <input type="file" id="gpzu-file-input" accept=".pdf,.xlsx,.txt" style="display:none">
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
+              <button type="button" class="angle-btn" id="btn-export-dxf" style="padding:6px; font-size:11px; font-weight:600;">
+                📐 CAD (.DXF)
+              </button>
+              <button type="button" class="angle-btn" id="btn-export-3d" style="padding:6px; font-size:11px; font-weight:600;">
+                🧊 3D (.HTML)
+              </button>
+              <button type="button" class="angle-btn" id="btn-export-geojson" style="padding:6px; font-size:11px; font-weight:600;">
+                🗺️ GeoJSON
+              </button>
+              <button type="button" class="angle-btn" id="btn-export-report" style="padding:6px; font-size:11px; font-weight:600;">
+                📄 Отчет ТЭП
+              </button>
             </div>
           </div>
+
         </div>
 
-        <!-- 2. ПОСАДКА, ОРИЕНТАЦИЯ И ОТСТУПЫ -->
-        <div class="tool-section">
-          <div class="tool-section-head">
-            <span>Ориентация и посадка ЗУ</span>
-          </div>
-
-          <!-- Поворот участка -->
-          <div class="form-group">
-            <div class="form-label">
-              <span>Угол поворота</span>
-              <span class="val-tag" id="val-rotation">0.0°</span>
-            </div>
-            <input type="range" id="slider-rotation" min="-180" max="180" step="0.5" value="0">
-          </div>
-          <div class="angle-grid">
-            <button class="angle-btn" data-rot="-90">-90°</button>
-            <button class="angle-btn" data-rot="0">0° (Север)</button>
-            <button class="angle-btn" data-rot="90">+90°</button>
-          </div>
-
-          <div style="margin-top:6px;">
-            <button class="angle-btn" id="btn-reset-landing" style="width:100%; padding:6px; color:var(--warning); font-weight:600; justify-content:center;">
-              ↺ Сбросить поворот и смещение
-            </button>
-          </div>
-
-          <!-- Отступы от границ -->
-          <div class="form-group" style="margin-top:10px;">
-            <div class="form-label">
-              <span>Отступ от границы ЗУ</span>
-              <span class="val-tag" id="val-boundary-setback">6 м</span>
-            </div>
-            <input type="range" id="slider-boundary-setback" min="3" max="15" step="1" value="6">
-          </div>
-
-          <!-- Отступы от красных линий -->
-          <div class="form-group">
-            <div class="form-label">
-              <span>Отступ от красных линий</span>
-              <span class="val-tag" id="val-redline-setback">5 м</span>
-            </div>
-            <input type="range" id="slider-redline-setback" min="3" max="10" step="1" value="5">
-          </div>
-
-          <label class="switch-label">
-            <input type="checkbox" id="chk-redlines" checked>
-            <span>Учитывать красные линии улиц</span>
-          </label>
-          <label class="switch-label">
-            <input type="checkbox" id="chk-zouit">
-            <span>Отображать охранные зоны (ЗОУИТ)</span>
-          </label>
+        <!-- Футер Шага 3: Навигация -->
+        <div class="panel-footer" style="display: flex; gap: 8px;">
+          <button class="angle-btn" id="btn-step3-back" style="flex: 1; padding: 10px 8px; font-weight:600; justify-content:center;">
+            ← К нарезке УДС (Шаг 2)
+          </button>
         </div>
+      </div> <!-- /#panel-step-3-content -->
 
-      </div>
-
-      <!-- ФИКСАЦИЯ УЧАСТКА ДЛЯ ПЕРЕХОДА К ШАГУ 2 -->
-      <div class="panel-footer">
-        <button class="btn-lock-site" id="btn-lock-site">
-          <span>🔒</span>
-          <span id="btn-lock-text">Зафиксировать посадку участка</span>
-        </button>
-      </div>
     </aside>
 
     <!-- --------------------------------------------------------------------
@@ -262,29 +674,60 @@
          -------------------------------------------------------------------- -->
     <main class="center-canvas">
 
-      <!-- ПЕРЕКЛЮЧАТЕЛЬ ВИДОВ ХОЛСТА (СЛЕВА СВЕРХУ) -->
-      <div class="canvas-view-toggle">
-        <button class="canvas-tab-btn active" data-view="osm" id="tab-canvas-osm">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="2" y1="12" x2="22" y2="12"></line>
-            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-          </svg>
-          <span>🛰️ Спутник OSM</span>
-        </button>
-        <button class="canvas-tab-btn" data-view="svg" id="tab-canvas-svg">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-            <line x1="3" y1="9" x2="21" y2="9"></line>
-            <line x1="9" y1="21" x2="9" y2="9"></line>
-          </svg>
-          <span>📐 2D CAD План</span>
-        </button>
+      <!-- ВЕРХНЯЯ ПАНЕЛЬ ХОЛСТА (ВИДЫ + СЛОИ) -->
+      <div class="canvas-top-bar">
+        <!-- ПЕРЕКЛЮЧАТЕЛЬ ВИДОВ ХОЛСТА (СЛЕВА) -->
+        <div class="canvas-view-toggle">
+          <button class="canvas-tab-btn active" data-view="osm" id="tab-canvas-osm">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            <span>🛰️ Спутник OSM</span>
+          </button>
+          <button class="canvas-tab-btn" data-view="svg" id="tab-canvas-svg">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+              <line x1="3" y1="9" x2="21" y2="9"></line>
+              <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+            <span>📐 2D CAD План</span>
+          </button>
+          <button class="canvas-tab-btn" data-view="3d" id="tab-canvas-3d">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+            <span>🧊 3D Модель</span>
+          </button>
+        </div>
+
+        <!-- БЫСТРЫЕ ПЕРЕКЛЮЧАТЕЛИ ВИДИМОСТИ ИНЖЕНЕРНЫХ СЛОЕВ -->
+        <div class="canvas-layers-bar" id="canvas-layers-bar" style="display: flex;">
+          <span class="layers-bar-label">Слои:</span>
+          <button class="layer-pill-btn active" data-layer="fire" id="btn-toggle-fire" type="button" title="Показать / скрыть пожарные проезды СП 4.13130">
+            <span class="layer-pill-dot" style="background:#ef4444;"></span>
+            <span>🚒 Пожарные</span>
+          </button>
+          <button class="layer-pill-btn active" data-layer="parking" id="btn-toggle-parking" type="button" title="Показать / скрыть машиноместа и парковки">
+            <span class="layer-pill-dot" style="background:#0ea5e9;"></span>
+            <span>🚗 Парковки</span>
+          </button>
+          <button class="layer-pill-btn active" data-layer="tko" id="btn-toggle-tko" type="button" title="Показать / скрыть площадки ТКО (мусор) СанПиН">
+            <span class="layer-pill-dot" style="background:#10b981;"></span>
+            <span>🗑️ ТКО</span>
+          </button>
+          <button class="layer-pill-btn active" data-layer="san" id="btn-toggle-san" type="button" title="Показать / скрыть санитарные разрывы стоянок">
+            <span class="layer-pill-dot" style="background:#a855f7;"></span>
+            <span>🅿️ Санразрывы</span>
+          </button>
+        </div>
       </div>
 
-      <!-- PANE 1: ИНТЕРАКТИВНЫЙ LEAFLET OSM / SATELLITE IFRAME С ТРАНСФОРМОМ -->
+      <!-- PANE 1: ИНТЕРАКТИВНЫЙ LEAFLET OSM / SATELLITE IFRAME -->
       <div class="canvas-pane active" id="pane-osm">
-        <!-- Пустое начальное состояние холста -->
         <div class="canvas-empty-state" id="canvas-empty-state">
           <div class="empty-state-card">
             <div class="empty-state-icon">
@@ -314,19 +757,79 @@
           </defs>
           <rect width="100%" height="100%" fill="url(#cad-grid-pattern)"/>
           <g id="svg-world" transform="matrix(1 0 0 1 0 0)">
-            <!-- Динамический контур ЗУ рендерится здесь -->
+            <g id="svg-site-bound-layer"></g>
+            <g id="svg-zouit-layer"></g>
+            <g id="svg-redlines-layer"></g>
+            <g id="svg-road-corridor-layer"></g>
+            <g id="svg-road-buffer-layer"></g>
+            <g id="svg-road-centerlines-layer"></g>
+            <g id="svg-sub-blocks-layer"></g>
+            <g id="svg-parking-san-layer"></g>
+            <g id="svg-tko-layer"></g>
+            <g id="svg-parking-layer"></g>
+            <g id="svg-fire-safety-layer"></g>
+            <g id="svg-buildings-layer"></g>
+            <g id="svg-sections-layer"></g>
+            <g id="svg-road-handles-layer"></g>
+            <g id="svg-road-drawing-layer"></g>
           </g>
         </svg>
       </div>
 
-      <!-- ПЛАВАЮЩИЕ КНОПКИ ЗУМА (СПРАВА СНИЗУ) ДЛЯ 2D CAD -->
+      <!-- PANE 3: ИНТЕРАКТИВНАЯ 3D МОДЕЛЬ THREE.JS -->
+      <div class="canvas-pane" id="pane-3d">
+        <iframe id="iframe-3d" src="viewer_3d.html" style="width:100%; height:100%; border:0;" title="Интерактивная 3D модель застройки"></iframe>
+      </div>
+
+      <!-- CANVAS LOADING SPINNER OVERLAY -->
+      <div class="canvas-loading-overlay" id="canvas-loading-overlay" style="display:none;">
+        <div class="loading-spinner"></div>
+        <div id="canvas-loading-text" style="font-weight:700; font-size:13.5px; color:#fff;">Генерация объемно-пространственных решений...</div>
+        <div style="font-size:11.5px; color:rgba(255,255,255,0.75);">Расчет рассадки секций, инсоляции, пожарных проездов и ТЭП</div>
+      </div>
+
+      <!-- ПЛАВАЮЩИЕ КНОПКИ ЗУМА ДЛЯ 2D CAD -->
       <div class="canvas-zoom-buttons" id="cad-zoom-controls" style="display:none;">
         <button class="zoom-tool-btn" id="btn-zoom-in" title="Приблизить">+</button>
         <button class="zoom-tool-btn" id="btn-zoom-reset" title="Показать весь участок (1:1)" style="font-size:11px;">⌂</button>
         <button class="zoom-tool-btn" id="btn-zoom-out" title="Отдалить">−</button>
       </div>
 
-      <!-- СТАТУС-БАР ПОСАДКИ (СЛЕВА СНИЗУ) -->
+      <!-- БОКОВОЙ ИНДИКАТОР ПЕРЕБОРА ВАРИАНТОВ (TOP-1) - ПЛАВАЕТ НАД ЛЮБОЙ ВКЛАДКОЙ ХОЛСТА -->
+      <div id="opt-progress-panel" class="opt-side-card" style="display:none;">
+        <div class="opt-card-header">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span class="opt-card-pulse"></span>
+            <span style="font-size:12.5px; font-weight:700; color:var(--text-primary); letter-spacing:-0.2px;">Перебор вариантов (Top-1)</span>
+          </div>
+          <span class="badge" id="opt-badge-pct" style="background:var(--accent-glow); color:var(--accent); font-weight:700; font-size:11px; padding:2px 8px; border-radius:12px;">0%</span>
+        </div>
+        <div class="opt-bar-bg">
+          <div class="opt-bar-fill" id="opt-bar-fill" style="width:0%;"></div>
+        </div>
+        <div class="opt-status-msg" id="opt-status-msg">Инициализация оптимизатора...</div>
+        <div class="opt-mini-grid">
+          <div class="opt-mini-box">
+            <div class="opt-mini-lbl">Проверено</div>
+            <div class="opt-mini-val" id="opt-val-count">0 / 0</div>
+          </div>
+          <div class="opt-mini-box">
+            <div class="opt-mini-lbl">Лидер GFA</div>
+            <div class="opt-mini-val" id="opt-val-gfa" style="color:var(--accent);">—</div>
+          </div>
+          <div class="opt-mini-box">
+            <div class="opt-mini-lbl">Этажи</div>
+            <div class="opt-mini-val" id="opt-val-floors" style="color:var(--success);">—</div>
+          </div>
+        </div>
+        <div class="opt-compliance-tags">
+          <span class="opt-tag">✓ Противопожарные (10/18м)</span>
+          <span class="opt-tag">✓ Инсоляция СП 42</span>
+          <span class="opt-tag">✓ Лимиты Кпз / Кз (СП 42)</span>
+        </div>
+      </div>
+
+      <!-- СТАТУС-БАР ПОСАДКИ -->
       <div class="canvas-status-bar">
         <div class="compass-tag">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" id="compass-svg" style="transition: transform 0.2s ease;">
@@ -342,10 +845,14 @@
     </main>
 
     <!-- --------------------------------------------------------------------
-         RIGHT PANEL (340px): ПАСПОРТ УЧАСТКА И ПРОВЕРКА ПОСАДКИ
+         RIGHT PANEL (340px): ПАСПОРТ УЧАСТКА И БАЛАНС ТЕРРИТОРИИ
          -------------------------------------------------------------------- -->
     <aside class="right-panel">
-      <div class="right-panel-content">
+
+      <!-- ==================================================================
+           ШАГ 1: ПАСПОРТ УЧАСТКА
+           ================================================================== -->
+      <div class="right-panel-content" id="right-panel-step-1">
 
         <div class="right-panel-head">
           <div class="right-panel-title">Паспорт земельного участка</div>
@@ -407,13 +914,25 @@
                 <td id="p-zouit-status">—</td>
               </tr>
               <tr>
+                <td>Предельная высота / этажность</td>
+                <td id="p-max-height">14 эт. (50.0 м)</td>
+              </tr>
+              <tr>
+                <td>Макс. процент застройки (Кз)</td>
+                <td id="p-max-bcr">40.0%</td>
+              </tr>
+              <tr>
+                <td>Коэф. плотности (КПО)</td>
+                <td id="p-max-far">2.50</td>
+              </tr>
+              <tr>
                 <td>Система координат</td>
                 <td id="p-crs">—</td>
               </tr>
             </tbody>
           </table>
 
-          <!-- ВНЕШНИЕ ССЫЛКИ НА ГЕОПОРТАЛЫ ВНУТРИ ПАСПОРТА (БЕЗ НАЛЕЗАНИЯ НА ЛЕГЕНДУ) -->
+          <!-- ВНЕШНИЕ ССЫЛКИ НА ГЕОПОРТАЛЫ ВНУТРИ ПАСПОРТА -->
           <div class="passport-geo-actions">
             <a href="#" class="geo-action-link" id="link-yandex" target="_blank" rel="noopener">
               <span>🌐 Яндекс.Карты ↗</span>
@@ -424,24 +943,750 @@
           </div>
         </div>
 
-        <!-- ПОДСКАЗКА ПОСЛЕДУЮЩЕГО ШАГА -->
+        <!-- ПОДСКАЗКА ПОСАДКИ -->
         <div class="tool-section" style="background: rgba(56, 189, 248, 0.05); border-color: var(--accent-border);">
           <div style="font-weight:600; color:var(--accent); font-size:12px;">Интерактивная посадка:</div>
           <div style="font-size:11.5px; color:var(--text-secondary); line-height:1.4; margin-top:3px;">
             • Перетаскивайте контур ЗУ за тело полигона.<br>
             • Поворачивайте участок за оранжевый маркер над контуром.<br>
-            • После точной посадки нажмите <b>«Зафиксировать посадку участка»</b> для перехода к Шагу 2.
+            • После точной посадки нажмите <b>«Зафиксировать посадку и перейти к УДС»</b>.
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ==================================================================
+           ШАГ 2: БАЛАНС ТЕРРИТОРИИ И ПОДКВАРТАЛЫ
+           ================================================================== -->
+      <div class="right-panel-content" id="right-panel-step-2" style="display: none;">
+
+        <div class="right-panel-head">
+          <div class="right-panel-title">Паспорт УДС и Баланс территории</div>
+          <div class="right-panel-desc">ТЭП улично-дорожной сети и ведомость планировочных кварталов</div>
+        </div>
+
+        <!-- БАННЕР СТАТУСА УДС -->
+        <div class="verification-card verified" id="verif-card-step2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0; margin-top:1px;">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <div>
+            <div style="font-weight:700; color:var(--text-primary);" id="verif-title-step2">УДС сформирована</div>
+            <div style="color:var(--text-secondary); margin-top:2px;" id="verif-desc-step2">
+              Выделено подкварталов: <b id="verif-blocks-count" style="color:var(--accent);">4</b>.
+            </div>
+          </div>
+        </div>
+
+        <!-- БАЛАНС ТЕРРИТОРИИ (ТЭП УДС) -->
+        <div class="tool-section">
+          <div class="tool-section-head">Баланс территории (СП 42.13330)</div>
+          <table class="passport-table">
+            <tbody>
+              <tr>
+                <td>Общая площадь ЗУ (брутто)</td>
+                <td id="tb-site-area">—</td>
+              </tr>
+              <tr>
+                <td>Площадь коридоров УДС</td>
+                <td id="tb-roads-area" style="color: var(--warning); font-weight: 700;">—</td>
+              </tr>
+              <tr>
+                <td>Доля дорог в территории</td>
+                <td id="tb-roads-share">—</td>
+              </tr>
+              <tr>
+                <td>Буфер строительных отступов</td>
+                <td id="tb-buffer-area">—</td>
+              </tr>
+              <tr>
+                <td>Зоны ограничений (ЗОУИТ)</td>
+                <td id="tb-zouit-area" style="color:var(--danger); font-weight:600;">—</td>
+              </tr>
+              <tr>
+                <td>Полезная площадь кварталов</td>
+                <td id="tb-blocks-area" class="cell-accent" style="color: var(--success); font-weight: 700;">—</td>
+              </tr>
+              <tr>
+                <td>Доля зоны под застройку</td>
+                <td id="tb-blocks-share">—</td>
+              </tr>
+              <tr>
+                <td>Протяженность улиц</td>
+                <td id="tb-roads-length">—</td>
+              </tr>
+              <tr>
+                <td>Количество подкварталов</td>
+                <td id="tb-blocks-count">—</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="passport-geo-actions">
+            <a href="#" class="geo-action-link" id="link-yandex-step2" target="_blank" rel="noopener">
+              <span>🌐 Яндекс.Карты ↗</span>
+            </a>
+            <a href="#" class="geo-action-link" id="link-pkk-step2" target="_blank" rel="noopener">
+              <span>🗺️ ПКК Росреестра ↗</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- ВЕДОМОСТЬ ПОДКВАРТАЛОВ -->
+        <div class="tool-section">
+          <div class="tool-section-head">
+            <span>Ведомость подкварталов</span>
+            <span class="val-tag" id="tb-blocks-badge">0 кварталов</span>
+          </div>
+
+          <div style="max-height: 240px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: var(--radius-sm);">
+            <table class="passport-table sub-blocks-table" id="table-sub-blocks">
+              <thead>
+                <tr style="background: var(--bg-surface); border-bottom: 1px solid var(--border-default); font-size: 11px; color: var(--text-secondary);">
+                  <th style="padding: 6px 8px; text-align: left; width: 18%;">Квартал</th>
+                  <th style="padding: 6px 8px; text-align: right; width: 48%;">Площадь</th>
+                  <th style="padding: 6px 8px; text-align: right; width: 34%;">Доля ЗУ</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-sub-blocks">
+                <tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 12px;">УДС не нарезана</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ==================================================================
+           ШАГ 3: ПАСПОРТ ТЭП МАСТЕР-ПЛАНА И ЭКСПЛИКАЦИЯ
+           ================================================================== -->
+      <div class="right-panel-content" id="right-panel-step-3" style="display: none;">
+
+        <div class="right-panel-head">
+          <div class="right-panel-title">Паспорт ТЭП мастер-плана</div>
+          <div class="right-panel-desc">Сводные градостроительные и технико-экономические показатели</div>
+        </div>
+
+        <!-- КАРТОЧКА СТАТУСА ГЕНЕРАЦИИ -->
+        <div class="verification-card verified" id="verif-card-step3">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0; margin-top:1px;">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <div>
+            <div style="font-weight:700; color:var(--text-primary);" id="verif-title-step3">Застройка рассчитана</div>
+            <div style="color:var(--text-secondary); margin-top:2px;" id="verif-desc-step3">
+              Корпусов: <b id="verif-buildings-count" style="color:var(--accent);">—</b>, секций: <b id="verif-sections-count" style="color:var(--accent);">—</b>.
+            </div>
+          </div>
+        </div>
+
+        <!-- ОСНОВНЫЕ ТЭП ЗАСТРОЙКИ (СВОДНАЯ ТАБЛИЦА) -->
+        <div class="tool-section">
+          <div class="tool-section-head">
+            <span>Технико-экономические показатели</span>
+            <span class="val-tag" id="val-tep-typology-badge">Периметр</span>
+          </div>
+
+          <table class="passport-table">
+            <tbody>
+              <tr>
+                <td>Общая площадь (GFA)</td>
+                <td id="tep-gfa" class="cell-accent" style="font-weight:700; font-size:12.5px; color:var(--accent);">—</td>
+              </tr>
+              <tr>
+                <td>Жилая площадь квартир</td>
+                <td id="tep-living" style="font-weight:600;">—</td>
+              </tr>
+              <tr>
+                <td>Коммерция (1 этажи)</td>
+                <td id="tep-comm">—</td>
+              </tr>
+              <tr>
+                <td>Плотность застройки (FAR / КПО)</td>
+                <td id="tep-far" style="font-weight:700;">—</td>
+              </tr>
+              <tr>
+                <td>Процент застройки (BCR / Кз)</td>
+                <td id="tep-bcr" style="font-weight:700;">—</td>
+              </tr>
+              <tr>
+                <td>Площадь пятна застройки</td>
+                <td id="tep-footprint">—</td>
+              </tr>
+              <tr>
+                <td>Расчетное население</td>
+                <td id="tep-pop">— чел.</td>
+              </tr>
+              <tr>
+                <td>Всего квартир</td>
+                <td id="tep-apts">—</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ПАРКОВКИ (СП 42.13330) -->
+        <div class="tool-section">
+          <div class="tool-section-head">
+            <span>Парковочные места (СП 42.13330)</span>
+            <span class="badge-status badge-ok" id="badge-parking-status">Норма соблюдена</span>
+          </div>
+          <table class="passport-table">
+            <tbody>
+              <tr>
+                <td>Требуется по нормативу</td>
+                <td id="tep-parking-req" style="font-weight:600;">— м/м</td>
+              </tr>
+              <tr>
+                <td>Открытые гостевые стоянки</td>
+                <td id="tep-parking-ground" style="color:var(--accent); font-weight:600;">— м/м</td>
+              </tr>
+              <tr>
+                <td>Подземный паркинг (под стилобатом)</td>
+                <td id="tep-parking-underground">— м/м</td>
+              </tr>
+              <tr>
+                <td>Всего запроектировано</td>
+                <td id="tep-parking-total" class="cell-accent" style="font-weight:700;">— м/м</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- БЛАГОУСТРОЙСТВО И ОЗЕЛЕНЕНИЕ (СП 42.13330) -->
+        <div class="tool-section">
+          <div class="tool-section-head">
+            <span>Благоустройство и озеленение</span>
+          </div>
+          <table class="passport-table">
+            <tbody>
+              <tr>
+                <td>Фактическое озеленение</td>
+                <td id="tep-green-fact" style="color:var(--success); font-weight:700;">—</td>
+              </tr>
+              <tr>
+                <td>Норматив озеленения (СП 42)</td>
+                <td id="tep-green-norm">≥ 25%</td>
+              </tr>
+              <tr>
+                <td>Детские игровые площадки</td>
+                <td id="tep-play-children">— м²</td>
+              </tr>
+              <tr>
+                <td>Спортивные площадки</td>
+                <td id="tep-play-sport">— м²</td>
+              </tr>
+              <tr>
+                <td>Площадки для отдыха взрослых</td>
+                <td id="tep-play-relax">— м²</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- ИНСПЕКТОР ВЫБРАННОЙ СЕКЦИИ (КЛИК В 2D ИЛИ 3D) -->
+        <div class="tool-section" id="section-inspector-card" style="display:none; border:1px solid var(--accent); background:rgba(37,99,235,0.04);">
+          <div class="tool-section-head">
+            <span style="font-weight:700; color:var(--text-primary);" id="insp-sec-title">Инспектор секции</span>
+            <span class="val-tag" id="insp-sec-category">Угловая</span>
+          </div>
+          <table class="passport-table" style="font-size:11px;">
+            <tbody>
+              <tr><td>Корпус / Номер</td><td id="insp-sec-building" style="font-weight:700;">—</td></tr>
+              <tr><td>Марка / Тип</td><td id="insp-sec-type">—</td></tr>
+              <tr><td>Этажность / Высота</td><td id="insp-sec-floors" style="color:var(--accent); font-weight:700;">—</td></tr>
+              <tr><td>GFA / Жилая площадь</td><td id="insp-sec-gfa" style="font-weight:600;">—</td></tr>
+              <tr><td>Квартир в секции</td><td id="insp-sec-apts">—</td></tr>
+              <tr><td>Квартирография</td><td id="insp-sec-breakdown" style="font-size:10px;">—</td></tr>
+              <tr><td>1-й этаж</td><td id="insp-sec-ground">—</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- САНИТАРНЫЕ НОРМЫ И ТКО (СанПиН 2.1.3684) -->
+        <div class="tool-section">
+          <div class="tool-section-head">
+            <span>Санитарные зоны и ТКО (СанПиН)</span>
+            <span class="badge-status badge-ok" id="badge-san-status">В норме</span>
+          </div>
+          <table class="passport-table">
+            <tbody>
+              <tr>
+                <td>Площадки ТКО (СанПиН 2.1)</td>
+                <td id="tep-san-tko" style="font-weight:600;">—</td>
+              </tr>
+              <tr>
+                <td>Радиус доступности ТКО</td>
+                <td>≤ 100 м (покрытие 100%)</td>
+              </tr>
+              <tr>
+                <td>Санразрыв от стоянок до окон</td>
+                <td id="tep-san-buffer" style="font-weight:600;">10–15 м</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- МАТРИЦА ВАРИАНТОВ ЭТАЖНОСТИ (СЦЕНАРНЫЙ АНАЛИЗ) -->
+        <div class="tool-section">
+          <div class="tool-section-head">
+            <span>Матрица вариантов этажности</span>
+            <button type="button" class="angle-btn" id="btn-calc-variants" style="font-size:10.5px; padding:2px 8px; color:var(--accent); font-weight:600;">
+              ⚡ Рассчитать
+            </button>
+          </div>
+          <div style="font-size:10.5px; color:var(--text-secondary); margin-bottom:6px;">
+            Кликните по строке для мгновенного применения сценария к 3D-модели:
+          </div>
+          <div style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: var(--radius-sm);">
+            <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 11px;">
+              <thead>
+                <tr style="background: var(--bg-surface); border-bottom: 1px solid var(--border-default); font-size: 10.5px; color: var(--text-secondary);">
+                  <th style="padding: 5px 6px; text-align: left;">Этажи</th>
+                  <th style="padding: 5px 6px; text-align: right;">GFA, м²</th>
+                  <th style="padding: 5px 6px; text-align: right;">Кпз</th>
+                  <th style="padding: 5px 6px; text-align: right;">Кз</th>
+                  <th style="padding: 5px 6px; text-align: center;">СП 42</th>
+                  <th style="padding: 5px 6px; text-align: right;">Действие</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-variants-matrix">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">Запустите расчет застройки</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- КВАРТИРОГРАФИЯ ПО КОРПУСАМ -->
+        <div class="tool-section">
+          <div class="tool-section-head">
+            <span>Квартирография жилого комплекса</span>
+          </div>
+          <div style="max-height: 160px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: var(--radius-sm);">
+            <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 11px;">
+              <thead>
+                <tr style="background: var(--bg-surface); border-bottom: 1px solid var(--border-default); font-size: 10.5px; color: var(--text-secondary);">
+                  <th style="padding: 5px 6px; text-align: left;">Дом</th>
+                  <th style="padding: 5px 6px; text-align: center;">Студии</th>
+                  <th style="padding: 5px 6px; text-align: center;">1к</th>
+                  <th style="padding: 5px 6px; text-align: center;">2к</th>
+                  <th style="padding: 5px 6px; text-align: center;">3к</th>
+                  <th style="padding: 5px 6px; text-align: right;">Всего</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-apartments-breakdown">
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- ЭКСПЛИКАЦИЯ ЗДАНИЙ И КОРПУСОВ -->
+        <div class="tool-section">
+          <div class="tool-section-head">
+            <span>Экспликация зданий и секций</span>
+            <span class="val-tag" id="val-buildings-count-badge">— корпусов</span>
+          </div>
+          <div style="max-height: 200px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: var(--radius-sm);">
+            <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+              <thead>
+                <tr style="background: var(--bg-surface); border-bottom: 1px solid var(--border-default); font-size: 11px; color: var(--text-secondary);">
+                  <th style="padding: 6px 8px; text-align: left; width: 22%;">Корпус</th>
+                  <th style="padding: 6px 8px; text-align: center; width: 20%;">Этажей</th>
+                  <th style="padding: 6px 8px; text-align: right; width: 28%;">GFA (м²)</th>
+                  <th style="padding: 6px 8px; text-align: right; width: 30%;">Квартир</th>
+                </tr>
+              </thead>
+              <tbody id="tbody-buildings-explication">
+                <tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 12px;">Застройка не сгенерирована</td></tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
       </div>
     </aside>
 
+  </div> <!-- /.studio-workspace -->
+
+
+  <!-- ======================================================================
+       МОДАЛЬНОЕ ОКНО: ИНСПЕКТОР ГПЗУ, ЗОУИТ И ПРЕДЕЛЬНЫХ РЕГЛАМЕНТОВ
+       ====================================================================== -->
+  <!-- ======================================================================
+       МОДАЛЬНОЕ ОКНО: ПРОВЕРКА РЕГЛАМЕНТОВ И ОГРАНИЧЕНИЙ ПЕРЕД РАССАДКОЙ (ШАГ 3)
+       ====================================================================== -->
+  <div class="modal-backdrop" id="modal-step3-regulations" style="display:none;">
+    <div class="modal-box" style="max-width: 720px;">
+      <div class="modal-header">
+        <div>
+          <div style="font-size: 15px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+            <span>🏗️</span> Градостроительные регламенты застройки (Шаг 3)
+          </div>
+          <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+            Проверьте и подтвердите правила перед генерацией объемно-пространственных решений
+          </div>
+        </div>
+        <button type="button" class="modal-close" id="modal-step3-regs-close" title="Закрыть">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 16px 20px; display: flex; flex-direction: column; gap: 14px;">
+        <!-- Сводка по участку и нарезке -->
+        <div style="display:flex; justify-content:space-between; align-items:center; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-sm); padding:10px 14px;">
+          <div>
+            <div style="font-size:11px; color:var(--text-secondary);">Территория под застройку:</div>
+            <div id="modal-step3-site-summary" style="font-size:13px; font-weight:700; color:var(--text-primary); font-family:var(--font-mono);">—</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:11px; color:var(--text-secondary);">Кварталов под застройку:</div>
+            <div id="modal-step3-blocks-summary" style="font-size:13px; font-weight:700; color:var(--accent);">1 квартал</div>
+          </div>
+        </div>
+
+        <!-- Основные градостроительные параметры (2x2 grid) -->
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+          <div class="form-group">
+            <div class="form-label">
+              <span>Предельная этажность</span>
+              <span class="val-tag" id="val-step3-floors">14 эт.</span>
+            </div>
+            <input type="number" id="input-step3-floors" min="1" max="50" value="14" style="font-size:12px; padding:6px 8px;">
+            <div style="font-size:10px; color:var(--text-muted); margin-top:3px;" id="snip-step3-floors">Базовое значение или Раздел 2 ГПЗУ</div>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">
+              <span>Предельная высота зданий</span>
+              <span class="val-tag" id="val-step3-height">50.0 м</span>
+            </div>
+            <input type="number" id="input-step3-height" min="5" max="150" value="50" step="1" style="font-size:12px; padding:6px 8px;">
+            <div style="font-size:10px; color:var(--text-muted); margin-top:3px;" id="snip-step3-height">Высота до конька / парапета (м)</div>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">
+              <span>Макс. процент застройки (Кз)</span>
+              <span class="val-tag" id="val-step3-bcr">40%</span>
+            </div>
+            <input type="number" id="input-step3-bcr" min="10" max="80" value="40" step="1" style="font-size:12px; padding:6px 8px;">
+            <div style="font-size:10px; color:var(--text-muted); margin-top:3px;" id="snip-step3-bcr">Доля пятна застройки от квартала (%)</div>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">
+              <span>Коэф. плотности (КПО / FAR)</span>
+              <span class="val-tag" id="val-step3-far">2.50</span>
+            </div>
+            <input type="number" id="input-step3-far" min="0.5" max="5.0" value="2.5" step="0.1" style="font-size:12px; padding:6px 8px;">
+            <div style="font-size:10px; color:var(--text-muted); margin-top:3px;" id="snip-step3-far">Отношение суммарной поэтажной площади к ЗУ</div>
+          </div>
+        </div>
+
+        <!-- Дополнительные нормативы (озеленение, отступы) -->
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+          <div class="form-group">
+            <div class="form-label">
+              <span>Озеленение (СП 42.13330)</span>
+              <span class="val-tag" id="val-step3-green">25%</span>
+            </div>
+            <input type="number" id="input-step3-green" min="10" max="60" value="25" step="1" style="font-size:12px; padding:6px 8px;">
+            <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">Норматив озеленения жилых зон (≥ 25%)</div>
+          </div>
+
+          <div class="form-group">
+            <div class="form-label">
+              <span>Отступ от границ / красных линий</span>
+              <span class="val-tag" id="val-step3-setback">3 / 5 м</span>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <input type="number" id="input-step3-setback-bound" min="1" max="20" value="3" step="0.5" style="width:50%; font-size:12px; padding:6px 8px;" title="Отступ от границ ЗУ (м)">
+              <input type="number" id="input-step3-setback-redline" min="1" max="20" value="5" step="0.5" style="width:50%; font-size:12px; padding:6px 8px;" title="Отступ от красных линий (м)">
+            </div>
+            <div style="font-size:10px; color:var(--text-muted); margin-top:3px;">Отступ ЗУ (слева) и от красных линий (справа)</div>
+          </div>
+        </div>
+
+        <!-- БЛОК ТОНКОЙ НАСТРОЙКИ РНГП (УДЕЛЬНЫЕ НОРМАТИВЫ БЛАГОУСТРОЙСТВА) -->
+        <details class="expander" id="rngp-fine-expander" style="border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 8px 12px; background: var(--bg-surface);">
+          <summary style="cursor: pointer; font-size: 12px; font-weight: 700; color: var(--accent); display: flex; align-items: center; justify-content: space-between;">
+            <span>📋 Тонкая настройка РНГП (удельные нормативы площадок и машиномест)</span>
+            <span style="font-size: 10px; color: var(--text-muted);">Развернуть ▾</span>
+          </summary>
+          
+          <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border-muted); padding-top: 10px;">
+            <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary);">Удельные площади площадок благоустройства (м²/чел):</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="form-group">
+                <div class="form-label" style="font-size: 10.5px;">
+                  <span>Детские площадки (СП 42)</span>
+                  <span class="val-tag">м²/чел</span>
+                </div>
+                <input type="number" id="input-rngp-children" min="0.1" max="5.0" value="0.70" step="0.05" style="font-size: 11.5px; padding: 4px 6px;">
+              </div>
+              <div class="form-group">
+                <div class="form-label" style="font-size: 10.5px;">
+                  <span>Физкультурные площадки</span>
+                  <span class="val-tag">м²/чел</span>
+                </div>
+                <input type="number" id="input-rngp-sport" min="0.1" max="10.0" value="2.00" step="0.1" style="font-size: 11.5px; padding: 4px 6px;">
+              </div>
+              <div class="form-group">
+                <div class="form-label" style="font-size: 10.5px;">
+                  <span>Отдых взрослых</span>
+                  <span class="val-tag">м²/чел</span>
+                </div>
+                <input type="number" id="input-rngp-relax" min="0.01" max="2.0" value="0.10" step="0.02" style="font-size: 11.5px; padding: 4px 6px;">
+              </div>
+              <div class="form-group">
+                <div class="form-label" style="font-size: 10.5px;">
+                  <span>Хозяйственные цели и ТКО</span>
+                  <span class="val-tag">м²/чел</span>
+                </div>
+                <input type="number" id="input-rngp-utility" min="0.05" max="3.0" value="0.38" step="0.02" style="font-size: 11.5px; padding: 4px 6px;">
+              </div>
+            </div>
+
+            <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-top: 4px;">Нормативы жилья и машиномест:</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div class="form-group">
+                <div class="form-label" style="font-size: 10.5px;">
+                  <span>Обеспеченность жильем</span>
+                  <span class="val-tag">м²/чел</span>
+                </div>
+                <input type="number" id="input-rngp-living" min="15" max="60" value="30.0" step="1" style="font-size: 11.5px; padding: 4px 6px;">
+              </div>
+              <div class="form-group">
+                <div class="form-label" style="font-size: 10.5px;">
+                  <span>Машиномест на 1000 жителей</span>
+                  <span class="val-tag">м/м</span>
+                </div>
+                <input type="number" id="input-rngp-parking-ratio" min="100" max="600" value="350" step="10" style="font-size: 11.5px; padding: 4px 6px;">
+              </div>
+              <div class="form-group">
+                <div class="form-label" style="font-size: 10.5px;">
+                  <span>Доля гостевых стоянок</span>
+                  <span class="val-tag">%</span>
+                </div>
+                <input type="number" id="input-rngp-guest-share" min="5" max="50" value="25" step="1" style="font-size: 11.5px; padding: 4px 6px;">
+              </div>
+              <div class="form-group">
+                <div class="form-label" style="font-size: 10.5px;">
+                  <span>Площадь на 1 открытое м/м</span>
+                  <span class="val-tag">м²</span>
+                </div>
+                <input type="number" id="input-rngp-area-per-car" min="18" max="35" value="25.0" step="0.5" style="font-size: 11.5px; padding: 4px 6px;">
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Блок информации о ЗОУИТ и кнопка перехода в полный ГПЗУ инспектор -->
+        <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(239, 68, 68, 0.06); border:1px solid rgba(239, 68, 68, 0.25); border-radius:var(--radius-sm); padding:10px 14px;">
+          <div>
+            <div style="font-size:12px; font-weight:600; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+              <span>🛡️</span> Ограничения и охранные зоны (ЗОУИТ): <span id="modal-step3-zouit-count" style="color:var(--danger); font-weight:700;">0 зон</span>
+            </div>
+            <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;" id="modal-step3-zouit-summary">Охранные зоны не обнаружены</div>
+          </div>
+          <button type="button" class="angle-btn" id="btn-step3-open-full-gpzu" style="font-size:11px; padding:6px 10px; font-weight:600; color:var(--accent);">
+            📑 Детальный инспектор ГПЗУ
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; background:var(--bg-surface); border-top:1px solid var(--border-default);">
+        <button type="button" class="angle-btn" id="btn-step3-regs-back">← Назад к УДС</button>
+        <button type="button" class="btn-primary-action" id="btn-step3-regs-confirm" style="padding:8px 16px; font-weight:600; background:var(--success); border-color:var(--success-border); color:#020617;">
+          ✓ Подтвердить регламенты и перейти к застройке →
+        </button>
+      </div>
+    </div>
   </div>
 
-</div>
+  <div class="modal-backdrop" id="gpzu-modal" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div>
+          <div style="font-size: 15px; font-weight: 700; color: var(--text-primary); display: flex; align-items: center; gap: 8px;">
+            <span>📑</span> Градостроительный план земельного участка (ГПЗУ)
+          </div>
+          <div style="font-size: 11.5px; color: var(--text-secondary); margin-top: 3px;">
+            Выбор параметров застройки, предельных регламентов и зон с особыми условиями (ЗОУИТ)
+          </div>
+        </div>
+        <button type="button" class="modal-close" id="gpzu-modal-close" title="Закрыть">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Карточка реквизитов документа -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; background:rgba(56, 189, 248, 0.08); border-left:4px solid var(--accent); padding:10px 14px; border-radius:0 var(--radius-sm) var(--radius-sm) 0; flex-wrap:wrap; gap:8px;">
+          <div>
+            <span style="font-size:11px; color:var(--text-secondary);">Кадастровый номер и файл:</span>
+            <div id="modal-gpzu-title" style="font-weight:700; font-size:13.5px; color:var(--text-primary);">—</div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span id="modal-gpzu-points-badge" class="badge-status badge-ok" style="font-size:11px;">— точек границы</span>
+            <span id="modal-gpzu-area-badge" class="badge-status badge-neutral" style="font-size:11px;">— м²</span>
+          </div>
+        </div>
+
+        <!-- РАЗДЕЛ 1: КАТАЛОГИ КООРДИНАТ И ЗОНЫ ГПЗУ -->
+        <div style="margin-bottom:16px; background:var(--bg-surface); border:1px solid var(--border-default); border-radius:var(--radius-sm); padding:12px 14px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div style="font-weight:700; font-size:13px; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+              <span>🗺️</span> 1. Каталоги координат и зоны ГПЗУ (<span id="modal-gpzu-zones-count">0</span>)
+            </div>
+            <span class="badge-status badge-ok" style="font-size:10.5px;">Раздельная группировка по зонам</span>
+          </div>
+          <div style="font-size:11.5px; color:var(--text-secondary); margin-bottom:10px; line-height:1.3;">
+            Координаты из ГПЗУ автоматически разделены по контурам и таблицам. Выберите роль для каждого контура:
+          </div>
+
+          <div id="modal-gpzu-zones-list" style="display:flex; flex-direction:column; gap:8px;">
+            <!-- Карточки зон генерируются динамически -->
+          </div>
+        </div>
+
+        <!-- РАЗДЕЛ 2: ПРЕДЕЛЬНЫЕ ПАРАМЕТРЫ РАЗРЕШЕННОГО СТРОИТЕЛЬСТВА -->
+        <div style="margin-bottom:16px;">
+          <div style="font-weight:700; font-size:13px; color:var(--text-primary); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+            <span>📐</span> 2. Градостроительные регламенты и параметры застройки (Раздел 2 ГПЗУ)
+          </div>
+          <div style="font-size:11.5px; color:var(--text-secondary); margin-bottom:10px;">
+            Отметьте параметры, которые необходимо соблюдать. Справа показаны оригинальные цитаты из текста ГПЗУ.
+          </div>
+
+          <div style="display:grid; grid-template-columns:1fr; gap:8px;">
+            <!-- Параметр: Отступ от границ -->
+            <div class="gpzu-param-row">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-setback" checked />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text-primary);">Минимальный отступ от границ ЗУ:</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-setback" value="3.0" step="0.5" min="0" max="50" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;">
+                <span style="font-size:12px; color:var(--text-secondary);">м</span>
+              </div>
+              <div id="modal-gpzu-snip-setback" style="font-size:10.5px; color:var(--text-secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Отступ от красных линий -->
+            <div class="gpzu-param-row">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-redline" checked />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text-primary);">Отступ от красных линий улиц:</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-redline" value="5.0" step="0.5" min="0" max="50" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;">
+                <span style="font-size:12px; color:var(--text-secondary);">м</span>
+              </div>
+              <div id="modal-gpzu-snip-redline" style="font-size:10.5px; color:var(--text-secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Предельная этажность -->
+            <div class="gpzu-param-row">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-floors" checked />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text-primary);">Предельная этажность зданий:</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-floors" value="14" step="1" min="1" max="75" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;">
+                <span style="font-size:12px; color:var(--text-secondary);">эт.</span>
+              </div>
+              <div id="modal-gpzu-snip-floors" style="font-size:10.5px; color:var(--text-secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Предельная высота -->
+            <div class="gpzu-param-row">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-max-h" checked />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text-primary);">Предельная высота зданий (м):</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-max-h" value="50.0" step="1" min="5" max="250" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;">
+                <span style="font-size:12px; color:var(--text-secondary);">м</span>
+              </div>
+              <div id="modal-gpzu-snip-max-h" style="font-size:10.5px; color:var(--text-secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Процент застройки (Кз / BCR) -->
+            <div class="gpzu-param-row">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-bcr" checked />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text-primary);">Макс. процент застройки (Кз):</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-bcr" value="40" step="1" min="5" max="90" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;">
+                <span style="font-size:12px; color:var(--text-secondary);">%</span>
+              </div>
+              <div id="modal-gpzu-snip-bcr" style="font-size:10.5px; color:var(--text-secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Коэффициент плотности застройки (Кпз / FAR) -->
+            <div class="gpzu-param-row">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-far" checked />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text-primary);">Коэффициент плотности (Кпз):</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-far" value="2.5" step="0.1" min="0.1" max="10.0" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;">
+                <span style="font-size:12px; color:var(--text-secondary);">ед.</span>
+              </div>
+              <div id="modal-gpzu-snip-far" style="font-size:10.5px; color:var(--text-secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+
+            <!-- Параметр: Минимальное озеленение -->
+            <div class="gpzu-param-row">
+              <label style="display:flex; align-items:center; gap:8px; cursor:pointer; flex:1;">
+                <input type="checkbox" id="modal-gpzu-chk-green" checked />
+                <span style="font-size:12.5px; font-weight:600; color:var(--text-primary);">Минимальная доля озеленения:</span>
+              </label>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <input type="number" id="modal-gpzu-val-green" value="25" step="1" min="5" max="80" style="width:70px; padding:3px 6px; font-size:12px; text-align:right;">
+                <span style="font-size:12px; color:var(--text-secondary);">%</span>
+              </div>
+              <div id="modal-gpzu-snip-green" style="font-size:10.5px; color:var(--text-secondary); max-width:260px; font-style:italic; line-height:1.2; text-align:right;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- РАЗДЕЛ 3: ЗОУИТ И ОХРАННЫЕ ЗОНЫ -->
+        <div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+            <div style="font-weight:700; font-size:13px; color:var(--text-primary); display:flex; align-items:center; gap:6px;">
+              <span>🛡️</span> 3. Зоны с особыми условиями использования (ЗОУИТ / охранные зоны)
+            </div>
+            <button type="button" class="angle-btn" id="btn-modal-add-zouit" style="font-size:11px; padding:4px 8px; font-weight:600;">
+              <span>➕ Добавить ЗОУИТ вручную</span>
+            </button>
+          </div>
+          <div style="font-size:11.5px; color:var(--text-secondary); margin-bottom:10px;">
+            Геометрия зон строится по каталогу поворотных точек. Зоны, отмеченные галочкой, автоматически вырезаются из зоны застройки.
+          </div>
+
+          <div id="modal-gpzu-zouit-list" style="display:flex; flex-direction:column; gap:8px;">
+            <!-- Карточки ЗОУИТ генерируются динамически -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="angle-btn" id="btn-modal-gpzu-boundary-only" title="Импортировать только контур границ ЗУ без изменения регламентов">
+          <span>📐 Применить только контур</span>
+        </button>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="angle-btn" id="btn-modal-gpzu-cancel">Отмена</button>
+          <button type="button" class="btn-primary-action" id="btn-modal-gpzu-apply" style="padding:8px 14px; font-weight:600;">
+            <span>🚀 Применить данные ГПЗУ и ограничения</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div> <!-- /.studio-app -->
 
 <!-- Client App Engine -->
-<script src="app.js"></script>
+<script src="app.js?v=2.2"></script>
 </body>
 </html>
