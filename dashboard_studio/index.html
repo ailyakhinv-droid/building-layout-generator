@@ -1,13 +1,25 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="ru" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>URBAN / TEP STUDIO — Генератор застройки и мастер-планирования</title>
+  <script>
+    (function() {
+      try {
+        var t = localStorage.getItem('urban_tep_studio_theme') || 'light';
+        if (t === 'dark') {
+          document.documentElement.removeAttribute('data-theme');
+        } else {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      } catch(e) {}
+    })();
+  </script>
   <link rel="stylesheet" href="radix-themes.css">
-  <link rel="stylesheet" href="style.css?v=2.2">
+  <link rel="stylesheet" href="style.css?v=2.5_20261115">
 </head>
-<body class="radix-themes dark-theme">
+<body class="radix-themes light-theme light" data-accent-color="slate">
 
 <div class="studio-app">
 
@@ -46,6 +58,12 @@
     </div>
 
     <div class="header-actions">
+      <!-- Кнопка вызова таблицы секций -->
+      <button class="theme-toggle-btn" id="btn-header-sections" type="button" title="Открыть параметрическую таблицу типовых секций и высот" style="margin-right:4px;">
+        <span style="font-size:13px;">🏢</span>
+        <span style="font-size:12px; font-weight:600;">Каталог секций</span>
+      </button>
+
       <!-- Theme Switcher Toggle (shadcn Light / CAD Dark) -->
       <button class="theme-toggle-btn" id="btn-theme-toggle" type="button" title="Переключить тему оформления (Светлая shadcn / Тёмная CAD)">
         <span class="theme-icon" id="theme-icon">☀️</span>
@@ -416,27 +434,59 @@
 
 
 
-        <!-- 3. ИНТЕРАКТИВНОЕ ЧЕРЧЕНИЕ УЛИЦ НА 2D CAD ПЛАНЕ -->
+        <!-- 3. МОДЕЛИРОВАНИЕ СЕТИ УЛИЦ НА 2D CAD -->
           <div class="tool-section">
             <div class="tool-section-head">
-              <span>Интерактивное черчение на CAD</span>
+              <span>Моделирование УДС на плане</span>
               <span class="val-tag" id="val-custom-count">0 улиц</span>
             </div>
 
-            <div style="display: flex; gap: 6px;">
-              <button class="btn-primary-action" id="btn-draw-road" style="flex: 1; padding: 8px 12px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
-                <span id="btn-draw-icon">✏️</span>
-                <span id="btn-draw-text">Начертить улицу на плане</span>
+            <!-- Режимы: 1. Въезды на границе (рекомендуемый), 2. Свободное черчение -->
+            <div style="display:flex; gap:4px; margin-bottom:8px; background:var(--bg-canvas); padding:2px; border-radius:var(--radius-sm); border:1px solid var(--border-default);">
+              <button type="button" class="angle-btn active" id="btn-tab-entry-points" style="flex:1; justify-content:center; font-size:11px; padding:6px 4px; font-weight:700;">
+                📍 Въезды на границе
               </button>
-              <button class="angle-btn" id="btn-clear-roads" style="padding: 8px 10px; color: var(--danger); font-weight:600;" title="Очистить все начерченные улицы">↺ Сброс</button>
+              <button type="button" class="angle-btn" id="btn-tab-free-draw" style="flex:1; justify-content:center; font-size:11px; padding:6px 4px; font-weight:700;">
+                ✏️ Свободное черчение
+              </button>
             </div>
 
-            <div class="draw-road-hint" id="draw-road-hint" style="margin-top: 8px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.4; padding: 8px; background: rgba(56, 189, 248, 0.05); border: 1px dashed var(--accent-border); border-radius: var(--radius-sm);">
-              Кликните <b>«Начертить улицу»</b>, затем укажите начальную и конечную точку на 2D CAD чертеже.
+            <!-- Подрежим 1: Въезды на границе участка -->
+            <div id="subview-entry-points">
+              <div style="display: flex; gap: 6px;">
+                <button class="btn-primary-action" id="btn-add-entry-point" style="flex: 1; padding: 8px 10px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
+                  <span id="btn-entry-icon">📍</span>
+                  <span id="btn-entry-text">Поставить въезд на границе</span>
+                </button>
+                <button class="angle-btn" id="btn-clear-entries" style="padding: 8px 10px; color: var(--danger); font-weight:600;" title="Очистить все въезды">↺ Сброс</button>
+              </div>
+
+              <div class="draw-road-hint" id="entry-road-hint" style="margin-top: 8px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.4; padding: 8px; background: rgba(56, 189, 248, 0.05); border: 1px dashed var(--accent-border); border-radius: var(--radius-sm);">
+                Кликните <b>«Поставить въезд»</b>, затем укажите 2–4 точки на границе участка. Алгоритм увяжет их в связную сеть улиц и нарежет кварталы.
+              </div>
+
+              <div id="entry-points-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+                <!-- Список установленных въездов -->
+              </div>
             </div>
 
-            <div id="custom-roads-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
-              <!-- Список начерченных улиц -->
+            <!-- Подрежим 2: Свободное черчение по 2 точкам -->
+            <div id="subview-free-draw" style="display:none;">
+              <div style="display: flex; gap: 6px;">
+                <button class="btn-primary-action" id="btn-draw-road" style="flex: 1; padding: 8px 12px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px;">
+                  <span id="btn-draw-icon">✏️</span>
+                  <span id="btn-draw-text">Начертить улицу на плане</span>
+                </button>
+                <button class="angle-btn" id="btn-clear-roads" style="padding: 8px 10px; color: var(--danger); font-weight:600;" title="Очистить все начерченные улицы">↺ Сброс</button>
+              </div>
+
+              <div class="draw-road-hint" id="draw-road-hint" style="margin-top: 8px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.4; padding: 8px; background: rgba(56, 189, 248, 0.05); border: 1px dashed var(--accent-border); border-radius: var(--radius-sm);">
+                Кликните <b>«Начертить улицу»</b>, затем укажите начальную и конечную точку на 2D CAD чертеже.
+              </div>
+
+              <div id="custom-roads-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
+                <!-- Список начерченных улиц -->
+              </div>
             </div>
           </div>
 
@@ -469,6 +519,17 @@
             </div>
           </div>
 
+          <!-- ПЕРЕКЛЮЧАТЕЛЬ ПОД-ВКЛАДОК ШАГА 3 (ЗАСТРОЙКА / ИНСОЛЯЦИЯ САНПИН) -->
+          <div style="display:flex; background:var(--bg-canvas); border-radius:var(--radius-md); padding:3px; gap:4px; margin-bottom:12px; border:1px solid var(--border-default);">
+            <button type="button" class="angle-btn active" id="subtab-btn-step3-params" style="flex:1; justify-content:center; padding:7px 4px; font-size:11.5px; font-weight:700; border-radius:var(--radius-sm);">
+              📐 Застройка и ТЭП
+            </button>
+            <button type="button" class="angle-btn" id="subtab-btn-step3-insolation" style="flex:1; justify-content:center; padding:7px 4px; font-size:11.5px; font-weight:700; border-radius:var(--radius-sm);">
+              ☀️ Инсоляция (СанПиН)
+            </button>
+          </div>
+
+          <div id="subtab-view-step3-params">
           <!-- Карточка активных регламентов застройки -->
           <div class="tool-section">
             <div class="tool-section-head">
@@ -517,34 +578,29 @@
             </div>
           </div>
 
-          <!-- 1. ТИПОЛОГИЯ ЗАСТРОЙКИ (ПРИНЦИПЫ ОБЫЧНОГО ДАШБОРДА) -->
+          <!-- 1. ТИПОЛОГИЯ ЗАСТРОЙКИ -->
           <div class="tool-section">
             <div class="tool-section-head">
               <span>Типология застройки</span>
               <span class="val-tag" id="val-typology-tag">Квартальная (AUTO)</span>
             </div>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px;">
-              <button type="button" class="road-preset-btn active typology-btn" data-typology="AUTO" style="padding:7px 6px; grid-column: span 2;">
+              <button type="button" class="road-preset-btn active typology-btn" data-typology="AUTO" style="padding:8px 6px;">
                 <div class="preset-icon">✨</div>
-                <div class="preset-name">Квартальная / Смешанная (AUTO)</div>
-                <div class="preset-sub">Оптимальная посадка под форму ЗУ</div>
+                <div class="preset-name">Квартальная (AUTO)</div>
+                <div class="preset-sub">Адаптивная посадка</div>
               </button>
-              <button type="button" class="road-preset-btn typology-btn" data-typology="PERIMETER" style="padding:7px 6px;">
-                <div class="preset-icon">🏢</div>
-                <div class="preset-name">Периметр (R2)</div>
-                <div class="preset-sub">Урбан-блоки</div>
-              </button>
-              <button type="button" class="road-preset-btn typology-btn" data-typology="TOWER" style="padding:7px 6px;">
-                <div class="preset-icon">🏙️</div>
-                <div class="preset-name">Башни (Towers)</div>
-                <div class="preset-sub">Акцентная</div>
-              </button>
-              <button type="button" class="road-preset-btn typology-btn" data-typology="U_SHAPE" style="padding:7px 6px;">
+              <button type="button" class="road-preset-btn typology-btn" data-typology="U_SHAPE" style="padding:8px 6px;">
                 <div class="preset-icon">🪟</div>
                 <div class="preset-name">П-образные дворы</div>
-                <div class="preset-sub">Уютные дворы</div>
+                <div class="preset-sub">Полузамкнутые дворы</div>
               </button>
-              <button type="button" class="road-preset-btn typology-btn" data-typology="SECTIONAL" style="padding:7px 6px;">
+              <button type="button" class="road-preset-btn typology-btn" data-typology="TOWER" style="padding:8px 6px;">
+                <div class="preset-icon">🏙️</div>
+                <div class="preset-name">Башни (Towers)</div>
+                <div class="preset-sub">Точечные акценты</div>
+              </button>
+              <button type="button" class="road-preset-btn typology-btn" data-typology="SECTIONAL" style="padding:8px 6px;">
                 <div class="preset-icon">🏛️</div>
                 <div class="preset-name">Секционная</div>
                 <div class="preset-sub">Широтные корпуса</div>
@@ -570,6 +626,9 @@
                 <input type="checkbox" id="chk-step3-only-ground">
                 <span>🅿️ Все паркинги на участке (без подземного)</span>
               </label>
+              <div style="font-size:10px; color:var(--text-secondary); margin-left:22px; line-height:1.3; margin-top:-4px;">
+                100% открытых стоянок на земле. Число корпусов и этажи калибруются под свободную площадь земли.
+              </div>
               <label class="switch-label" title="Разрешить размещение открытых парковок в охранных зонах СЗЗ и полосах дорог по СанПиН 2.2.1/2.1.1.1200-03">
                 <input type="checkbox" id="chk-step3-allow-zouit">
                 <span>🛡️ Разрешить парковки в ЗОУИТ/СЗЗ (по СанПиН)</span>
@@ -588,7 +647,12 @@
               <div style="margin-top:8px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                   <span style="font-size:11.5px; color:var(--text-secondary);">Секции в подборке:</span>
-                  <span id="hint-pref-sections" style="font-size:11px; color:var(--text-secondary);">Все типы</span>
+                  <div style="display:flex; gap:6px; align-items:center;">
+                    <span id="hint-pref-sections" style="font-size:11px; color:var(--text-secondary);">Все типы</span>
+                    <button type="button" class="angle-btn" id="btn-open-sections-modal" title="Открыть таблицу характеристик, этажности и высот секций" style="padding:2px 8px; font-size:11px; font-weight:600; color:var(--accent); display:flex; align-items:center; gap:4px;">
+                      <span>📋</span> Таблица секций
+                    </button>
+                  </div>
                 </div>
                 <div id="pref-sections-container" style="display:flex; flex-wrap:wrap; gap:4px; margin-top:5px;"></div>
                 <div style="font-size:10.5px; color:var(--text-secondary); opacity:0.85; margin-top:3px;">
@@ -634,6 +698,155 @@
               </div>
             </div>
           </div>
+          </div> <!-- /#subtab-view-step3-params -->
+
+          <!-- ВКЛАДКА 2: ДЕТАЛЬНЫЙ КОНТРОЛЬ ИНСОЛЯЦИИ (САНПИН 1.2.3685-21) -->
+          <div id="subtab-view-step3-insolation" style="display: none;">
+            <!-- ПАРАМЕТРЫ КОНТРОЛЯ ИНСОЛЯЦИИ САНПИН 1.2.3685-21 -->
+            <div class="tool-section">
+              <div class="tool-section-head">
+                <span>Контроль инсоляции СанПиН</span>
+                <span class="val-tag" id="badge-insolation-zone-tag">2.0 ч (Центр)</span>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <label class="switch-label">
+                  <input type="checkbox" id="chk-insolation-enable" checked>
+                  <span style="font-weight:600;">Включить контроль инсоляции</span>
+                </label>
+                <div style="font-size:10.5px; color:var(--text-secondary); line-height:1.4;">
+                  Проверка непрерывной продолжительности солнечного освещения жилых комнат по СанПиН 1.2.3685-21 и СП 42.13330.
+                </div>
+              </div>
+            </div>
+
+            <!-- ЗОНА И НОРМАТИВ ЧАСОВ ИНСОЛЯЦИИ -->
+            <div class="tool-section">
+              <div class="tool-section-head">
+                <span>Географическая зона и норматив</span>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:6px;">
+                <select id="select-insolation-zone" class="select-custom" style="width:100%; font-size:11.5px; padding:6px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-default); background:var(--bg-surface); color:var(--text-primary);">
+                  <option value="2.0" selected>Центральная зона РФ — ≥ 2.0 ч (Москва, Ижевск, СПб, Казань, Тюмень)</option>
+                  <option value="1.5">Южная зона РФ — ≥ 1.5 ч (Краснодар, Ростов, Сочи, Крым)</option>
+                  <option value="2.5">Северная зона РФ — ≥ 2.5 ч (севернее 58° с.ш., Сургут, Мурманск)</option>
+                </select>
+                <label class="switch-label" style="margin-top:2px;">
+                  <input type="checkbox" id="chk-insolation-allow-intermittent" checked>
+                  <span>Прерывистая инсоляция (СанПиН п. 164: ≥1.0 ч, сумма ≥2.5 ч)</span>
+                </label>
+                <div style="font-size:10.5px; color:var(--text-secondary); background:rgba(37,99,235,0.04); border:1px solid rgba(37,99,235,0.15); border-radius:var(--radius-sm); padding:6px 8px; line-height:1.4;">
+                  Расчетный день: <b>22 апреля</b> (равноденствие по СанПиН). Время: с <b>07:00 до 19:00</b> (высота солнца ≥ 8°).
+                </div>
+              </div>
+            </div>
+
+            <!-- УЧЕТ ОКРУЖАЮЩЕЙ ЗАСТРОЙКИ (OSM / CAD) -->
+            <div class="tool-section">
+              <div class="tool-section-head">
+                <span>Окружающая застройка (OSM / CAD)</span>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <label class="switch-label">
+                  <input type="checkbox" id="chk-insolation-include-surroundings" checked>
+                  <span>Учитывать затенение соседними зданиями</span>
+                </label>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span style="font-size:11px; color:var(--text-secondary);">Высота окружения по умолчанию:</span>
+                  <div style="display:flex; align-items:center; gap:4px;">
+                    <input type="number" id="input-insolation-surr-height" value="15.0" min="3.0" max="100.0" step="1.0" style="width:65px; font-size:11px; padding:3px 6px; border:1px solid var(--border-default); border-radius:var(--radius-sm); text-align:right;">
+                    <span style="font-size:11px; color:var(--text-secondary);">м</span>
+                  </div>
+                </div>
+                <div id="surrounding-overrides-status" style="display:flex; justify-content:space-between; align-items:center; background:rgba(37,99,235,0.06); border:1px dashed #93c5fd; border-radius:var(--radius-sm); padding:6px 8px;">
+                  <span style="font-size:11px; font-weight:600; color:#1e40af;" id="surr-overrides-count-text">Ручных правок высоты: 0</span>
+                  <button type="button" class="angle-btn" id="btn-reset-surr-overrides" style="font-size:10px; padding:2px 6px; color:#ef4444; border-color:#fca5a5; display:none;">Сбросить все</button>
+                </div>
+                <div style="font-size:10px; color:var(--text-muted); line-height:1.35;">
+                  💡 Кликните на любое здание окружения в 3D для просмотра и изменения его фактической высоты/этажности.
+                </div>
+              </div>
+            </div>
+
+            <!-- ГРАДОСТРОИТЕЛЬНЫЕ ОГРАНИЧЕНИЯ И СЕТКА -->
+            <div class="tool-section">
+              <div class="tool-section-head">
+                <span>Ограничения генератора и сетка</span>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:8px;">
+                <label class="switch-label">
+                  <input type="checkbox" id="chk-insolation-auto-cascade" checked>
+                  <span>Каскадное понижение этажей затеняющих секций</span>
+                </label>
+                <label class="switch-label">
+                  <input type="checkbox" id="chk-insolation-meridian-rule" checked>
+                  <span>Запрет меридиональных секций на широте (угол ≥ 25°)</span>
+                </label>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
+                  <span style="font-size:11px; color:var(--text-secondary);">Шаг расчетной сетки фасадов:</span>
+                  <select id="select-insolation-grid-step" style="font-size:11px; padding:3px 6px; border-radius:var(--radius-sm); border:1px solid var(--border-default);">
+                    <option value="3.0" selected>3.0 м (стандарт — окно)</option>
+                    <option value="2.0">2.0 м (высокая точность)</option>
+                    <option value="4.5">4.5 м (экспресс-расчет)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- СВОДНЫЙ СТАТУС ИНСОЛЯЦИИ ПРОЕКТА -->
+            <div class="tool-section" id="insolation-status-card" style="background:var(--bg-surface); border:1px solid var(--border-default);">
+              <div class="tool-section-head">
+                <span>Результаты инсоляции</span>
+                <span class="badge-status badge-ok" id="badge-insolation-calc-status">Норма выполнена</span>
+              </div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:11.5px; margin-top:4px;">
+                <div style="background:var(--bg-canvas); padding:6px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-default);">
+                  <span style="color:var(--text-secondary); font-size:10px;">Освещено фасадов:</span>
+                  <div style="font-weight:700; color:var(--success); font-family:var(--font-mono); font-size:13px;" id="insolation-stat-rate">— %</div>
+                </div>
+                <div style="background:var(--bg-canvas); padding:6px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-default);">
+                  <span style="color:var(--text-secondary); font-size:10px;">Проверено ячеек:</span>
+                  <div style="font-weight:700; color:var(--text-primary); font-family:var(--font-mono); font-size:13px;" id="insolation-stat-pts">—</div>
+                </div>
+              </div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap:6px; font-size:10.5px; margin-top:6px;">
+                <div style="color:#059669;" id="insolation-stat-cont">Непрерывно (≥2ч): —</div>
+                <div style="color:#0284c7;" id="insolation-stat-interm">Прерывисто: —</div>
+              </div>
+              <div style="font-size:10.5px; color:var(--text-secondary); margin-top:6px; line-height:1.4;" id="insolation-stat-desc">
+                После генерации застройки на фасадах формируется 3D-тепловая карта.
+              </div>
+              <button type="button" class="angle-btn" id="btn-insolation-open-3d" style="width:100%; justify-content:center; margin-top:8px; padding:7px; font-weight:700; font-size:11.5px; color:var(--accent);">
+                ☀️ Включить тепловую карту в 3D
+              </button>
+            </div>
+
+            <!-- ВЛИЯНИЕ НА ОКРУЖАЮЩУЮ ЗАСТРОЙКУ (САНПИН) -->
+            <div class="tool-section" id="surrounding-impact-card" style="background:var(--bg-surface); border:1px solid var(--border-default);">
+              <div class="tool-section-head">
+                <span>Затенение окружения</span>
+                <span class="badge-status badge-ok" id="badge-surr-impact-status">Норма соблюдена</span>
+              </div>
+              <div style="font-size:11px; color:var(--text-secondary); line-height:1.4;" id="surr-impact-desc">
+                Проверка влияния новых корпусов на соседние жилые дома по СанПиН.
+              </div>
+              <div id="surr-impact-table-wrap" style="margin-top:6px; max-height:140px; overflow-y:auto; border:1px solid var(--border-default); border-radius:var(--radius-sm); display:none;">
+                <table class="passport-table" style="font-size:10.5px;">
+                  <thead>
+                    <tr style="background:var(--bg-canvas); color:var(--text-secondary);">
+                      <th style="padding:4px 6px; text-align:left;">Здание</th>
+                      <th style="padding:4px 6px; text-align:right;">Высота</th>
+                      <th style="padding:4px 6px; text-align:right;">Δ час</th>
+                      <th style="padding:4px 6px; text-align:center;">Статус</th>
+                    </tr>
+                  </thead>
+                  <tbody id="surr-impact-tbody"></tbody>
+                </table>
+              </div>
+              <button type="button" class="angle-btn" id="btn-show-surr-heatmap-3d" style="width:100%; margin-top:8px; font-size:11px; padding:6px 10px; font-weight:600; display:flex; align-items:center; justify-content:center; gap:6px; background:rgba(245,158,11,0.08); border:1px solid #f59e0b; color:#d97706; cursor:pointer; border-radius:var(--radius-sm); transition:all 0.15s ease;">
+                ☀️ Показать тепловую карту окружения в 3D
+              </button>
+            </div>
+          </div> <!-- /#subtab-view-step3-insolation -->
 
           <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
             <button class="btn-primary-action" id="btn-generate-layout" style="width: 100%; padding: 11px; font-weight: 700; font-size: 13px; justify-content: center; background: linear-gradient(135deg, #2563eb, #1d4ed8); color: #fff;">
@@ -712,6 +925,27 @@
           </button>
         </div>
 
+        <!-- ПЕРЕКЛЮЧАТЕЛЬ КАРТОГРАФИЧЕСКОЙ ПОДЛОЖКИ НА 2D ЧЕРТЕЖЕ -->
+        <div class="canvas-basemap-bar" id="canvas-basemap-bar" style="display: flex;">
+          <span class="layers-bar-label">Подложка:</span>
+          <button class="basemap-pill-btn active" data-basemap="osm" id="btn-bm-osm" type="button" title="OpenStreetMap — точная картографическая схема (как во вкладке Спутник OSM)">
+            <span>🗺️ OSM</span>
+          </button>
+          <button class="basemap-pill-btn" data-basemap="satellite" id="btn-bm-satellite" type="button" title="Спутниковые снимки высокой четкости (Esri Satellite)">
+            <span>🛰️ Спутник</span>
+          </button>
+          <button class="basemap-pill-btn" data-basemap="light" id="btn-bm-light" type="button" title="Светлая архитектурная карта (Esri Light Gray)">
+            <span>⚪ Светлая</span>
+          </button>
+          <button class="basemap-pill-btn" data-basemap="none" id="btn-bm-none" type="button" title="Отключить подложку (чертеж на CAD-сетке)">
+            <span>⬛ CAD</span>
+          </button>
+          <div class="basemap-opacity-wrap" title="Прозрачность картографической подложки">
+            <input type="range" id="slider-basemap-opacity" min="15" max="100" value="80" step="5" class="basemap-opacity-slider">
+            <span id="label-basemap-opacity" class="basemap-opacity-val">80%</span>
+          </div>
+        </div>
+
         <!-- БЫСТРЫЕ ПЕРЕКЛЮЧАТЕЛИ ВИДИМОСТИ ИНЖЕНЕРНЫХ СЛОЕВ -->
         <div class="canvas-layers-bar" id="canvas-layers-bar" style="display: flex;">
           <span class="layers-bar-label">Слои:</span>
@@ -765,6 +999,7 @@
           </defs>
           <rect width="100%" height="100%" fill="url(#cad-grid-pattern)"/>
           <g id="svg-world" transform="matrix(1 0 0 1 0 0)">
+            <g id="svg-basemap-layer"></g>
             <g id="svg-site-bound-layer"></g>
             <g id="svg-zouit-layer"></g>
             <g id="svg-redlines-layer"></g>
@@ -780,6 +1015,7 @@
             <g id="svg-sections-layer"></g>
             <g id="svg-road-handles-layer"></g>
             <g id="svg-road-drawing-layer"></g>
+            <g id="svg-entry-points-layer"></g>
           </g>
         </svg>
       </div>
@@ -787,13 +1023,62 @@
       <!-- PANE 3: ИНТЕРАКТИВНАЯ 3D МОДЕЛЬ THREE.JS -->
       <div class="canvas-pane" id="pane-3d">
         <iframe id="iframe-3d" src="viewer_3d.html" style="width:100%; height:100%; border:0;" title="Интерактивная 3D модель застройки"></iframe>
+
+        <!-- ПЛАВАЮЩИЙ ПЕРЕКЛЮЧАТЕЛЬ СЦЕНАРИЕВ В 3D (АККУРАТНЫЙ ДОК ВНИЗУ ЭКРАНА) -->
+        <div id="dock-3d-scenarios" style="display: none; position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 40; pointer-events: auto;">
+          <div class="dock-scenarios-container">
+            <span class="dock-scenarios-label">Сценарий:</span>
+            <div id="dock-scenario-buttons" style="display: flex; align-items: center; gap: 4px;"></div>
+          </div>
+        </div>
       </div>
 
-      <!-- CANVAS LOADING SPINNER OVERLAY -->
-      <div class="canvas-loading-overlay" id="canvas-loading-overlay" style="display:none;">
-        <div class="loading-spinner"></div>
-        <div id="canvas-loading-text" style="font-weight:700; font-size:13.5px; color:#fff;">Генерация объемно-пространственных решений...</div>
-        <div style="font-size:11.5px; color:rgba(255,255,255,0.75);">Расчет рассадки секций, инсоляции, пожарных проездов и ТЭП</div>
+      <!-- CANVAS LOADING PROGRESS OVERLAY -->
+      <div class="canvas-loading-overlay" id="canvas-loading-overlay" style="display:none; transition: opacity 0.25s ease;">
+        <div class="calc-progress-modal">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <div class="loading-spinner" style="width: 20px; height: 20px; border-width: 2.5px;"></div>
+              <div style="font-weight: 700; font-size: 14px; letter-spacing: -0.2px;">Расчет застройки</div>
+            </div>
+            <span id="calc-progress-pct-badge" class="calc-progress-badge">15%</span>
+          </div>
+
+          <!-- Progress Bar -->
+          <div class="calc-progress-track">
+            <div id="calc-progress-bar-fill" class="calc-progress-fill"></div>
+          </div>
+
+          <!-- Current Stage Title & Subtitle -->
+          <div style="display: flex; flex-direction: column; gap: 2px;">
+            <div id="canvas-loading-text" style="font-weight: 600; font-size: 12.5px;">Размещение корпусов...</div>
+            <div id="canvas-loading-subtext" style="font-size: 11px; opacity: 0.75;">Расстановка секций по нормам</div>
+          </div>
+
+          <!-- Checklist -->
+          <div id="calc-progress-steps" class="calc-progress-steps">
+            <div class="calc-step-row active" id="calc-step-1">
+              <span class="calc-step-icon">⏳</span>
+              <span>1. Размещение корпусов</span>
+            </div>
+            <div class="calc-step-row pending" id="calc-step-2">
+              <span class="calc-step-icon">○</span>
+              <span>2. Инсоляция СанПиН 1.2.3685-21</span>
+            </div>
+            <div class="calc-step-row pending" id="calc-step-3">
+              <span class="calc-step-icon">○</span>
+              <span>3. Влияние на окружение</span>
+            </div>
+            <div class="calc-step-row pending" id="calc-step-4">
+              <span class="calc-step-icon">○</span>
+              <span>4. Баланс территории и парковок</span>
+            </div>
+            <div class="calc-step-row pending" id="calc-step-5">
+              <span class="calc-step-icon">○</span>
+              <span>5. Сборка 3D-модели</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- ПЛАВАЮЩИЕ КНОПКИ ЗУМА ДЛЯ 2D CAD -->
@@ -1235,6 +1520,45 @@
           </table>
         </div>
 
+        <!-- ИНСОЛЯЦИЯ ФАСАДОВ (СанПиН 1.2.3685-21) -->
+        <div class="tool-section">
+          <div class="tool-section-head">
+            <span>Инсоляция фасадов (СанПиН)</span>
+            <span class="badge-status badge-ok" id="badge-insol-status">В норме</span>
+          </div>
+          <table class="passport-table">
+            <tbody>
+              <tr>
+                <td>Соблюдение норм СанПиН</td>
+                <td id="tep-insol-pct" style="color:var(--success); font-weight:700;">— %</td>
+              </tr>
+              <tr>
+                <td>Норматив инсоляции</td>
+                <td id="tep-insol-norm" style="font-weight:600;">≥ 2.0 ч</td>
+              </tr>
+              <tr>
+                <td>Прерывистая норма (СанПиН)</td>
+                <td id="tep-insol-interm" style="color:#0284c7; font-weight:600;">—</td>
+              </tr>
+              <tr>
+                <td>Затенение окружения</td>
+                <td id="tep-insol-surr-impact" style="font-weight:600;">Норма соблюдена</td>
+              </tr>
+              <tr>
+                <td>Расчетный день</td>
+                <td id="tep-insol-date">22 апреля</td>
+              </tr>
+              <tr>
+                <td>Затенение окружением (OSM)</td>
+                <td id="tep-insol-surr" style="font-weight:600;">Учтено</td>
+              </tr>
+            </tbody>
+          </table>
+          <button type="button" class="angle-btn" id="btn-right-show-insolation-3d" style="width:100%; justify-content:center; margin-top:6px; font-size:11px; font-weight:700; color:var(--accent);">
+            ☀️ Показать тепловую карту в 3D
+          </button>
+        </div>
+
         <!-- МАТРИЦА ВАРИАНТОВ ЭТАЖНОСТИ (СЦЕНАРНЫЙ АНАЛИЗ) -->
         <div class="tool-section">
           <div class="tool-section-head">
@@ -1244,7 +1568,7 @@
             </button>
           </div>
           <div style="font-size:10.5px; color:var(--text-secondary); margin-bottom:6px;">
-            Кликните по строке для мгновенного применения сценария к 3D-модели:
+            Сравнительный расчет ТЭП по этажам. Кликните строку для выбора этажности:
           </div>
           <div style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border-default); border-radius: var(--radius-sm);">
             <table class="data-table" style="width: 100%; border-collapse: collapse; font-size: 11px;">
@@ -1259,7 +1583,7 @@
                 </tr>
               </thead>
               <tbody id="tbody-variants-matrix">
-                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">Запустите расчет застройки</td></tr>
+                <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">Нажмите «⚡ Рассчитать» для анализа этажей</td></tr>
               </tbody>
             </table>
           </div>
@@ -1692,9 +2016,77 @@
     </div>
   </div>
 
+  <!-- МОДАЛЬНОЕ ОКНО: ТАБЛИЦА ТИПОВЫХ СЕКЦИЙ И ЧИСЛЕННЫХ ВЫСОТ -->
+  <div class="modal-backdrop" id="modal-sections-table" style="display:none;">
+    <div class="modal-box" style="max-width: 1040px; width: 95%;">
+      <div class="modal-header">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:22px;">🏢</span>
+          <div>
+            <div style="font-weight:700; font-size:14.5px; color:var(--text-primary);">Каталог и высотность типовых секций</div>
+            <div style="font-size:11.5px; color:var(--text-secondary);">Параметры секций, высоты этажей и численные границы этажности (min/max floors & heights)</div>
+          </div>
+        </div>
+        <button type="button" class="modal-close" id="modal-sections-close" title="Закрыть">&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 16px 20px; overflow-y: auto; max-height: 72vh;">
+        <div style="margin-bottom: 12px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.5; background: var(--bg-surface); padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border-default);">
+          💡 <b>Параметры секций:</b> Вы можете вручную задать минимальную и максимальную этажность для каждой секции. Высоты (м) пересчитываются автоматически по паспорту секции.
+        </div>
+
+        <div class="sections-table-wrapper">
+          <table class="sections-catalog-table">
+            <colgroup>
+              <col style="width: 70px;">
+              <col style="width: 155px;">
+              <col style="width: 110px;">
+              <col style="width: 90px;">
+              <col style="width: 90px;">
+              <col style="width: 95px;">
+              <col style="width: 95px;">
+              <col style="width: 110px;">
+              <col style="width: 130px;">
+              <col style="width: 85px;">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Марка</th>
+                <th>Категория</th>
+                <th>Габариты</th>
+                <th style="text-align:right;">Мин. эт.</th>
+                <th style="text-align:right;">Макс. эт.</th>
+                <th style="text-align:right;">Мин. h (м)</th>
+                <th style="text-align:right;">Макс. h (м)</th>
+                <th>h эт. (1-й / тип.)</th>
+                <th>S эт. / Жил.</th>
+                <th>Квартир</th>
+              </tr>
+            </thead>
+            <tbody id="modal-sections-tbody">
+              <!-- Строки таблицы генерируются динамически -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; background:var(--bg-surface); border-top:1px solid var(--border-default);">
+        <div style="font-size:11px; color:var(--text-muted);" id="modal-sections-status">
+          Все изменения автоматически сохраняются в библиотеку и влияют на генерацию
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button type="button" class="angle-btn" id="btn-modal-sections-cancel">Закрыть</button>
+          <button type="button" class="btn-primary-action" id="btn-modal-sections-save" style="padding:8px 16px; font-weight:600;">
+            <span>💾 Сохранить и применить</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div> <!-- /.studio-app -->
 
 <!-- Client App Engine -->
-<script src="app.js?v=2.2"></script>
+<script src="app.js?v=2.6_20261115_toggle"></script>
 </body>
 </html>

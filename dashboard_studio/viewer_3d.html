@@ -388,6 +388,7 @@
       <div class="group-title">Раскраска 3D-зданий</div>
       <select id="select-color-mode">
         <option value="floors">По этажности (Градиент)</option>
+        <option value="insolation">☀️ Инсоляция (СанПиН 1.2.3685-21)</option>
         <option value="buildings">По корпусам</option>
         <option value="categories">По типам секций</option>
         <option value="neutral">Нейтральный архитектурный</option>
@@ -402,6 +403,16 @@
         <input type="checkbox" id="toggle-buildings" checked>
         <span>3D Корпуса</span>
         <span class="count-badge" id="v3d-count-buildings">0 секц.</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-insolation-facets" checked>
+        <span>☀️ Фасады проекта (СанПиН)</span>
+        <span class="count-badge" id="v3d-count-facets" style="background:rgba(16,185,129,0.15); color:#059669;">0 ячеек</span>
+      </label>
+      <label class="toggle-row">
+        <input type="checkbox" id="toggle-surroundings-facets" checked>
+        <span>🏘️ Инсоляция соседних домов</span>
+        <span class="count-badge" id="v3d-count-surr-facets" style="background:rgba(245,158,11,0.15); color:#d97706;">0 ячеек</span>
       </label>
       <label class="toggle-row">
         <input type="checkbox" id="toggle-surroundings" checked>
@@ -673,7 +684,8 @@
     ],
     buildings: ['coalesce', ['get', 'color_building'], '#3b82f6'],
     categories: ['coalesce', ['get', 'color_category'], '#2E86AB'],
-    neutral: '#cbd5e1'
+    neutral: '#cbd5e1',
+    insolation: '#e2e8f0'
   };
 
   function updateLegend(mode) {
@@ -687,6 +699,19 @@
         <div class="legend-row"><span class="legend-chip" style="background:#f59e0b"></span> 12–15 этажей</div>
         <div class="legend-row"><span class="legend-chip" style="background:#f97316"></span> 16–23 этажа</div>
         <div class="legend-row"><span class="legend-chip" style="background:#ef4444"></span> 24+ этажей</div>
+      `;
+    } else if (mode === 'insolation') {
+      const summary = DATA.insolation_summary;
+      const rate = summary ? `${summary.compliance_rate_percent}%` : '—';
+      const norm = summary ? `${summary.required_hours} ч` : '2.0 ч';
+      el.innerHTML = `
+        <div style="font-weight:700; color:#0f172a; margin-bottom:4px; font-size:11.5px;">☀️ СанПиН 1.2.3685-21 (норма ${norm})</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#10b981"></span> ≥ ${norm} (Норма выполнена)</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#f59e0b"></span> Пограничная инсоляция</div>
+        <div class="legend-row"><span class="legend-chip" style="background:#ef4444"></span> Дефицит инсоляции</div>
+        <div style="font-size:11px; color:#2563eb; font-weight:700; margin-top:5px; padding-top:4px; border-top:1px dashed #cbd5e1;">
+          Соответствие: ${rate}
+        </div>
       `;
     } else if (mode === 'categories') {
       el.innerHTML = `
@@ -747,6 +772,12 @@
       map.addSource('buildings', { type: 'geojson', data: DATA.buildings || emptyFC });
     } else if (DATA.buildings) {
       map.getSource('buildings').setData(DATA.buildings);
+    }
+
+    if (!map.getSource('insolation_facets')) {
+      map.addSource('insolation_facets', { type: 'geojson', data: DATA.insolation_facets || emptyFC });
+    } else if (DATA.insolation_facets) {
+      map.getSource('insolation_facets').setData(DATA.insolation_facets);
     }
 
     // Слой-разделитель: плоские векторные слои (граница, дороги, красные линии)
@@ -880,17 +911,21 @@
       }, beforeVectorId);
     }
 
-    // 6. Окружающая застройка (OSM)
+    // 6. Окружающая застройка (OSM) — честная этажность и высоты зданий окружения
     if (!map.getLayer('surroundings-3d')) {
       map.addLayer({
         id: 'surroundings-3d',
         type: 'fill-extrusion',
         source: 'surroundings',
         paint: {
-          'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
+          'fill-extrusion-height': [
+            'to-number',
+            ['coalesce', ['get', 'height'], ['get', 'height_m'], ['*', ['coalesce', ['get', 'levels'], 3], 3.0], 9],
+            9
+          ],
           'fill-extrusion-base': 0,
           'fill-extrusion-color': '#cbd5e1',
-          'fill-extrusion-opacity': 0.78
+          'fill-extrusion-opacity': 0.72
         }
       }, map.getLayer('buildings-3d') ? 'buildings-3d' : undefined);
     }
@@ -906,7 +941,47 @@
         paint: {
           'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'height'], ['get', 'height_m'], 9], 9],
           'fill-extrusion-base': ['to-number', ['coalesce', ['get', 'min_height'], 0], 0],
-          'fill-extrusion-color': COLOR_EXPRESSIONS[colorMode] || COLOR_EXPRESSIONS.floors,
+          'fill-extrusion-color': (colorMode === 'insolation') ? '#f1f5f9' : (COLOR_EXPRESSIONS[colorMode] || COLOR_EXPRESSIONS.floors),
+          'fill-extrusion-opacity': 0.95
+        }
+      });
+    }
+
+    // 8. 3D-тепловая карта инсоляции на фасадах проектируемых корпусов (СанПиН 1.2.3685-21)
+    if (!map.getLayer('insolation-facets-3d')) {
+      const isInsMode = (document.getElementById('select-color-mode')?.value === 'insolation');
+      map.addLayer({
+        id: 'insolation-facets-3d',
+        type: 'fill-extrusion',
+        source: 'insolation_facets',
+        filter: ['!=', ['coalesce', ['get', 'is_surrounding'], false], true],
+        layout: {
+          visibility: isInsMode ? 'visible' : 'none'
+        },
+        paint: {
+          'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'top_z'], ['get', 'height'], 0], 0],
+          'fill-extrusion-base': ['to-number', ['coalesce', ['get', 'base_z'], ['get', 'min_height'], 0], 0],
+          'fill-extrusion-color': ['coalesce', ['get', 'color'], ['get', 'color_hex'], '#10b981'],
+          'fill-extrusion-opacity': 0.95
+        }
+      });
+    }
+
+    // 8.1. 3D-тепловая карта инсоляции на фасадах окружающих домов
+    if (!map.getLayer('surroundings-insolation-facets-3d')) {
+      const isInsMode = (document.getElementById('select-color-mode')?.value === 'insolation');
+      map.addLayer({
+        id: 'surroundings-insolation-facets-3d',
+        type: 'fill-extrusion',
+        source: 'insolation_facets',
+        filter: ['==', ['coalesce', ['get', 'is_surrounding'], false], true],
+        layout: {
+          visibility: isInsMode ? 'visible' : 'none'
+        },
+        paint: {
+          'fill-extrusion-height': ['to-number', ['coalesce', ['get', 'top_z'], ['get', 'height'], 0], 0],
+          'fill-extrusion-base': ['to-number', ['coalesce', ['get', 'base_z'], ['get', 'min_height'], 0], 0],
+          'fill-extrusion-color': ['coalesce', ['get', 'color'], ['get', 'color_hex'], '#10b981'],
           'fill-extrusion-opacity': 0.95
         }
       });
@@ -1070,8 +1145,36 @@
       selColor.addEventListener('change', (e) => {
         const mode = e.target.value;
         updateLegend(mode);
-        if (map && map.getLayer('buildings-3d')) {
-          map.setPaintProperty('buildings-3d', 'fill-extrusion-color', COLOR_EXPRESSIONS[mode]);
+        if (map) {
+          if (mode === 'insolation') {
+            if (map.getLayer('insolation-facets-3d')) {
+              map.setLayoutProperty('insolation-facets-3d', 'visibility', 'visible');
+            }
+            if (map.getLayer('surroundings-insolation-facets-3d')) {
+              map.setLayoutProperty('surroundings-insolation-facets-3d', 'visibility', 'visible');
+            }
+            if (map.getLayer('buildings-3d')) {
+              map.setPaintProperty('buildings-3d', 'fill-extrusion-color', '#f1f5f9');
+              map.setPaintProperty('buildings-3d', 'fill-extrusion-opacity', 0.95);
+            }
+            if (map.getLayer('surroundings-3d')) {
+              map.setPaintProperty('surroundings-3d', 'fill-extrusion-opacity', 0.50);
+            }
+          } else {
+            if (map.getLayer('insolation-facets-3d')) {
+              map.setLayoutProperty('insolation-facets-3d', 'visibility', 'none');
+            }
+            if (map.getLayer('surroundings-insolation-facets-3d')) {
+              map.setLayoutProperty('surroundings-insolation-facets-3d', 'visibility', 'none');
+            }
+            if (map.getLayer('buildings-3d')) {
+              map.setPaintProperty('buildings-3d', 'fill-extrusion-opacity', 0.95);
+              map.setPaintProperty('buildings-3d', 'fill-extrusion-color', COLOR_EXPRESSIONS[mode] || COLOR_EXPRESSIONS.floors);
+            }
+            if (map.getLayer('surroundings-3d')) {
+              map.setPaintProperty('surroundings-3d', 'fill-extrusion-opacity', 0.72);
+            }
+          }
         }
       });
     }
@@ -1103,12 +1206,23 @@
       });
     }
     setupToggle('toggle-buildings', ['buildings-3d']);
+    setupToggle('toggle-insolation-facets', ['insolation-facets-3d']);
+    setupToggle('toggle-surroundings-facets', ['surroundings-insolation-facets-3d']);
     setupToggle('toggle-surroundings', ['surroundings-3d']);
     setupToggle('toggle-roads', ['roads-fill', 'roads-line', 'roads-buffer-fill']);
     setupToggle('toggle-boundary', ['boundary-line', 'boundary-fill']);
     const surrCntInit = (DATA.surroundings && DATA.surroundings.features) ? DATA.surroundings.features.length : 0;
     const badgeSurrInit = document.getElementById('count-surroundings');
     if (badgeSurrInit) badgeSurrInit.textContent = `${surrCntInit} зд.`;
+
+    const allFacetsInit = (DATA.insolation_facets && DATA.insolation_facets.features) ? DATA.insolation_facets.features : [];
+    const projFacetInit = allFacetsInit.filter(f => !f.properties?.is_surrounding).length;
+    const surrFacetInit = allFacetsInit.filter(f => !!f.properties?.is_surrounding).length;
+    const badgeFacetInit = document.getElementById('v3d-count-facets');
+    if (badgeFacetInit) badgeFacetInit.textContent = `${projFacetInit} ячеек`;
+    const badgeSurrFacetInit = document.getElementById('v3d-count-surr-facets');
+    if (badgeSurrFacetInit) badgeSurrFacetInit.textContent = `${surrFacetInit} ячеек`;
+
     setupToggle('toggle-buildable', ['buildable-line', 'buildable-fill']);
     setupToggle('toggle-redlines', ['redlines-line']);
 
@@ -1120,19 +1234,177 @@
     });
 
     if (map) {
-      map.on('click', 'surroundings-3d', (e) => {
+      function handleFacetClick(e) {
         if (!e.features.length) return;
         const p = e.features[0].properties;
+        const isOk = p.is_compliant;
+        const normH = (DATA.insolation_summary && DATA.insolation_summary.required_hours) || 2.0;
+
+        if (p.is_surrounding) {
+          const delta = parseFloat(p.delta_hours || 0);
+          const deltaText = (delta < -0.1)
+            ? `<span style="color:#ef4444; font-weight:700;">${delta} ч (затенение проектом)</span>`
+            : `<span style="color:#059669;">без ухудшения (${delta >= 0 ? '+' : ''}${delta} ч)</span>`;
+          const content = `
+            <div class="popup-title">🏘️ Инсоляция соседнего дома (СанПиН)</div>
+            <div class="popup-row"><span class="popup-label">Здание:</span><span class="popup-val"><b>${p.surrounding_name || p.building_id}</b></span></div>
+            <div class="popup-row"><span class="popup-label">Этаж:</span><span class="popup-val"><b>${p.floor} этаж</b> (${p.base_z}..${p.top_z} м)</span></div>
+            <div class="popup-row"><span class="popup-label">Солнце с проектом:</span><span class="popup-val" style="font-weight:700; color:${isOk ? '#059669' : '#dc2626'};">${p.continuous_sun_hours} ч</span></div>
+            <div class="popup-row"><span class="popup-label">Было до проекта:</span><span class="popup-val">${p.baseline_hours !== undefined ? p.baseline_hours + ' ч' : '—'}</span></div>
+            <div class="popup-row"><span class="popup-label">Влияние проекта:</span><span class="popup-val">${deltaText}</span></div>
+            <div class="popup-row"><span class="popup-label">Норматив СанПиН:</span><span class="popup-val">≥ ${normH} ч</span></div>
+            <div style="margin-top:6px;padding-top:4px;border-top:1px dashed #cbd5e1;font-size:11px;">
+              ${isOk
+                ? '<span style="color:#059669; font-weight:700;">✓ Норматив СанПиН 1.2.3685-21 соблюден</span>'
+                : ((p.baseline_hours && p.baseline_hours >= normH)
+                    ? '<span style="color:#dc2626; font-weight:700;">⚠️ Нарушение СанПиН вызвано затенением от нового проекта!</span>'
+                    : '<span style="color:#f59e0b; font-weight:700;">Дефицит инсоляции существовал и до проекта</span>'
+                  )
+              }
+            </div>
+          `;
+          popup.setLngLat(e.lngLat).setHTML(content).addTo(map);
+          return;
+        }
+
         const content = `
-          <div class="popup-title">${p.name || 'Окружающее здание'}</div>
-          <div class="popup-row"><span class="popup-label">Тип объекта:</span><span class="popup-val">${p.building_type || 'Здание'}</span></div>
-          <div class="popup-row"><span class="popup-label">Этажность:</span><span class="popup-val">${p.levels || p.floors || '-'} эт. (${p.height || '-'} м)</span></div>
-          <div class="popup-row"><span class="popup-label">Источник:</span><span class="popup-val" style="color:#64748b;">OpenStreetMap (OSM)</span></div>
-          <div style="margin-top:6px;padding-top:4px;border-top:1px dashed #cbd5e1;font-size:11px;color:#64748b;">
-            Существующая фоновая застройка окружения
+          <div class="popup-title">☀️ Инсоляция фасада (СанПиН)</div>
+          <div class="popup-row"><span class="popup-label">Секция:</span><span class="popup-val">${p.building_id}, Секция ${p.section_index + 1}</span></div>
+          <div class="popup-row"><span class="popup-label">Этаж:</span><span class="popup-val"><b>${p.floor} этаж</b> (${p.base_z}..${p.top_z} м)</span></div>
+          <div class="popup-row"><span class="popup-label">Непрерывная инсоляция:</span><span class="popup-val" style="font-weight:700; color:${isOk ? '#059669' : '#dc2626'};">${p.continuous_sun_hours} ч</span></div>
+          <div class="popup-row"><span class="popup-label">Суммарное солнце:</span><span class="popup-val">${p.direct_sun_hours || p.continuous_sun_hours} ч</span></div>
+          <div class="popup-row"><span class="popup-label">Норматив СанПиН:</span><span class="popup-val">≥ ${normH} ч на 22 апреля</span></div>
+          <div style="margin-top:6px;padding-top:4px;border-top:1px dashed #cbd5e1;font-size:11px;">
+            ${isOk
+              ? '<span style="color:#059669; font-weight:700;">✓ Норматив СанПиН 1.2.3685-21 соблюден</span>'
+              : '<span style="color:#dc2626; font-weight:700;">✗ Затенение: требуется каскадное понижение южных корпусов</span>'
+            }
           </div>
         `;
         popup.setLngLat(e.lngLat).setHTML(content).addTo(map);
+      }
+
+      map.on('click', 'insolation-facets-3d', handleFacetClick);
+      map.on('click', 'surroundings-insolation-facets-3d', handleFacetClick);
+
+      ['insolation-facets-3d', 'surroundings-insolation-facets-3d'].forEach(layerId => {
+        map.on('mouseenter', layerId, () => {
+          map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', layerId, () => {
+          map.getCanvas().style.cursor = '';
+        });
+      });
+      map.on('click', 'surroundings-3d', (e) => {
+        if (!e.features.length) return;
+        const p = e.features[0].properties;
+        const curH = parseFloat(p.height || p.height_m || (p.levels ? p.levels * 3.0 : 15.0));
+        const curL = parseInt(p.levels || p.floors || Math.max(1, Math.round(curH / 3.0)));
+        const isOvr = !!p.is_overridden;
+
+        const content = `
+          <div class="popup-title">${p.name || 'Окружающее здание'}</div>
+          <div class="popup-row"><span class="popup-label">Тип объекта:</span><span class="popup-val">${p.building_type || 'Здание'}</span></div>
+          <div class="popup-row"><span class="popup-label">ID OSM:</span><span class="popup-val" style="font-family:monospace;font-size:11px;">${p.id || '-'}</span></div>
+          <div class="popup-row"><span class="popup-label">Высота:</span><span class="popup-val" id="pop-cur-h-text"><strong>${curH.toFixed(1)} м</strong> (${curL} эт.)${isOvr ? ' <span style="color:#2563eb;font-weight:700;">(изменено)</span>' : ''}</span></div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0;">
+            <div style="font-weight:600;font-size:11.5px;margin-bottom:6px;color:#1e293b;">Изменить высоту здания:</div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+              <div style="flex:1;">
+                <label style="font-size:10px;color:#64748b;display:block;margin-bottom:2px;">Высота (м):</label>
+                <input type="number" id="input-popup-surr-height" value="${curH.toFixed(1)}" min="1" max="250" step="0.5" style="width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;font-family:inherit;">
+              </div>
+              <div style="flex:1;">
+                <label style="font-size:10px;color:#64748b;display:block;margin-bottom:2px;">Этажность:</label>
+                <input type="number" id="input-popup-surr-levels" value="${curL}" min="1" max="80" step="1" style="width:100%;box-sizing:border-box;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;font-family:inherit;">
+              </div>
+            </div>
+            <button id="btn-popup-apply-surr" style="width:100%;padding:6px 10px;background:#2563eb;color:#ffffff;border:none;border-radius:6px;font-size:11.5px;font-weight:700;cursor:pointer;transition:background 0.15s;">
+              Применить и пересчитать
+            </button>
+          </div>
+          <div style="margin-top:6px;font-size:10.5px;color:#64748b;">
+            ${isOvr ? 'Высота задана пользователем вручную' : 'По умолчанию из OpenStreetMap / эвристика'}
+          </div>
+        `;
+
+        popup.setLngLat(e.lngLat).setHTML(content).addTo(map);
+
+        setTimeout(() => {
+          const inH = document.getElementById('input-popup-surr-height');
+          const inL = document.getElementById('input-popup-surr-levels');
+          const btnApply = document.getElementById('btn-popup-apply-surr');
+
+          if (inH && inL) {
+            inH.addEventListener('input', () => {
+              const hVal = parseFloat(inH.value);
+              if (!isNaN(hVal) && hVal > 0) {
+                inL.value = Math.max(1, Math.round(hVal / 3.0));
+              }
+            });
+            inL.addEventListener('input', () => {
+              const lVal = parseInt(inL.value);
+              if (!isNaN(lVal) && lVal > 0) {
+                inH.value = (lVal * 3.0).toFixed(1);
+              }
+            });
+          }
+
+          if (btnApply) {
+            btnApply.addEventListener('click', () => {
+              const newH = parseFloat(inH.value) || 15.0;
+              const newL = parseInt(inL.value) || Math.max(1, Math.round(newH / 3.0));
+
+              // Мгновенно обновляем экструзию здания в 3D
+              if (DATA.surroundings && DATA.surroundings.features) {
+                DATA.surroundings.features.forEach(f => {
+                  if (f.properties && f.properties.id === p.id) {
+                    f.properties.height = newH;
+                    f.properties.height_m = newH;
+                    f.properties.levels = newL;
+                    f.properties.floors = newL;
+                    f.properties.is_overridden = true;
+                  }
+                });
+                if (map.getSource('surroundings')) {
+                  map.getSource('surroundings').setData(DATA.surroundings);
+                }
+              }
+
+              // Отправляем родительскому окну Studio для сохранения в состоянии и пересчета
+              if (window.parent && window.parent !== window) {
+                try {
+                  window.parent.postMessage({
+                    type: 'surrounding_height_override',
+                    id: p.id,
+                    name: p.name || 'Окружающее здание',
+                    height: newH,
+                    levels: newL,
+                    recalculate: true,
+                  }, '*');
+                } catch (_) {}
+              }
+
+              btnApply.textContent = '✓ Сохранено! Идет расчет...';
+              btnApply.style.background = '#10b981';
+            });
+          }
+        }, 30);
+
+        // Также отправляем событие клика в Studio
+        if (window.parent && window.parent !== window) {
+          try {
+            window.parent.postMessage({
+              type: 'surrounding_click',
+              id: p.id,
+              name: p.name || 'Окружающее здание',
+              building_type: p.building_type,
+              height: curH,
+              levels: curL,
+              is_overridden: isOvr,
+            }, '*');
+          } catch (_) {}
+        }
       });
 
       map.on('mouseenter', 'surroundings-3d', () => {
@@ -1294,6 +1566,16 @@
       if (badgeSurrUpd) {
         badgeSurrUpd.textContent = `${(DATA.surroundings && DATA.surroundings.features) ? DATA.surroundings.features.length : 0} зд.`;
       }
+      const allFUpd = (DATA.insolation_facets && DATA.insolation_facets.features) ? DATA.insolation_facets.features : [];
+      const pCntUpd = allFUpd.filter(f => !f.properties?.is_surrounding).length;
+      const sCntUpd = allFUpd.filter(f => !!f.properties?.is_surrounding).length;
+      const badgeFacetsUpd = document.getElementById('v3d-count-facets');
+      if (badgeFacetsUpd) badgeFacetsUpd.textContent = `${pCntUpd} ячеек`;
+      const badgeSurrFacetsUpd = document.getElementById('v3d-count-surr-facets');
+      if (badgeSurrFacetsUpd) badgeSurrFacetsUpd.textContent = `${sCntUpd} ячеек`;
+
+      const currentMode = document.getElementById('select-color-mode')?.value;
+      if (currentMode) updateLegend(currentMode);
       if (hasBuildings || hasBoundary) {
         setTimeout(() => fitToData(true), 60);
       }
@@ -1314,6 +1596,72 @@
       updateViewerData(e.data.data);
       if (e.data.basemap && map) {
         switchBasemap(e.data.basemap);
+      }
+    } else if (e.data.type === 'toggleInsolation') {
+      const showProj = !!e.data.showProject;
+      const showSurr = !!e.data.showSurroundings;
+      const selColor = document.getElementById('select-color-mode');
+
+      if (showProj || showSurr) {
+        if (selColor && selColor.value !== 'insolation') {
+          selColor.value = 'insolation';
+          selColor.dispatchEvent(new Event('change'));
+        }
+      } else {
+        if (selColor && selColor.value === 'insolation') {
+          selColor.value = 'floors';
+          selColor.dispatchEvent(new Event('change'));
+        }
+      }
+
+      const chkProj = document.getElementById('toggle-insolation-facets');
+      if (chkProj) {
+        chkProj.checked = showProj;
+      }
+      if (map && map.getLayer('insolation-facets-3d')) {
+        map.setLayoutProperty('insolation-facets-3d', 'visibility', showProj ? 'visible' : 'none');
+      }
+
+      const chkSurr = document.getElementById('toggle-surroundings-facets');
+      if (chkSurr) {
+        chkSurr.checked = showSurr;
+      }
+      if (map && map.getLayer('surroundings-insolation-facets-3d')) {
+        map.setLayoutProperty('surroundings-insolation-facets-3d', 'visibility', showSurr ? 'visible' : 'none');
+      }
+    } else if ((e.data.type === 'setColorMode' || e.data.action === 'set_color_mode') && e.data.mode) {
+      const selColor = document.getElementById('select-color-mode');
+      if (selColor) {
+        selColor.value = e.data.mode;
+        selColor.dispatchEvent(new Event('change'));
+      }
+      if (e.data.enable_surroundings_facets) {
+        const chk = document.getElementById('toggle-surroundings-facets');
+        if (chk && !chk.checked) {
+          chk.checked = true;
+          chk.dispatchEvent(new Event('change'));
+        }
+        if (map && map.getLayer('surroundings-insolation-facets-3d')) {
+          map.setLayoutProperty('surroundings-insolation-facets-3d', 'visibility', 'visible');
+        }
+      }
+    } else if (e.data.type === 'setSurroundingHeight') {
+      const targetId = e.data.id;
+      const newH = parseFloat(e.data.height);
+      const newL = e.data.levels ? parseInt(e.data.levels) : Math.max(1, Math.round(newH / 3.0));
+      if (DATA.surroundings && DATA.surroundings.features) {
+        DATA.surroundings.features.forEach(f => {
+          if (f.properties && f.properties.id === targetId) {
+            f.properties.height = newH;
+            f.properties.height_m = newH;
+            f.properties.levels = newL;
+            f.properties.floors = newL;
+            f.properties.is_overridden = true;
+          }
+        });
+        if (map && map.getSource('surroundings')) {
+          map.getSource('surroundings').setData(DATA.surroundings);
+        }
       }
     } else if (e.data.type === 'activate' || e.data.type === 'resize') {
       if (!map) {

@@ -56,6 +56,8 @@ class TEP:
     commercial_area: float
     green_area: float
     green_ratio: float
+    max_floors: int = 0
+    max_height_m: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         """Преобразовать ТЭП в словарь.
@@ -228,6 +230,10 @@ class TEP:
         green_area = max(0.0, site_area - building_area)
         green_ratio = green_area / site_area if site_area > 0 else 0.0
 
+        # Предельная этажность и высота среди всех секций
+        max_floors = max((s.floors for b in buildings for s in b.sections), default=0)
+        max_height_m = max((getattr(s, "height_m", s.floors * 3.0) for b in buildings for s in b.sections), default=0.0)
+
         return cls(
             site_area=site_area,
             building_area=building_area,
@@ -248,6 +254,8 @@ class TEP:
             commercial_area=commercial_area,
             green_area=green_area,
             green_ratio=green_ratio,
+            max_floors=max_floors,
+            max_height_m=max_height_m,
         )
 
     def __repr__(self) -> str:

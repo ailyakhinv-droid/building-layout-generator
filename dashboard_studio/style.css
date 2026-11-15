@@ -1615,7 +1615,8 @@ textarea {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(10, 15, 29, 0.85);
+  background: rgba(10, 15, 29, 0.78);
+  backdrop-filter: blur(5px);
   z-index: 100;
   display: flex;
   flex-direction: column;
@@ -1625,6 +1626,132 @@ textarea {
   pointer-events: auto;
 }
 
+[data-theme="light"] .canvas-loading-overlay,
+body.light-theme .canvas-loading-overlay {
+  background: rgba(241, 245, 249, 0.76);
+}
+
+.calc-progress-modal {
+  background: var(--bg-panel, #0d1424);
+  border: 1px solid var(--border-default, #223352);
+  box-shadow: 0 20px 45px rgba(0, 0, 0, 0.45);
+  border-radius: var(--radius-lg, 12px);
+  padding: 20px 22px;
+  width: 360px;
+  max-width: 90%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text-primary, #f8fafc);
+  backdrop-filter: blur(12px);
+}
+
+[data-theme="light"] .calc-progress-modal,
+body.light-theme .calc-progress-modal {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.10);
+  color: #0f172a;
+}
+
+.calc-progress-badge {
+  background: var(--accent-muted, rgba(56, 189, 248, 0.14));
+  color: var(--accent, #38bdf8);
+  font-weight: 700;
+  font-size: 11.5px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--accent-border, rgba(56, 189, 248, 0.35));
+}
+
+[data-theme="light"] .calc-progress-badge,
+body.light-theme .calc-progress-badge {
+  background: rgba(2, 132, 199, 0.08);
+  color: #0284c7;
+  border-color: rgba(2, 132, 199, 0.25);
+}
+
+.calc-progress-track {
+  width: 100%;
+  height: 6px;
+  background: var(--bg-surface, rgba(255, 255, 255, 0.08));
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+[data-theme="light"] .calc-progress-track,
+body.light-theme .calc-progress-track {
+  background: #e2e8f0;
+}
+
+.calc-progress-fill {
+  width: 15%;
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #38bdf8);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.calc-progress-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-default, rgba(255, 255, 255, 0.08));
+  font-size: 11.5px;
+}
+
+[data-theme="light"] .calc-progress-steps,
+body.light-theme .calc-progress-steps {
+  border-top-color: #e2e8f0;
+}
+
+.calc-step-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted, #64748b);
+  transition: color 0.15s ease;
+}
+
+.calc-step-row.done {
+  color: #10b981 !important;
+  font-weight: 500;
+}
+
+.calc-step-row.active {
+  color: var(--accent, #38bdf8) !important;
+  font-weight: 600;
+}
+
+[data-theme="light"] .calc-step-row.active,
+body.light-theme .calc-step-row.active {
+  color: #0284c7 !important;
+}
+
+.calc-step-row.pending {
+  color: var(--text-muted, #64748b) !important;
+  font-weight: 400;
+}
+
+[data-theme="light"] .calc-step-row.pending,
+body.light-theme .calc-step-row.pending {
+  color: #94a3b8 !important;
+}
+
+[data-theme="light"] #canvas-loading-text,
+body.light-theme #canvas-loading-text {
+  color: #0f172a;
+}
+
+[data-theme="light"] #canvas-loading-subtext,
+body.light-theme #canvas-loading-subtext {
+  color: #64748b;
+}
+
 .loading-spinner {
   width: 42px;
   height: 42px;
@@ -1632,6 +1759,12 @@ textarea {
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: studio-spin 0.8s linear infinite;
+}
+
+[data-theme="light"] .loading-spinner,
+body.light-theme .loading-spinner {
+  border-color: rgba(0, 0, 0, 0.12);
+  border-top-color: #0284c7;
 }
 
 @keyframes studio-spin {
@@ -1932,3 +2065,609 @@ textarea {
   display: inline-block;
   flex-shrink: 0;
 }
+
+/* Floating 3D Scenarios Dock (Аккуратный плавающий док сценариев в 3D) */
+/* ponytail: минималистичный стеклянный док без перегрузки верстки — upgrade path: поддержка горизонтального свайпа при >5 вариантах */
+.dock-scenarios-container {
+  background: rgba(15, 23, 42, 0.82);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 9999px;
+  padding: 4px 6px 4px 10px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 0 1px 1px rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+}
+
+[data-theme="light"] .dock-scenarios-container {
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(0, 0, 0, 0.12);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 0 1px 1px rgba(0, 0, 0, 0.05);
+}
+
+.dock-scenarios-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  user-select: none;
+  padding-right: 2px;
+}
+
+[data-theme="light"] .dock-scenarios-label {
+  color: #64748b;
+}
+
+.dock-variant-btn {
+  background: transparent;
+  color: #cbd5e1;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  padding: 4px 12px;
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+[data-theme="light"] .dock-variant-btn {
+  color: #475569;
+}
+
+.dock-variant-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="light"] .dock-variant-btn:hover {
+  color: #0f172a;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.dock-variant-btn.active {
+  background: var(--accent, #0284c7);
+  color: #ffffff;
+  font-weight: 700;
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+}
+
+[data-theme="light"] .dock-variant-btn.active {
+  background: var(--accent, #0284c7);
+  color: #ffffff;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.25);
+}
+
+/* ==========================================================================
+   CANVAS BASEMAP TOOLBAR (ПОДЛОЖКИ 2D ЧЕРТЕЖА)
+   ========================================================================== */
+.canvas-basemap-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  padding: 3px 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(8px);
+  z-index: 30;
+  pointer-events: auto;
+}
+
+[data-theme="light"] .canvas-basemap-bar {
+  background: #ffffff;
+  border-color: #e5e5e5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.basemap-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 3px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.basemap-pill-btn:hover {
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.06));
+  color: var(--text-primary);
+}
+
+.basemap-pill-btn.active {
+  background: rgba(2, 132, 199, 0.18);
+  border-color: var(--accent);
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+[data-theme="light"] .basemap-pill-btn {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  color: #334155;
+}
+
+[data-theme="light"] .basemap-pill-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+[data-theme="light"] .basemap-pill-btn.active {
+  background: #e0f2fe;
+  border-color: #0284c7;
+  color: #0284c7;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(2, 132, 199, 0.15);
+}
+
+.basemap-opacity-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  padding-left: 6px;
+  border-left: 1px solid var(--border-default);
+}
+
+[data-theme="light"] .basemap-opacity-wrap {
+  border-left-color: #e2e8f0;
+}
+
+.basemap-opacity-slider {
+  width: 52px;
+  height: 4px;
+  cursor: pointer;
+  accent-color: var(--accent, #0284c7);
+}
+
+.basemap-opacity-val {
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  min-width: 26px;
+}
+
+[data-theme="light"] .basemap-opacity-val {
+  color: #64748b;
+}
+
+/* ==========================================================================
+   ENTRY POINTS (УДС ПО ТОЧКАМ ВЪЕЗДА НА ГРАНИЦЕ)
+   ========================================================================== */
+.entry-point-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  transition: all 0.15s ease;
+  margin-bottom: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.entry-point-card:hover,
+.entry-point-card.highlighted {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(2, 132, 199, 0.18);
+}
+
+.entry-point-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.entry-point-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.entry-num-badge {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+}
+
+.entry-point-name {
+  font-size: 12px;
+}
+
+.entry-point-coords {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-mono, monospace);
+  margin-left: 2px;
+}
+
+.entry-del-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  padding: 0 4px;
+  border-radius: 3px;
+  transition: all 0.12s;
+}
+
+.entry-del-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+
+.entry-cat-pills {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.entry-cat-pill {
+  padding: 5px 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm, 5px);
+  font-size: 10.5px;
+  text-align: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.12s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.entry-cat-pill:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.entry-cat-pill.active {
+  background: rgba(2, 132, 199, 0.18);
+  border-color: var(--accent);
+  color: #38bdf8;
+  font-weight: 600;
+}
+
+.entry-width-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.08));
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.entry-width-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.entry-stepper {
+  display: inline-flex;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm, 6px);
+  box-sizing: border-box;
+  flex-shrink: 0;
+  overflow: hidden;
+  height: 24px;
+}
+
+.entry-step-btn {
+  width: 24px;
+  height: 24px;
+  line-height: 22px;
+  background: var(--bg-elevated);
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.entry-step-btn:first-child {
+  border-right: 1px solid var(--border-default);
+}
+
+.entry-step-btn:last-child {
+  border-left: 1px solid var(--border-default);
+}
+
+.entry-step-btn:hover {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.entry-stepper-val {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  min-width: 44px;
+  gap: 2px;
+}
+
+.entry-stepper input[type="number"],
+.entry-stepper input.entry-width-input {
+  width: 28px !important;
+  height: 22px !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  color: var(--text-primary) !important;
+  font-size: 12px !important;
+  font-family: var(--font-mono, monospace) !important;
+  font-weight: 700 !important;
+  text-align: right !important;
+  border-radius: 0 !important;
+}
+
+.entry-stepper input[type="number"]::-webkit-inner-spin-button,
+.entry-stepper input[type="number"]::-webkit-outer-spin-button,
+.entry-width-input::-webkit-inner-spin-button,
+.entry-width-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.entry-step-unit {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+  font-weight: 500;
+  padding-left: 1px;
+}
+
+.entry-marker {
+  cursor: grab;
+}
+
+.entry-marker:active {
+  cursor: grabbing;
+}
+
+.entry-marker circle {
+  transition: r 0.12s ease, stroke-width 0.12s ease;
+}
+
+.entry-marker:hover circle,
+.entry-marker.highlighted circle {
+  r: 16px;
+  stroke: #ffffff;
+  stroke-width: 3.5px;
+  filter: drop-shadow(0 0 8px rgba(2, 132, 199, 0.8));
+}
+
+.entry-canvas-badge {
+  pointer-events: none;
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+[data-theme="light"] .entry-point-card {
+  background: #ffffff;
+  border-color: #e5e5e5;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .entry-point-card:hover,
+[data-theme="light"] .entry-point-card.highlighted {
+  border-color: #0284c7;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.15);
+}
+
+[data-theme="light"] .entry-cat-pill {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+
+[data-theme="light"] .entry-cat-pill:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+[data-theme="light"] .entry-cat-pill.active {
+  background: #e0f2fe;
+  border-color: #0284c7;
+  color: #0284c7;
+  font-weight: 600;
+}
+
+[data-theme="light"] .entry-stepper {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+[data-theme="light"] .entry-step-btn {
+  background: #ffffff;
+  border: none;
+  color: #0f172a;
+}
+
+[data-theme="light"] .entry-step-btn:first-child {
+  border-right: 1px solid #cbd5e1;
+}
+
+[data-theme="light"] .entry-step-btn:last-child {
+  border-left: 1px solid #cbd5e1;
+}
+
+[data-theme="light"] .entry-step-btn:hover {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+[data-theme="light"] .entry-width-input,
+[data-theme="light"] .entry-stepper input[type="number"] {
+  color: #0f172a !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+[data-theme="light"] .entry-width-row {
+  border-top-color: #e2e8f0;
+}
+
+/* ==========================================================================
+   КАТАЛОГ СЕКЦИЙ И ЧИСЛЕННЫХ ВЫСОТ (МОДАЛЬНОЕ ОКНО)
+   ========================================================================== */
+.sections-table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+}
+
+.sections-catalog-table {
+  width: 100%;
+  min-width: 1020px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+
+.sections-catalog-table th {
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 10px 10px;
+  text-align: left;
+  border-bottom: 2px solid var(--border-default);
+  white-space: nowrap;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.sections-catalog-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 44px;
+  box-sizing: border-box;
+}
+
+.sections-catalog-table tr:last-child td {
+  border-bottom: none;
+}
+
+.sections-catalog-table tbody tr {
+  transition: background 0.12s ease;
+}
+
+.sections-catalog-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.035);
+}
+
+[data-theme="light"] .sections-catalog-table tbody tr:hover {
+  background: rgba(0, 0, 0, 0.025);
+}
+
+/* Числовые поля этажности */
+.sec-input-floors {
+  width: 68px;
+  height: 28px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  text-align: right;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input, rgba(0, 0, 0, 0.2));
+  color: var(--text-primary);
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.sec-input-floors:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.sec-cell-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.sec-badge-category {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+

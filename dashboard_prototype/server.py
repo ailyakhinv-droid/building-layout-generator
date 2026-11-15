@@ -301,6 +301,31 @@ class DashboardHandler(SimpleHTTPRequestHandler):
                 self._safe_write(err_bytes)
             return
 
+        # 7. Обновление численных параметров секций (min/max floors, heights)
+        elif parsed.path == "/api/library/update":
+            content_length = int(self.headers.get("Content-Length", 0))
+            post_data = self.rfile.read(content_length).decode("utf-8")
+            try:
+                data = json.loads(post_data) if post_data else {}
+                from dashboard_prototype.generator_service import update_library_sections
+                res = update_library_sections(data)
+                response_bytes = json.dumps(res, ensure_ascii=False).encode("utf-8")
+                self.send_response(200 if res.get("success") else 400)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(response_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(response_bytes)
+            except Exception as e:
+                err_bytes = json.dumps({"success": False, "error": str(e)}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(err_bytes)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(err_bytes)
+            return
+
         self.send_error(404, "Endpoint not found")
 
     def do_GET(self):

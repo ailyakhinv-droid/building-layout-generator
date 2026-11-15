@@ -228,6 +228,9 @@ def generate_leaflet_map_html(
                 elif "END" in cat_val:
                     cat_name_ru = "Торцевая"
                     cat_color = "#9B59B6"  # фиолетовый
+                elif "UNIVERSAL" in cat_val:
+                    cat_name_ru = "Универсальная (Ш)"
+                    cat_color = "#0EA5E9"  # небесно-синий
 
                 s_code = getattr(sec.section_type, "section_code", "") or sec.section_type.name.split()[0]
                 apts_floor = getattr(sec.section_type, "total_apts_per_floor", 0)

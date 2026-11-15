@@ -96,14 +96,14 @@ def import_sections_from_excel(
         },
         "Ш1": {
             "id": "end_sh1_9",
-            "category": "END",
+            "category": "UNIVERSAL",
             "min_floors": 5,
             "max_floors": 9,
             "elevators": 1,
         },
         "Ш2": {
             "id": "end_sh2_8",
-            "category": "END",
+            "category": "UNIVERSAL",
             "min_floors": 5,
             "max_floors": 9,
             "elevators": 1,
@@ -188,6 +188,35 @@ def import_sections_from_excel(
         # Этажность по проекту
         default_floors = int(parse_num(row_dict.get("_Этажность", meta["default_floors"] if "default_floors" in meta else 9)))
 
+        # Численные ограничения мин/макс этажности и высот из столбцов Excel (если заданы)
+        min_fl_raw = (
+            row_dict.get("МИН_ЭТАЖНОСТЬ")
+            or row_dict.get("Мин_этажность")
+            or row_dict.get("min_floors")
+            or row_dict.get("Минимальная этажность")
+            or row_dict.get("Мин. этажность")
+        )
+        max_fl_raw = (
+            row_dict.get("МАКС_ЭТАЖНОСТЬ")
+            or row_dict.get("Макс_этажность")
+            or row_dict.get("max_floors")
+            or row_dict.get("Максимальная этажность")
+            or row_dict.get("Макс. этажность")
+        )
+        parsed_min_fl = (
+            int(parse_num(min_fl_raw))
+            if min_fl_raw is not None and parse_num(min_fl_raw) > 0
+            else meta["min_floors"]
+        )
+        parsed_max_fl = (
+            int(parse_num(max_fl_raw))
+            if max_fl_raw is not None and parse_num(max_fl_raw) > 0
+            else meta["max_floors"]
+        )
+
+        if parsed_min_fl > parsed_max_fl:
+            parsed_max_fl = parsed_min_fl
+
         # Квартирография типового этажа
         st_count = int(parse_num(row_dict.get("Количество студий на типовом этаже")))
         k1_count = int(parse_num(row_dict.get("Количество 1К на типовом этаже")))
@@ -221,8 +250,8 @@ def import_sections_from_excel(
             "depth": building_depth,
             "width_small": width_small,
             "depth_small": depth_small,
-            "min_floors": meta["min_floors"],
-            "max_floors": meta["max_floors"],
+            "min_floors": parsed_min_fl,
+            "max_floors": parsed_max_fl,
             "default_floors": default_floors,
             "elevators": meta["elevators"],
             "floor_area": floor_area,

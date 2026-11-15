@@ -185,10 +185,13 @@ def get_library_catalog() -> list[dict[str, Any]]:
         "CORNER": "Угловая поворотная секция (дворы)",
         "END": "Торцевая секция с окнами на фасад",
         "TOWER": "Точечная башня (доминанта)",
+        "UNIVERSAL": "Универсальная широтная секция (рядовая/точечная)",
     }
     for s in sections:
         cat = s.category.upper()
         total_apts = sum(s.apartments_per_floor.values())
+        min_h = getattr(s, "min_height_m", round(s.min_floors * getattr(s, "floor_height", 3.15), 2))
+        max_h = getattr(s, "max_height_m", round(s.max_floors * getattr(s, "floor_height", 3.15), 2))
         catalog.append({
             "id": s.id,
             "code": getattr(s, "section_code", "") or s.id,
@@ -198,16 +201,70 @@ def get_library_catalog() -> list[dict[str, Any]]:
             "width": s.width,
             "depth": s.depth,
             "floor_area": round(s.floor_area, 1),
+            "living_area_per_floor": round(getattr(s, "living_area_per_floor", 0.0), 1),
             "elevators": s.elevators,
             "min_floors": s.min_floors,
             "max_floors": s.max_floors,
             "default_floors": s.default_floors,
+            "min_height_m": min_h,
+            "max_height_m": max_h,
+            "floor_height": getattr(s, "floor_height", 3.15),
+            "ground_floor_height": getattr(s, "ground_floor_height", 4.20),
             "has_commercial_ground": s.has_commercial_ground,
+            "commercial_area_ground": round(getattr(s, "commercial_area_ground", 0.0), 1),
             "apartments_per_floor": s.apartments_per_floor,
             "total_apartments_per_floor": total_apts,
             "apt_areas": getattr(s, "apt_areas", {}),
         })
     return catalog
+
+
+def update_library_sections(payload: dict[str, Any]) -> dict[str, Any]:
+    """Обновить численные параметры секций (мин/макс этажность и высоты) в памяти и на диске."""
+    library = get_library()
+    sections_data = payload.get("sections") or []
+    updated_count = 0
+    sections_dir = PROJECT_ROOT / "config" / "sections"
+
+    for item in sections_data:
+        sec_id = item.get("id")
+        if not sec_id:
+            continue
+        sec = library.get_by_id(sec_id)
+        if not sec:
+            continue
+
+        changed = False
+        if "min_floors" in item:
+            val = int(item["min_floors"])
+            sec.min_floors = max(1, val)
+            changed = True
+
+        if "max_floors" in item:
+            val = int(item["max_floors"])
+            sec.max_floors = max(sec.min_floors, val)
+            changed = True
+
+        if changed:
+            updated_count += 1
+            # Сохраняем обновленные числовые параметры в JSON файл секции
+            json_path = sections_dir / f"{sec.id}.json"
+            if json_path.exists():
+                try:
+                    with json_path.open("r", encoding="utf-8") as f:
+                        file_data = json.load(f)
+                    file_data["min_floors"] = sec.min_floors
+                    file_data["max_floors"] = sec.max_floors
+                    with json_path.open("w", encoding="utf-8") as f:
+                        json.dump(file_data, f, ensure_ascii=False, indent=2)
+                except Exception as ex:
+                    print(f"Ошибка сохранения {json_path}: {ex}")
+
+    return {
+        "success": True,
+        "updated": updated_count,
+        "catalog": get_library_catalog(),
+    }
 
 
 def inspect_cad_bytes(file_bytes: bytes, filename: str) -> list[dict[str, Any]]:
@@ -994,6 +1051,18 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     config = get_config()
     library = get_library()
 
+    section_overrides = params.get("section_overrides") or {}
+    if section_overrides and isinstance(section_overrides, dict):
+        for s_id, s_ovr in section_overrides.items():
+            s_obj = library.get_by_id(s_id)
+            if s_obj and isinstance(s_ovr, dict):
+                if "min_floors" in s_ovr:
+                    val = int(s_ovr["min_floors"])
+                    s_obj.min_floors = max(1, val)
+                if "max_floors" in s_ovr:
+                    val = int(s_ovr["max_floors"])
+                    s_obj.max_floors = max(s_obj.min_floors, val)
+
     site, selected_norm, parcel_region_name, parcel_district_name, parcel_address, config = (
         _create_site_from_params(params, config)
     )
@@ -1050,12 +1119,201 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     gen_mode = params.get("gen_mode", "fixed")
     opt_note = ""
 
+    # ── Параметры контроля инсоляции СанПиН 1.2.3685-21 ──────────────────────
+    insol_params = params.get("insolation", {}) or {}
+    insol_enabled = bool(insol_params.get("enabled", params.get("enable_insolation", True)))
+    insol_norm_hours = float(insol_params.get("norm_hours", params.get("insolation_norm_hours", 2.0)))
+    insol_allow_interm = bool(insol_params.get("allow_intermittent", params.get("insolation_allow_intermittent", True)))
+    insol_include_surr = bool(insol_params.get("include_surroundings", params.get("insolation_include_surroundings", True)))
+    insol_default_surr_h = float(insol_params.get("default_surrounding_height", params.get("default_surrounding_height", 15.0)))
+    insol_grid_step = float(insol_params.get("grid_step_m", params.get("insolation_grid_step", 3.0)))
+    insol_auto_cascade = bool(insol_params.get("auto_cascade_reduction", params.get("insolation_auto_cascade", True)))
+    surr_height_overrides = params.get("surrounding_height_overrides", {}) or {}
+
+    surrounding_buildings_list = []
+    if insol_include_surr and site.geo_center:
+        lat, lon = site.geo_center
+        if abs(lat) > 1.0 and abs(lon) > 1.0:
+            try:
+                from src.geo.osm_surroundings import get_surrounding_buildings
+                surr_fc = get_surrounding_buildings(lat, lon, radius_m=220.0)
+                surrounding_buildings_list = surr_fc.get("features", [])
+            except Exception as e:
+                print(f"Ошибка загрузки окружения для инсоляции: {e}")
+
+    from src.core.insolation import InsolationCalculator, InsolationReport
+
+    site_lat, site_lon = site.geo_center if site.geo_center else (56.85, 53.20)
+    insol_calc = InsolationCalculator(
+        site_lat=site_lat,
+        site_lon=site_lon,
+        required_hours=insol_norm_hours,
+        grid_step_m=insol_grid_step,
+        surrounding_buildings=surrounding_buildings_list if insol_include_surr else None,
+        default_surrounding_height=insol_default_surr_h,
+        surrounding_height_overrides=surr_height_overrides,
+        allow_intermittent=insol_allow_interm,
+        site_boundary=site.boundary,
+    )
+
+    def _calibrate_for_insolation(b_list: list[Building]) -> tuple[list[Building], InsolationReport]:
+        """Проверить инсоляцию, заменить меридиональные секции с затененным фасадом и при необходимости каскадно понизить этажи."""
+        if not b_list:
+            rep = insol_calc.calculate_masterplan_insolation([], include_surroundings=insol_include_surr, compute_surrounding_heatmap=False)
+            return b_list, rep
+
+        rep = insol_calc.calculate_masterplan_insolation(b_list, include_surroundings=insol_include_surr, compute_surrounding_heatmap=False)
+        if not insol_enabled:
+            return b_list, rep
+
+        # 1. СанПиН 1.2.3685-21 п. 164: Защита меридиональных секций (М-тип)
+        # Меридиональная секция состоит из односторонних квартир и обязана инсолироваться с ОБОИХ продольных фасадов.
+        # Если хотя бы один продольный фасад затенен стоящим рядом зданием OSM или корпусом (< 60% соответствия),
+        # заменяем секцию на универсальную/широтную (Ш1 / Ш2), у которой сквозные двусторонние квартиры (распашонки).
+        universal_pool = [
+            st for st in library.get_all()
+            if (getattr(st, "is_latitudinal", False) or getattr(st, "is_universal", False) or not getattr(st, "is_meridian", False))
+            and st.category.upper() in ("UNIVERSAL", "MIDDLE", "END")
+        ]
+
+        sec_points_map: dict[tuple[str, int], list[Any]] = {}
+        for p in rep.facade_points:
+            sec_points_map.setdefault((p.building_id, p.section_index), []).append(p)
+
+        m_modified = False
+        rechecked_buildings = []
+
+        for b_i, b in enumerate(b_list):
+            b_id = f"b{b_i + 1}"
+            new_secs = []
+            for s_i, s in enumerate(b.sections):
+                pts = sec_points_map.get((b_id, s_i), [])
+                if getattr(s.section_type, "is_meridian", False) and pts and universal_pool:
+                    ang_rad = math.radians(s.angle)
+                    # Нормаль к продольному фасаду
+                    n_long_x = -math.sin(ang_rad)
+                    n_long_y = math.cos(ang_rad)
+
+                    side1_pts = []
+                    side2_pts = []
+                    for p in pts:
+                        dot = p.normal_x * n_long_x + p.normal_y * n_long_y
+                        if dot > 0.4:
+                            side1_pts.append(p)
+                        elif dot < -0.4:
+                            side2_pts.append(p)
+
+                    ratio1 = (sum(1 for p in side1_pts if p.is_compliant) / len(side1_pts)) if side1_pts else 1.0
+                    ratio2 = (sum(1 for p in side2_pts if p.is_compliant) / len(side2_pts)) if side2_pts else 1.0
+
+                    # Если хотя бы один из продольных фасадов затенен (< 60% соответствия)
+                    if (side1_pts and ratio1 < 0.60) or (side2_pts and ratio2 < 0.60):
+                        # Ищем подходящую замену в universal_pool (Ш1 / Ш2)
+                        best_st = None
+                        for cand in universal_pool:
+                            if cand.min_floors <= s.floors <= cand.max_floors:
+                                best_st = cand
+                                break
+                        if not best_st:
+                            best_st = min(universal_pool, key=lambda c: abs(c.default_floors - s.floors))
+
+                        new_f = max(best_st.min_floors, min(best_st.max_floors, s.floors))
+                        new_secs.append(PlacedSection(
+                            section_type=best_st,
+                            x=s.x, y=s.y, angle=s.angle,
+                            floors=new_f,
+                            is_flipped=s.is_flipped,
+                            floor_height=s.floor_height,
+                            ground_floor_height=s.ground_floor_height,
+                        ))
+                        m_modified = True
+                        continue
+
+                new_secs.append(s)
+            rechecked_buildings.append(Building(sections=new_secs, typology=getattr(b, "typology", "LINEAR")))
+
+        if m_modified:
+            b_list = rechecked_buildings
+            rep = insol_calc.calculate_masterplan_insolation(b_list, include_surroundings=insol_include_surr, compute_surrounding_heatmap=False)
+
+        if rep.compliance_rate_percent >= 75.0 or not insol_auto_cascade:
+            return b_list, rep
+
+        site_cy = site.boundary.centroid.y
+        curr_b = b_list
+        best_b = b_list
+        best_rep = rep
+
+        for _ in range(2):
+            # Собираем координаты секций с дефицитом инсоляции
+            shaded_sec_keys = set()
+            for p in rep.facade_points:
+                if not p.is_compliant:
+                    shaded_sec_keys.add((p.building_id, p.section_index))
+
+            shaded_coords = []
+            for b_i, b in enumerate(curr_b):
+                b_id = f"b{b_i + 1}"
+                for s_i, s in enumerate(b.sections):
+                    if (b_id, s_i) in shaded_sec_keys:
+                        shaded_coords.append((s.x, s.y))
+
+            modified = False
+            calibrated_buildings = []
+            for b_i, b in enumerate(curr_b):
+                b_id = f"b{b_i + 1}"
+                new_secs = []
+                for s_i, s in enumerate(b.sections):
+                    min_f = getattr(s.section_type, "min_floors", 1) or 1
+                    # Секция считается затеняющей, если она расположена южнее хотя бы одной дефицитной секции (или южнее центра участка)
+                    is_shading = any(s.y < (sc_y - 2.0) and abs(s.x - sc_x) < 80.0 for sc_x, sc_y in shaded_coords) or (s.y < site_cy)
+                    if is_shading and s.floors > min_f:
+                        drop = 2 if (s.floors - min_f) >= 2 else 1
+                        new_f = max(min_f, s.floors - drop)
+                        if new_f != s.floors:
+                            modified = True
+                        new_secs.append(PlacedSection(
+                            section_type=s.section_type,
+                            x=s.x, y=s.y, angle=s.angle,
+                            floors=new_f,
+                            is_flipped=s.is_flipped,
+                            floor_height=s.floor_height,
+                            ground_floor_height=s.ground_floor_height,
+                        ))
+                    else:
+                        new_secs.append(s)
+                calibrated_buildings.append(Building(sections=new_secs, typology=getattr(b, "typology", "LINEAR")))
+
+            if not modified:
+                break
+
+            curr_b = calibrated_buildings
+            new_rep = insol_calc.calculate_masterplan_insolation(curr_b, include_surroundings=insol_include_surr, compute_surrounding_heatmap=False)
+            if new_rep.compliance_rate_percent > best_rep.compliance_rate_percent:
+                best_b = curr_b
+                best_rep = new_rep
+                rep = new_rep
+                if best_rep.compliance_rate_percent >= 75.0:
+                    break
+
+        return best_b, best_rep
+
     def _calibrate_for_ground_parking(target_site: Site, b_list: list[Building], norm: Any) -> list[Building]:
-        """Откалибровать этажность зданий под 100% размещение парковок на земле без дефицита."""
+        """Откалибровать застройку под 100% размещение парковок на земле без дефицита.
+        
+        ponytail: для башен уменьшаем число корпусов, сохраняя их доминантный силуэт и min_floors; для рядовых — калибруем этажность.
+        """
         if not b_list or not only_ground_parking:
             return b_list
         curr_b = b_list
-        for _ in range(4):
+
+        is_tower_typology = any(
+            getattr(b, "typology", "").upper() in ("TOWER", "TOWERS", "POINT")
+            or any((getattr(s.section_type, "category", "") or "").upper() == "TOWER" for s in b.sections)
+            for b in curr_b
+        )
+
+        for _ in range(5):
             t = calculate_tep(target_site, curr_b, config)
             bal = calculate_territory_balance(
                 target_site.area, t.building_area, t.population,
@@ -1066,13 +1324,21 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
             cap_p = bal.parking.ground_capacity
             if req_p <= cap_p or req_p <= 0:
                 break
-            ratio = max(0.15, min(0.95, cap_p / max(1, req_p)))
+
+            if is_tower_typology and len(curr_b) > 1:
+                # Для башен: сокращаем ЧИСЛО корпусов, сохраняя их нормативную высотность (>= 12 эт.),
+                # чтобы не превращать башни в 4-этажные бараки.
+                curr_b = curr_b[:-1]
+                continue
+
+            ratio = max(0.2, min(0.95, cap_p / max(1, req_p)))
             changed = False
             calibrated = []
             for b in curr_b:
                 new_secs = []
                 for s in b.sections:
-                    new_f = max(1, int(math.floor(s.floors * ratio)))
+                    min_f = getattr(s.section_type, "min_floors", 4)
+                    new_f = max(min_f, int(math.floor(s.floors * ratio)))
                     if new_f != s.floors:
                         changed = True
                     new_secs.append(PlacedSection(
@@ -1086,7 +1352,10 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
                 calibrated.append(Building(sections=new_secs, typology=getattr(b, "typology", "LINEAR")))
             curr_b = calibrated
             if not changed:
-                break
+                if len(curr_b) > 1:
+                    curr_b = curr_b[:-1]
+                else:
+                    break
         return curr_b
 
     def _generate_buildings_for_site(target_site: Site, p_cfg: PlacementConfig) -> list[Building]:
@@ -1174,6 +1443,20 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         tep = calculate_tep(site, buildings, config)
 
     # 6. Баланс территории и машиномест
+    buildings, v1_insol = _calibrate_for_insolation(buildings)
+    if insol_enabled and insol_include_surr and v1_insol and insol_calc.surrounding_raw_items:
+        try:
+            surr_impact = insol_calc.calculate_surrounding_impact(buildings)
+            v1_insol.surrounding_impact = surr_impact
+            v1_insol.surrounding_facets = getattr(insol_calc, "_surrounding_facets", [])
+            if surr_impact and surr_impact.get("critical_violations_count", 0) > 0:
+                v1_insol.warnings.append(
+                    f"Внимание: затенение проектом снизило инсоляцию ниже норм СанПиН в {surr_impact['critical_violations_count']} точках окружающей застройки."
+                )
+        except Exception as e:
+            logger.warning(f"Ошибка расчета влияния на окружение: {e}")
+    tep = calculate_tep(site, buildings, config)
+
     balance: TerritoryBalanceResult = calculate_territory_balance(
         site.area,
         tep.building_area,
@@ -1196,6 +1479,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         opt_note, typology, target_floors,
         variant_id="var_1", variant_name=v1_name, variant_tag=v1_tag,
         allow_parking_in_zouit=allow_parking_in_zouit,
+        insolation_report=v1_insol,
+        surrounding_height_overrides=surr_height_overrides,
     )
 
     # Вариант 2 (Максимум GFA)
@@ -1228,6 +1513,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     )
     try:
         v2_buildings = _generate_buildings_for_site(site, v2_cfg)
+        v2_buildings, v2_insol = _calibrate_for_insolation(v2_buildings)
         v2_tep = calculate_tep(site, v2_buildings, config)
         v2_balance = calculate_territory_balance(
             site.area,
@@ -1247,6 +1533,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
             "Максимум полезного выхода GFA при нормативном соблюдении BCR и FAR", typology, v2_floors,
             variant_id="var_2", variant_name="Максимум GFA", variant_tag="Инвестиционный",
             allow_parking_in_zouit=allow_parking_in_zouit,
+            insolation_report=v2_insol,
+            surrounding_height_overrides=surr_height_overrides,
         )
     except Exception as e:
         print(f"Ошибка расчета Варианта 2: {e}")
@@ -1284,6 +1572,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     )
     try:
         v3_buildings = _generate_buildings_for_site(site, v3_cfg)
+        v3_buildings, v3_insol = _calibrate_for_insolation(v3_buildings)
         v3_tep = calculate_tep(site, v3_buildings, config)
         v3_balance = calculate_territory_balance(
             site.area,
@@ -1303,6 +1592,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
             "Комфортная среда: умеренная этажность, увеличенные дворы, высокая доля озеленения", typology, v3_floors,
             variant_id="var_3", variant_name="Комфорт-класс", variant_tag="Экологичный",
             allow_parking_in_zouit=allow_parking_in_zouit,
+            insolation_report=v3_insol,
+            surrounding_height_overrides=surr_height_overrides,
         )
     except Exception as e:
         print(f"Ошибка расчета Варианта 3: {e}")
@@ -1349,6 +1640,8 @@ def _package_single_variant(
     variant_name: str = "Сбалансированный",
     variant_tag: str = "Целевой",
     allow_parking_in_zouit: bool = False,
+    insolation_report: Any | None = None,
+    surrounding_height_overrides: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Сформировать сериализуемый словарь данных для конкретного варианта застройки."""
     b_minx, b_miny, b_maxx, b_maxy = site.boundary.bounds
@@ -1524,6 +1817,7 @@ def _package_single_variant(
         buildings_data.append({
             "id": b_id,
             "name": b_name,
+            "typology": getattr(b, "typology", None),
             "floors": b.floors,
             "min_floors": b.min_floors,
             "max_floors": b.max_floors,
@@ -1579,9 +1873,16 @@ def _package_single_variant(
 
     try:
         viewer_3d_data = build_3d_geojson_data(
-            site, buildings, tep, parking_slots=parking_res.slots if parking_res else None
+            site,
+            buildings,
+            tep,
+            parking_slots=parking_res.slots if parking_res else None,
+            insolation_report=insolation_report,
+            surrounding_height_overrides=surrounding_height_overrides,
         )
-        viewer_3d_html = generate_3d_viewer_html(site, buildings, tep, height="640px", default_basemap="osm", standalone=False)
+        # Studio передает viewer_3d_data через postMessage в готовый viewer_3d.html (iframe)
+        # Исключение дублирования 2.3 MB HTML-строки снижает размер JSON с 18 МБ до 1.2 МБ
+        viewer_3d_html = ""
     except Exception as e:
         viewer_3d_data = None
         viewer_3d_html = f"<!-- 3D: {e} -->"
@@ -1742,7 +2043,16 @@ def _package_single_variant(
                 "unit": v.get("unit", ""),
             }
             for k, v in checks.items()
-        },
+        } | ({
+            "insolation": {
+                "name": "Инсоляция (СанПиН 1.2.3685-21)",
+                "value": f"{insolation_report.compliance_rate_percent:.1f}%",
+                "limit": f"≥ 75.0% ({insolation_report.required_hours:.1f} ч)",
+                "ok": insolation_report.sanpin_compliant,
+                "unit": "%",
+            }
+        } if insolation_report else {}),
+        "insolation": insolation_report.to_dict() if insolation_report and hasattr(insolation_report, "to_dict") else None,
         "buildings": buildings_data,
         "sections": sections_data,
         "leaflet_html": leaflet_html,
@@ -1769,6 +2079,18 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
     """Рассчитать матрицу вариантов этажности."""
     config = get_config()
     library = get_library()
+
+    section_overrides = params.get("section_overrides") or {}
+    if section_overrides and isinstance(section_overrides, dict):
+        for s_id, s_ovr in section_overrides.items():
+            s_obj = library.get_by_id(s_id)
+            if s_obj and isinstance(s_ovr, dict):
+                if "min_floors" in s_ovr:
+                    val = int(s_ovr["min_floors"])
+                    s_obj.min_floors = max(1, val)
+                if "max_floors" in s_ovr:
+                    val = int(s_ovr["max_floors"])
+                    s_obj.max_floors = max(s_obj.min_floors, val)
 
     site, selected_norm, _, _, _, config = _create_site_from_params(params, config)
     try:
@@ -1805,7 +2127,14 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
         print(f"Ошибка нарезки дорожной сетью: {e}")
         site.roads_result = None
 
+    target_floors = int(params.get("target_floors", 14))
+    floor_height = float(params.get("floor_height", config.get("floor_height", 3.0)))
+    max_building_height_m = float(params.get("max_building_height_m", config.get("max_building_height_m", 0.0) or 0.0))
+
     placement_cfg = PlacementConfig(
+        target_floors=target_floors,
+        floor_height=floor_height,
+        max_building_height_m=max_building_height_m if max_building_height_m > 0 else None,
         typology=params.get("typology", "AUTO"),
         courtyard_orientation=params.get("courtyard_orientation", "SOUTH"),
         cascade_floors=bool(params.get("cascade_floors", True)),
@@ -1821,7 +2150,12 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
     )
 
     optimizer = Optimizer(site, library, config, base_placement_config=placement_cfg)
-    variants = optimizer.generate_variants(floors_range=range(8, 26, 2))
+    cr = optimizer._get_floors_range(placement_cfg.typology)
+    step = 2 if len(cr) >= 8 else 1
+    f_list = list(cr)[::step]
+    if cr and cr[-1] not in f_list:
+        f_list.append(cr[-1])
+    variants = optimizer.generate_variants(floors_range=f_list)
 
     matrix = []
     for v in variants:
@@ -1835,6 +2169,7 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
             "far": round(v.tep.far, 2),
             "normative_ok": v.normative_ok,
         })
+    matrix.sort(key=lambda m: m["floors"])
     return matrix
 
 

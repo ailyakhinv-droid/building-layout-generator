@@ -41,11 +41,15 @@ class PlacedSection:
     ground_floor_height: float | None = None
 
     def __post_init__(self) -> None:
-        """Установить этажность по умолчанию, если не задана, и ограничить максимумом секции."""
+        """Установить этажность по умолчанию, если не задана, и ограничить диапазоном секции."""
+        # ponytail: соблюдаем паспортные границы min/max этажей секции — upgrade path: поддержка разновысотных этажей
+        min_f = getattr(self.section_type, "min_floors", 1) or 1
+        max_f = getattr(self.section_type, "max_floors", 75) or 75
+
         if self.floors <= 0:
-            self.floors = self.section_type.default_floors
+            self.floors = max(min_f, min(self.section_type.default_floors, max_f))
         else:
-            self.floors = max(1, min(self.floors, self.section_type.max_floors))
+            self.floors = max(min_f, min(self.floors, max_f))
 
     @property
     def footprint(self) -> Polygon:
@@ -65,17 +69,24 @@ class PlacedSection:
 
     @property
     def effective_floor_height(self) -> float:
-        """Эффективная высота типового этажа."""
-        if self.floor_height is not None and self.floor_height > 0:
-            return self.floor_height
-        return getattr(self.section_type, "floor_height", _DEFAULT_FLOOR_HEIGHT)
+        """Эффективная высота типового этажа. Источник истины — паспорт секции."""
+        # ponytail: приоритет отдается паспорту секции из исходных данных (JSON) — upgrade path: поддержка разновысотных этажей в мансардах
+        sec_fh = getattr(self.section_type, "floor_height", None)
+        if sec_fh is not None and float(sec_fh) > 0:
+            return float(sec_fh)
+        if self.floor_height is not None and float(self.floor_height) > 0:
+            return float(self.floor_height)
+        return _DEFAULT_FLOOR_HEIGHT
 
     @property
     def effective_ground_floor_height(self) -> float:
-        """Эффективная высота первого этажа (коммерческого при наличии)."""
-        if self.ground_floor_height is not None and self.ground_floor_height > 0:
-            return self.ground_floor_height
-        return getattr(self.section_type, "ground_floor_height", self.effective_floor_height)
+        """Эффективная высота первого этажа (коммерческого при наличии). Источник истины — паспорт секции."""
+        sec_gfh = getattr(self.section_type, "ground_floor_height", None)
+        if sec_gfh is not None and float(sec_gfh) > 0:
+            return float(sec_gfh)
+        if self.ground_floor_height is not None and float(self.ground_floor_height) > 0:
+            return float(self.ground_floor_height)
+        return self.effective_floor_height
 
     @property
     def height(self) -> float:

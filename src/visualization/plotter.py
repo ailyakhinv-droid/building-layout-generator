@@ -44,6 +44,7 @@ SECTION_CATEGORY_COLORS = {
     "CORNER": "#ED7D31",
     "END": "#70AD47",
     "TOWER": "#9B59B6",
+    "UNIVERSAL": "#0ea5e9",
 }
 
 

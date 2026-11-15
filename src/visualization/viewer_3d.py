@@ -43,6 +43,7 @@ CATEGORY_COLORS = {
     "CORNER": "#E67E22",  # Угловая секция (терракотовый)
     "END": "#8E44AD",     # Торцевая секция (фиолетовый)
     "TOWER": "#9B59B6",   # Точечная башня (аметистовый/пурпурный)
+    "UNIVERSAL": "#0ea5e9",  # Универсальная секция (Ш) (небесно-синий)
 }
 
 CATEGORY_NAMES = {
@@ -50,6 +51,7 @@ CATEGORY_NAMES = {
     "CORNER": "Угловая",
     "END": "Торцевая",
     "TOWER": "Точечная (башня)",
+    "UNIVERSAL": "Универсальная (Ш)",
 }
 
 
@@ -90,8 +92,10 @@ def build_3d_geojson_data(
     buildings: list[Building] | None = None,
     tep: TEP | None = None,
     include_surroundings: bool = True,
-    surroundings_radius: float = 400.0,
+    surroundings_radius: float = 220.0,
     parking_slots: list[Any] | None = None,
+    insolation_report: Any | None = None,
+    surrounding_height_overrides: dict[str, float] | None = None,
 ) -> dict[str, Any]:
     """Сформировать словарь GeoJSON-слоев для 3D-визуализации."""
     center_lat, center_lon = _get_site_geo_center(site)
@@ -283,8 +287,32 @@ def build_3d_geojson_data(
                 radius_m=surroundings_radius,
                 exclude_geom=boundary_wgs,
             )
+            # Применяем пользовательские переопределения высот окружающих зданий
+            if surrounding_height_overrides and surroundings_data.get("features"):
+                for feat in surroundings_data["features"]:
+                    f_props = feat.get("properties", {})
+                    b_id = str(f_props.get("id") or "")
+                    if b_id in surrounding_height_overrides:
+                        ovr_h = float(surrounding_height_overrides[b_id])
+                        f_props["height"] = ovr_h
+                        f_props["height_m"] = ovr_h
+                        f_props["levels"] = max(1, round(ovr_h / 3.0))
+                        f_props["floors"] = max(1, round(ovr_h / 3.0))
+                        f_props["is_overridden"] = True
         except Exception as e:
             surroundings_data = {"type": "FeatureCollection", "features": []}
+
+    # 7. Тепловая карта инсоляции (3D-грани на фасадах по СанПиН)
+    insolation_facets_fc = {"type": "FeatureCollection", "features": []}
+    insolation_summary = None
+    if insolation_report:
+        if hasattr(insolation_report, "to_geojson_facets"):
+            try:
+                insolation_facets_fc = insolation_report.to_geojson_facets(center_lat, center_lon)
+            except Exception as ex:
+                print(f"Ошибка конвертации граней инсоляции в WGS-84: {ex}")
+        if hasattr(insolation_report, "to_dict"):
+            insolation_summary = insolation_report.to_dict()
 
     return {
         "boundary": {"type": "FeatureCollection", "features": [boundary_feature]},
@@ -295,6 +323,8 @@ def build_3d_geojson_data(
         "parking": {"type": "FeatureCollection", "features": parking_features},
         "buildings": {"type": "FeatureCollection", "features": building_features},
         "surroundings": surroundings_data,
+        "insolation_facets": insolation_facets_fc,
+        "insolation_summary": insolation_summary,
     }
 
 
@@ -306,6 +336,7 @@ def generate_3d_viewer_html(
     height: int | str = 600,
     default_basemap: str = "osm",
     standalone: bool = False,
+    insolation_report: Any | None = None,
 ) -> str:
     """Сгенерировать HTML-код интерактивного 3D-вьюера на MapLibre GL JS.
 
@@ -317,11 +348,12 @@ def generate_3d_viewer_html(
         height: Высота карты в пикселях или строкой (например, '100%').
         default_basemap: Начальная подложка ('osm', 'light', 'satellite', 'dark', 'none').
         standalone: Если True — готовый полноэкранный HTML-документ для сохранения в файл.
+        insolation_report: Отчет по инсоляции застройки (InsolationReport).
 
     Returns:
         Строка с полным HTML кодом страницы.
     """
-    layers_data = build_3d_geojson_data(site, buildings, tep)
+    layers_data = build_3d_geojson_data(site, buildings, tep, insolation_report=insolation_report)
     data_json_str = json.dumps(layers_data, ensure_ascii=False)
 
     site_area = round(site.area, 1)

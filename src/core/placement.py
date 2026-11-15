@@ -57,7 +57,7 @@ if not hasattr(Building, "gfa"):
 # и не могут ориентироваться строго по оси Восток-Запад (горизонтально),
 # иначе их северный фасад никогда не получает нормативные 1.5-2 часа инсоляции.
 # Минимальный предельный угол к горизонтали составляет 25°, рекомендуемый оптимум 28-30°.
-MIN_MERIDIAN_INSOLATION_ANGLE_DEG: float = 25.0
+MIN_MERIDIAN_INSOLATION_ANGLE_DEG: float = 28.0
 RECOMMENDED_MERIDIAN_ANGLE_DEG: float = 28.0
 
 
@@ -337,7 +337,12 @@ class PlacementEngine:
             # Предельный угол к горизонтали должен быть не менее 25-30°, чтобы инсолировать северный фасад.
             ah = angle_to_horizontal(primary_angle)
             if ah < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
-                if placement_config.typology.upper() == "LINEAR":
+                typ_up = placement_config.typology.upper()
+                if typ_up in ("PERIMETER", "URBAN_BLOCK", "COURTYARD"):
+                    # Периметральная застройка урбан-блоками следует красным линиям и УДС;
+                    # широтные крылья периметра автоматически комплектуются широтными секциями (Ш1, Ш2)
+                    pass
+                elif typ_up == "LINEAR":
                     if angle_to_horizontal(perp_angle) >= MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
                         primary_angle = perp_angle
                     else:
@@ -405,7 +410,14 @@ class PlacementEngine:
         # 5. Выбор стратегии в зависимости от типологии (для единого квартала)
         typology = placement_config.typology.upper()
 
-        if typology in ("TOWER", "TOWERS", "POINT"):
+        all_pref_are_towers = False
+        if placement_config.preferred_section_ids:
+            pref_types = [self.library.get_by_id(sid) for sid in placement_config.preferred_section_ids]
+            pref_types = [s for s in pref_types if s is not None]
+            if pref_types and all(s.category.upper() == "TOWER" or (not s.can_act_as("MIDDLE") and not s.can_act_as("CORNER")) for s in pref_types):
+                all_pref_are_towers = True
+
+        if typology in ("TOWER", "TOWERS", "POINT") or (typology in ("AUTO", "MIXED") and all_pref_are_towers):
             tower_sec = sections.get("tower", middle)
             t_floors = placement_config.target_floors or tower_sec.default_floors
             if max_floors_from_h is not None:
@@ -492,19 +504,32 @@ class PlacementEngine:
 
         # Для AUTO определяем оптимальную форму застройки под пропорции конкретного квартала
         if typology in ("AUTO", "MIXED"):
-            b_len, b_w, b_aspect = get_obb_dimensions(block_poly)
-            b_area = block_poly.area
-            if b_area >= 3500.0 and b_w >= 48.0 and b_aspect <= 2.2:
-                # Просторный квадратный/прямоугольный квартал — П-образный двор
-                effective_typology = "U_SHAPE"
-            elif b_aspect >= 2.0 or b_w < 45.0:
-                # Вытянутый или узкий квартал — строчная (линейная) посадка
-                effective_typology = "LINEAR"
-            elif b_area < 1800.0:
-                # Компактный квартал — точечные башни
+            # Если пользователь в подборке секций выбрал только башни
+            all_pref_are_towers = False
+            if placement_config.preferred_section_ids:
+                pref_types = [self.library.get_by_id(sid) for sid in placement_config.preferred_section_ids]
+                pref_types = [s for s in pref_types if s is not None]
+                if pref_types and all(s.category.upper() == "TOWER" or (not s.can_act_as("MIDDLE") and not s.can_act_as("CORNER")) for s in pref_types):
+                    all_pref_are_towers = True
+
+            if all_pref_are_towers:
                 effective_typology = "TOWER"
             else:
-                effective_typology = "MIXED"
+                # ponytail: get_obb_dimensions возвращает (length, width, angle_deg), aspect ratio вычисляется как b_len / b_w — upgrade path: учет ориентации сторон OBB к сторонам света
+                b_len, b_w, _ = get_obb_dimensions(block_poly)
+                b_aspect = b_len / max(1.0, b_w)
+                b_area = block_poly.area
+                if b_area >= 3500.0 and b_w >= 48.0 and b_aspect <= 2.2:
+                    # Просторный квадратный/прямоугольный квартал — П-образный двор
+                    effective_typology = "U_SHAPE"
+                elif b_aspect >= 2.0 or b_w < 45.0:
+                    # Вытянутый или узкий квартал — строчная (линейная) посадка
+                    effective_typology = "LINEAR"
+                elif b_area < 1800.0:
+                    # Компактный квартал — точечные башни
+                    effective_typology = "TOWER"
+                else:
+                    effective_typology = "MIXED"
         else:
             effective_typology = typology
 
@@ -585,13 +610,35 @@ class PlacementEngine:
         max_bcr = float(raw_bcr) if raw_bcr is not None and float(raw_bcr) > 0 else None
         max_far = float(raw_far) if raw_far is not None and float(raw_far) > 0 else None
 
-        # 0. Ограничение по предельной высоте/этажности
-        if getattr(self, "_max_floors_from_h", None) is not None:
-            max_fl = self._max_floors_from_h
+        # 0. Ограничение по предельной высоте/этажности (Hard Ceiling)
+        ceiling_fl = getattr(self, "_max_floors_from_h", None)
+        if placement_config.target_floors and placement_config.target_floors > 0:
+            ceiling_fl = min(ceiling_fl, placement_config.target_floors) if ceiling_fl is not None else placement_config.target_floors
+
+        if ceiling_fl is not None:
             for b in buildings:
                 for s in b.sections:
-                    if s.floors > max_fl:
-                        s.floors = max_fl
+                    if s.floors > ceiling_fl:
+                        s.floors = ceiling_fl
+
+        # 0.1. Строгий аудит инсоляции секций типа М (СанПиН 1.2.3685-21)
+        # Секции типа М (меридиональные) имеют двухстороннюю ориентацию квартир (восток-запад)
+        # и должны инсолироваться с обеих сторон. Если продольная ось секции наклонена к горизонтали < 28°,
+        # ее северный фасад ориентирован строго на север и получает 0 ч солнца (грубейшее нарушение норм).
+        # В таком случае секция типа М автоматически заменяется на широтную секцию Ш1/Ш2.
+        lat_replacement_pool = [
+            s for s in self.library.get_all()
+            if (getattr(s, "is_latitudinal", False) or getattr(s, "is_universal", False) or not getattr(s, "is_meridian", False))
+            and s.can_act_as("MIDDLE")
+        ]
+        if lat_replacement_pool:
+            for b in buildings:
+                for s in b.sections:
+                    if getattr(s.section_type, "is_meridian", False):
+                        if angle_to_horizontal(s.angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+                            best_lat = min(lat_replacement_pool, key=lambda c: abs(c.default_floors - s.floors))
+                            s.section_type = best_lat
+                            s.floors = min(best_lat.max_floors, max(best_lat.min_floors, s.floors))
 
         # 1. Ограничение по BCR (процент застройки / пятно подошвы)
         if placement_config.only_ground_parking:
@@ -645,42 +692,51 @@ class PlacementEngine:
         if allowed_gfa is not None and buildings:
             cur_gfa = sum(b.total_gfa for b in buildings)
             if cur_gfa > allowed_gfa * 1.005:
-                # Сначала пробуем убрать лишние корпуса, сохраняя целевую этажность остальных
-                kept = []
-                acc_gfa = 0.0
-                for b in buildings:
-                    if acc_gfa + b.total_gfa <= allowed_gfa * 1.005:
-                        kept.append(b)
-                        acc_gfa += b.total_gfa
-                if kept:
-                    buildings = kept
+                # ponytail: для башен уменьшаем число корпусов, сохраняя их доминантный силуэт и min_floors; для рядовых — калибруем этажность
+                has_towers = any(
+                    getattr(b, "typology", "").upper() in ("TOWER", "TOWERS", "POINT")
+                    or any(getattr(s.section_type, "is_tower", False) or s.section_type.category == "TOWER" for s in b.sections)
+                    for b in buildings
+                )
+
+                if has_towers:
+                    kept_towers: list[Building] = []
+                    acc_gfa = 0.0
+                    for b in buildings:
+                        b_gfa = b.total_gfa
+                        if acc_gfa + b_gfa <= allowed_gfa * 1.08 or not kept_towers:
+                            kept_towers.append(b)
+                            acc_gfa += b_gfa
+                    buildings = kept_towers
                 else:
-                    # Если даже единственный первый корпус превышает FAR, масштабируем его секции
-                    first_b = buildings[0]
-                    ratio = allowed_gfa / max(1.0, first_b.total_gfa)
-                    new_sections: list[PlacedSection] = []
-                    for s in first_b.sections:
-                        target_f = max(1, int(math.floor(s.floors * ratio)))
-                        if getattr(self, "_max_floors_from_h", None) is not None:
-                            target_f = min(target_f, self._max_floors_from_h)
-                        new_sections.append(
-                            PlacedSection(
-                                section_type=s.section_type,
-                                x=s.x,
-                                y=s.y,
-                                angle=s.angle,
-                                floors=max(1, target_f),
-                                is_flipped=s.is_flipped,
-                                floor_height=s.floor_height,
-                                ground_floor_height=s.ground_floor_height,
+                    ratio = allowed_gfa / cur_gfa
+                    new_buildings: list[Building] = []
+                    for b in buildings:
+                        new_sections: list[PlacedSection] = []
+                        for s in b.sections:
+                            min_f = getattr(s.section_type, "min_floors", 1)
+                            target_f = max(min_f, int(math.floor(s.floors * ratio)))
+                            if ceiling_fl is not None:
+                                target_f = min(target_f, ceiling_fl)
+                            new_sections.append(
+                                PlacedSection(
+                                    section_type=s.section_type,
+                                    x=s.x,
+                                    y=s.y,
+                                    angle=s.angle,
+                                    floors=max(1, target_f),
+                                    is_flipped=s.is_flipped,
+                                    floor_height=s.floor_height,
+                                    ground_floor_height=s.ground_floor_height,
+                                )
+                            )
+                        new_buildings.append(
+                            Building(
+                                sections=new_sections,
+                                typology=getattr(b, "typology", "LINEAR"),
                             )
                         )
-                    buildings = [
-                        Building(
-                            sections=new_sections,
-                            typology=getattr(first_b, "typology", "LINEAR"),
-                        )
-                    ]
+                    buildings = new_buildings
 
         return buildings
 
@@ -721,11 +777,15 @@ class PlacementEngine:
 
     def _clamp_floors(self, sec: SectionType, req_floors: int) -> int:
         """Ограничить этажность секции с учетом ее диапазона и предельной высоты."""
-        fl = max(sec.min_floors, min(req_floors, sec.max_floors))
+        # ponytail: соблюдаем жесткий потолок этажности и высоты участка над каталогом секции
+        fl = min(req_floors, sec.max_floors)
         max_h_fl = getattr(self, "_max_floors_from_h", None)
         if max_h_fl is not None:
             fl = min(fl, max_h_fl)
-        return max(1, fl)
+
+        # Ограничиваем этажность секции диапазоном из каталога/ввода пользователя
+        min_f = getattr(sec, "min_floors", 1) or 1
+        return max(min_f, fl)
 
     def _build_linear_local(
         self,
@@ -735,6 +795,7 @@ class PlacementEngine:
         num_middle: int | list[SectionType],
         cascade_floors: bool = False,
         min_wing_floors: int = 8,
+        facade_angle: float | None = None,
     ) -> list[PlacedSection]:
         """Линейный корпус, центрированный в (0, 0) по оси X, без наложений."""
         sections: list[PlacedSection] = []
@@ -763,10 +824,25 @@ class PlacementEngine:
         end_candidates = self._end_pool if getattr(self, "_has_preferred_sections", False) else self.library.get_end_sections()
         mid_candidates = self._middle_pool if getattr(self, "_has_preferred_sections", False) else self.library.get_middle_sections()
 
+        # Строгий запрет меридиональных секций на широтных (горизонтальных) фасадах (СанПиН 1.2.3685-21)
+        if facade_angle is not None and angle_to_horizontal(facade_angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+            lat_mids = [s for s in mid_candidates if not getattr(s, "is_meridian", False)]
+            if not lat_mids:
+                lat_mids = [s for s in self.library.get_all() if (getattr(s, "is_latitudinal", False) or getattr(s, "is_universal", False)) and s.can_act_as("MIDDLE")]
+            if lat_mids:
+                mid_candidates = lat_mids
+            lat_ends = [s for s in end_candidates if not getattr(s, "is_meridian", False)]
+            if not lat_ends:
+                lat_ends = [s for s in self.library.get_end_sections() if not getattr(s, "is_meridian", False)]
+            if lat_ends:
+                end_candidates = lat_ends
+            if getattr(end, "is_meridian", False) and end_candidates:
+                end = end_candidates[0]
+
         # 1. Первая торцевая секция
         fl_end1 = floor_list[0]
         sec_end1 = (
-            self._find_best_section(end_candidates, fl_end1)
+            self._find_best_section(end_candidates, fl_end1, role="END", facade_angle=facade_angle)
             if cascade_floors else end
         ) or end
         fl_end1 = self._clamp_floors(sec_end1, fl_end1)
@@ -776,8 +852,10 @@ class PlacementEngine:
         for i in range(num_mid):
             fl_m = floor_list[i + 1]
             base_m = target_mid_sections[i]
+            if facade_angle is not None and angle_to_horizontal(facade_angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG and getattr(base_m, "is_meridian", False):
+                base_m = mid_candidates[0] if mid_candidates else base_m
             sec_m = (
-                self._find_best_section(mid_candidates, fl_m)
+                self._find_best_section(mid_candidates, fl_m, role="MIDDLE", facade_angle=facade_angle)
                 if cascade_floors else base_m
             ) or base_m
             fl_m = self._clamp_floors(sec_m, fl_m)
@@ -786,7 +864,7 @@ class PlacementEngine:
         # 3. Вторая торцевая секция
         fl_end2 = floor_list[-1]
         sec_end2 = (
-            self._find_best_section(end_candidates, fl_end2)
+            self._find_best_section(end_candidates, fl_end2, role="END", facade_angle=facade_angle)
             if cascade_floors else end
         ) or end
         fl_end2 = self._clamp_floors(sec_end2, fl_end2)
@@ -838,19 +916,25 @@ class PlacementEngine:
         wc_r, dc_r = sec_cor_r.width, sec_cor_r.depth
 
         # 1. Заднее крыло (основание скобы, северная часть)
-        # Проверяем ориентацию основания: если его угол к горизонтали < 25°,
+        # Проверяем ориентацию основания: если его угол к горизонтали < 28°,
         # меридиональные секции запрещены по нормам инсоляции (северный фасад в тени).
         # В таком случае для основания скобы выбираем широтные секции из библиотеки.
         back_is_near_horizontal = angle_to_horizontal(building_angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG
         if back_is_near_horizontal:
             latitudinal_mid = [s for s in (mid_candidates + end_candidates) if not getattr(s, "is_meridian", False)]
+            if not latitudinal_mid:
+                latitudinal_mid = [
+                    s for s in self.library.get_all()
+                    if (getattr(s, "is_latitudinal", False) or getattr(s, "is_universal", False) or not getattr(s, "is_meridian", False))
+                    and s.can_act_as("MIDDLE")
+                ]
             candidates_back = latitudinal_mid if latitudinal_mid else end_candidates
         else:
             candidates_back = mid_candidates
 
         back_secs = []
         for i in range(num_back):
-            sec_i = self._find_best_section(candidates_back, floors) or (candidates_back[0] if candidates_back else middle)
+            sec_i = self._find_best_section(candidates_back, floors, role="MIDDLE", facade_angle=building_angle) or (candidates_back[0] if candidates_back else middle)
             fl_i = self._clamp_floors(sec_i, floors)
             back_secs.append((sec_i, fl_i))
 
@@ -885,9 +969,9 @@ class PlacementEngine:
                 step_ratio = (j + 1) / K_l
                 fl_j = round(wing_start_l - step_ratio * drop_l)
                 fl_j = max(1, min(wing_start_l, fl_j))
-                sec_j = self._find_best_section(mid_candidates, fl_j) or middle
+                sec_j = self._find_best_section(mid_candidates, fl_j, role="MIDDLE", facade_angle=building_angle + 90.0) or middle
             else:
-                sec_j = self._find_best_section(mid_candidates, floors) or middle
+                sec_j = self._find_best_section(mid_candidates, floors, role="MIDDLE", facade_angle=building_angle + 90.0) or middle
                 fl_j = floors
             fl_j = self._clamp_floors(sec_j, fl_j)
 
@@ -899,7 +983,7 @@ class PlacementEngine:
         # Торец левого крыла
         if cascade_floors:
             fl_end_l = max(1, wing_start_l - drop_l)
-            sec_end_l = self._find_best_section(end_candidates, fl_end_l) or end
+            sec_end_l = self._find_best_section(end_candidates, fl_end_l, role="END", facade_angle=building_angle + 90.0) or end
         else:
             sec_end_l = end
             fl_end_l = floors
@@ -919,9 +1003,9 @@ class PlacementEngine:
                 step_ratio = (k + 1) / K_r
                 fl_k = round(wing_start_r - step_ratio * drop_r)
                 fl_k = max(1, min(wing_start_r, fl_k))
-                sec_k = self._find_best_section(mid_candidates, fl_k) or middle
+                sec_k = self._find_best_section(mid_candidates, fl_k, role="MIDDLE", facade_angle=building_angle + 90.0) or middle
             else:
-                sec_k = self._find_best_section(mid_candidates, floors) or middle
+                sec_k = self._find_best_section(mid_candidates, floors, role="MIDDLE", facade_angle=building_angle + 90.0) or middle
                 fl_k = floors
             fl_k = self._clamp_floors(sec_k, fl_k)
 
@@ -933,7 +1017,7 @@ class PlacementEngine:
         # Торец правого крыла
         if cascade_floors:
             fl_end_r = max(1, wing_start_r - drop_r)
-            sec_end_r = self._find_best_section(end_candidates, fl_end_r) or end
+            sec_end_r = self._find_best_section(end_candidates, fl_end_r, role="END", facade_angle=building_angle + 90.0) or end
         else:
             sec_end_r = end
             fl_end_r = floors
@@ -978,18 +1062,24 @@ class PlacementEngine:
         sections.append(PlacedSection(corner, xc, yc, 0.0, fl_cor, is_flipped=True))
 
         # 1. Горизонтальное крыло влево (-X) — держит целевую этажность floors
-        # Если угол горизонтального крыла близок к горизонтали (< 25°), меридиональные секции
+        # Если угол горизонтального крыла близок к горизонтали (< 28°), меридиональные секции
         # запрещены по нормам инсоляции (северный фасад в тени). Используем широтные секции.
         wing_x_near_horizontal = angle_to_horizontal(building_angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG
         if wing_x_near_horizontal:
             latitudinal_mid = [s for s in (mid_candidates + end_candidates) if not getattr(s, "is_meridian", False)]
+            if not latitudinal_mid:
+                latitudinal_mid = [
+                    s for s in self.library.get_all()
+                    if (getattr(s, "is_latitudinal", False) or getattr(s, "is_universal", False) or not getattr(s, "is_meridian", False))
+                    and s.can_act_as("MIDDLE")
+                ]
             candidates_x = latitudinal_mid if latitudinal_mid else end_candidates
         else:
             candidates_x = mid_candidates
 
         x_curr = -wc
         for i in range(num_mid_x):
-            sec_x = self._find_best_section(candidates_x, floors) or (candidates_x[0] if candidates_x else middle)
+            sec_x = self._find_best_section(candidates_x, floors, role="MIDDLE", facade_angle=building_angle) or (candidates_x[0] if candidates_x else middle)
             fl_xi = self._clamp_floors(sec_x, floors)
             wm_x, dm_x = sec_x.width, sec_x.depth
             xm = x_curr - wm_x / 2.0
@@ -998,7 +1088,11 @@ class PlacementEngine:
             x_curr -= wm_x
 
         fl_end_x = floors
-        sec_end_x = (self._find_best_section(end_candidates, fl_end_x) if cascade_floors else end) or end
+        sec_end_x = (self._find_best_section(end_candidates, fl_end_x, role="END", facade_angle=building_angle) if cascade_floors else end) or end
+        if wing_x_near_horizontal and getattr(sec_end_x, "is_meridian", False):
+            lat_ends = [s for s in self.library.get_end_sections() if not getattr(s, "is_meridian", False)]
+            if lat_ends:
+                sec_end_x = lat_ends[0]
         fl_end_x = self._clamp_floors(sec_end_x, fl_end_x)
         xe = x_curr - sec_end_x.width / 2.0
         ye = -sec_end_x.depth / 2.0
@@ -1014,9 +1108,9 @@ class PlacementEngine:
                 step_ratio = (j + 1) / K_y
                 fl_j = round(wing_start_y - step_ratio * drop_ly)
                 fl_j = max(1, min(wing_start_y, fl_j))
-                sec_j = self._find_best_section(mid_candidates, fl_j) or middle
+                sec_j = self._find_best_section(mid_candidates, fl_j, role="MIDDLE", facade_angle=building_angle + 90.0) or middle
             else:
-                sec_j = self._find_best_section(mid_candidates, floors) or middle
+                sec_j = self._find_best_section(mid_candidates, floors, role="MIDDLE", facade_angle=building_angle + 90.0) or middle
                 fl_j = floors
             fl_j = self._clamp_floors(sec_j, fl_j)
 
@@ -1027,7 +1121,7 @@ class PlacementEngine:
 
         if cascade_floors:
             fl_end_y = max(1, wing_start_y - drop_ly)
-            sec_end_y = self._find_best_section(end_candidates, fl_end_y) or end
+            sec_end_y = self._find_best_section(end_candidates, fl_end_y, role="END", facade_angle=building_angle + 90.0) or end
         else:
             sec_end_y = end
             fl_end_y = floors
@@ -1071,8 +1165,8 @@ class PlacementEngine:
                     angle=g_angle,
                     floors=s.floors,
                     is_flipped=s.is_flipped,
-                    floor_height=s.floor_height or self._current_floor_height,
-                    ground_floor_height=s.ground_floor_height or self._current_ground_floor_height,
+                    floor_height=s.floor_height or getattr(s.section_type, "floor_height", self._current_floor_height),
+                    ground_floor_height=s.ground_floor_height or getattr(s.section_type, "ground_floor_height", self._current_ground_floor_height),
                 )
             )
 
@@ -1216,7 +1310,7 @@ class PlacementEngine:
         # 3. Дозаполняем оставшиеся свободные зоны участка соразмерными корпусами (северная улица, фланги)
         if not self._is_limit_reached(buildings, placement_config):
             self._fill_remaining_space(
-                buildable, buildings, angle, middle, end, floors, placement_config
+                buildable, buildings, angle, middle, end, floors, placement_config, corner=corner
             )
 
         return self._enforce_normative_limits(buildings, placement_config)
@@ -1241,8 +1335,8 @@ class PlacementEngine:
             y=y,
             angle=angle,
             floors=fl,
-            floor_height=self._current_floor_height,
-            ground_floor_height=self._current_ground_floor_height,
+            floor_height=getattr(tower_sec, "floor_height", self._current_floor_height),
+            ground_floor_height=getattr(tower_sec, "ground_floor_height", self._current_ground_floor_height),
         )
         return Building(sections=[placed_sec], typology="TOWER")
 
@@ -1293,13 +1387,11 @@ class PlacementEngine:
             for r in range(rows):
                 if self._is_limit_reached(cand_buildings, placement_config):
                     break
+                min_t_fl = getattr(tower_sec, "min_floors", 1) or 1
                 if placement_config.cascade_floors and rows > 1:
-                    row_fl = max(
-                        placement_config.min_wing_floors,
-                        floors - (rows - 1 - r) * 3,
-                    )
+                    row_fl = max(min_t_fl, floors - (rows - 1 - r) * 2)
                 else:
-                    row_fl = floors
+                    row_fl = max(min_t_fl, floors)
 
                 x_offset = (step_x * 0.5) if (pattern == "staggered" and r % 2 == 1 and cols > 1) else 0.0
 
@@ -1445,6 +1537,12 @@ class PlacementEngine:
             if cand:
                 buildings.append(cand)
 
+        # ponytail: адаптивный гибрид — дозаполняем свободные фланги («П + Г» или «П + башни») — upgrade path: автовыбор угла флангов
+        if not self._is_limit_reached(buildings, placement_config):
+            self._fill_remaining_space(
+                buildable, buildings, angle, middle, end, floors, placement_config, corner=corner
+            )
+
         return self._enforce_normative_limits(buildings, placement_config)
 
     def _generate_l_shape_layout(
@@ -1518,7 +1616,7 @@ class PlacementEngine:
 
         if not self._is_limit_reached(buildings, placement_config):
             self._fill_remaining_space(
-                buildable, buildings, angle, middle, end, floors, placement_config
+                buildable, buildings, angle, middle, end, floors, placement_config, corner=corner
             )
         return self._enforce_normative_limits(buildings, placement_config)
 
@@ -1620,26 +1718,58 @@ class PlacementEngine:
         max_middle_secs: int,
         target_floors: int | None = None,
         preferred_lead: SectionType | None = None,
+        facade_angle: float | None = None,
     ) -> list[SectionType]:
-        """Подобрать оптимальный набор рядовых секций, максимально заполняющий доступную ширину."""
+        """Подобрать оптимальный набор рядовых секций по 3D GFA и ориентации фасада."""
         if avail_width <= 0 or max_middle_secs <= 0 or not candidate_sections:
             return []
 
-        # Фильтруем рядовые секции подходящей ширины и совместимой этажности
-        valid = [s for s in candidate_sections if s.width <= avail_width and s.category.upper() == "MIDDLE"]
+        # Потолок этажности
+        ceiling_f = getattr(self, "_max_floors_from_h", None)
         if target_floors is not None:
-            fl_valid = [s for s in valid if s.min_floors <= target_floors]
-            if fl_valid:
-                valid = fl_valid
+            ceiling_f = min(ceiling_f, target_floors) if ceiling_f is not None else target_floors
+
+        # Фильтруем секции, подходящие по ширине, роли и минимальной этажности
+        valid = [s for s in candidate_sections if s.width <= avail_width and s.can_act_as("MIDDLE")]
+        if ceiling_f is not None:
+            viable = [s for s in valid if s.min_floors <= ceiling_f]
+            if viable:
+                valid = viable
         if not valid:
             return []
 
-        # Формируем список кандидатов для первой секции (приоритет ведущей секции)
-        primaries = list(valid)
+        is_near_horizontal = False
+        if facade_angle is not None:
+            is_near_horizontal = angle_to_horizontal(facade_angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG
+
+        # На горизонтальных (широтных) линиях меридиональные секции запрещены по СанПиН
+        if is_near_horizontal:
+            # ponytail: фильтрация широтных/универсальных секций для горизонтального фасада — upgrade path: гибкие штрафы в candidate_lead_score
+            lat_valid = [s for s in valid if (getattr(s, "is_latitudinal", False) or getattr(s, "is_universal", False))]
+            if lat_valid:
+                valid = lat_valid
+
+        # ponytail: 3D-волюметрическая упаковка секций по выходу полезной площади GFA
+        # Приоритет отдается специализированным секциям ориентации фасада
+        def candidate_lead_score(s: SectionType) -> tuple:
+            if is_near_horizontal:
+                orient_p = 0 if (s.is_latitudinal or s.is_universal) else 2
+            else:
+                orient_p = 0 if s.is_meridian else 1
+            role_p = 0 if s.category.upper() == "MIDDLE" else 1
+            eff_f = min(s.max_floors, target_floors) if target_floors else s.default_floors
+            fl_loss = (target_floors - eff_f) if (target_floors and s.max_floors < target_floors) else 0
+            gfa_density = (s.floor_area * eff_f) / max(1.0, s.width)
+            return (orient_p, role_p, fl_loss, -gfa_density)
+
+        sorted_candidates = sorted(valid, key=candidate_lead_score)
+
+        primaries = list(sorted_candidates)
         if preferred_lead and preferred_lead in valid:
-            primaries = [preferred_lead] + [s for s in valid if s != preferred_lead]
+            primaries = [preferred_lead] + [s for s in primaries if s != preferred_lead]
 
         best_pack: list[SectionType] = []
+        best_gfa = 0.0
         best_w = 0.0
         best_fl_diff = float("inf")
         best_has_lead = False
@@ -1651,7 +1781,7 @@ class PlacementEngine:
                 pack.append(primary)
                 cur_w += primary.width
 
-            for alt in sorted(valid, key=lambda s: s.width, reverse=True):
+            for alt in sorted_candidates:
                 while len(pack) < max_middle_secs and (cur_w + alt.width) <= avail_width:
                     pack.append(alt)
                     cur_w += alt.width
@@ -1659,28 +1789,38 @@ class PlacementEngine:
             if not pack:
                 continue
 
+            pack_gfa = sum(
+                s.floor_area * (min(s.max_floors, target_floors) if target_floors else s.default_floors)
+                for s in pack
+            )
             has_lead = bool(preferred_lead and preferred_lead in pack)
-            if target_floors is not None:
-                fl_diff = sum(abs(s.default_floors - target_floors) for s in pack) / len(pack)
-            else:
-                fl_diff = 0.0
+            fl_diff = (
+                sum(abs(s.default_floors - target_floors) for s in pack) / len(pack)
+                if target_floors is not None else 0.0
+            )
 
             is_better = False
             if not best_pack:
                 is_better = True
-            elif cur_w > (best_w + 8.0):
+            elif pack_gfa > (best_gfa * 1.05):
                 is_better = True
-            elif abs(cur_w - best_w) <= 8.0:
-                if has_lead and not best_has_lead:
+            elif abs(pack_gfa - best_gfa) <= (best_gfa * 0.05):
+                pack_orient_ok = sum(1 for s in pack if (s.is_latitudinal or s.is_universal) if is_near_horizontal) if is_near_horizontal else sum(1 for s in pack if s.is_meridian)
+                best_orient_ok = sum(1 for s in best_pack if (s.is_latitudinal or s.is_universal) if is_near_horizontal) if is_near_horizontal else sum(1 for s in best_pack if s.is_meridian)
+                if pack_orient_ok > best_orient_ok:
                     is_better = True
-                elif has_lead == best_has_lead:
-                    if fl_diff < (best_fl_diff - 1.0):
+                elif pack_orient_ok == best_orient_ok:
+                    if has_lead and not best_has_lead:
                         is_better = True
-                    elif abs(fl_diff - best_fl_diff) <= 1.0 and cur_w > best_w:
-                        is_better = True
+                    elif has_lead == best_has_lead:
+                        if fl_diff < (best_fl_diff - 1.0):
+                            is_better = True
+                        elif abs(fl_diff - best_fl_diff) <= 1.0 and cur_w > best_w:
+                            is_better = True
 
             if is_better:
                 best_pack = pack
+                best_gfa = pack_gfa
                 best_w = cur_w
                 best_fl_diff = fl_diff
                 best_has_lead = has_lead
@@ -1708,14 +1848,29 @@ class PlacementEngine:
 
         # Кандидаты в рядовые секции: сначала активный пул, затем библиотека
         pref_pool = getattr(self, "_middle_pool", [middle])
-        # Ограничение инсоляции: если угол линии близок к горизонтали (< 25°),
+        # Ограничение инсоляции: если угол линии близок к горизонтали (< 28°),
         # меридиональные секции нельзя размещать вдоль нее (северный фасад в тени).
         # В таком случае отбираем широтные секции из пула.
         if angle_to_horizontal(angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
             lat_pool = [s for s in (pref_pool + getattr(self, "_end_pool", [])) if not getattr(s, "is_meridian", False)]
+            if not lat_pool:
+                lat_pool = [s for s in self.library.get_all() if (getattr(s, "is_latitudinal", False) or getattr(s, "is_universal", False)) and s.can_act_as("MIDDLE")]
             if lat_pool:
                 pref_pool = lat_pool
                 middle = lat_pool[0]
+            if getattr(end, "is_meridian", False):
+                lat_ends = [s for s in getattr(self, "_end_pool", []) if not getattr(s, "is_meridian", False)]
+                if not lat_ends:
+                    lat_ends = [s for s in self.library.get_end_sections() if not getattr(s, "is_meridian", False)]
+                if lat_ends:
+                    end = lat_ends[0]
+        elif not getattr(self, "_has_preferred_sections", False):
+            # На меридиональных линиях (С-Ю) первоочередной выбор отдается меридиональным секциям (М)
+            merid_pool = [s for s in pref_pool if s.is_meridian]
+            if merid_pool:
+                pref_pool = merid_pool
+                middle = merid_pool[0]
+
         lead_sec = preferred_lead
         if lead_sec is None:
             lead_sec = (
@@ -1726,12 +1881,15 @@ class PlacementEngine:
 
         cand_middles = list(pref_pool)
         if not getattr(self, "_has_preferred_sections", False):
+            is_horiz = angle_to_horizontal(angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG
             for s in self.library.get_middle_sections():
+                if is_horiz and s.is_meridian:
+                    continue
                 if s not in cand_middles and (floors is None or s.min_floors <= floors):
                     cand_middles.append(s)
 
         chosen_middles = self._find_middle_packing(
-            avail, cand_middles, max_mid, target_floors=floors, preferred_lead=lead_sec
+            avail, cand_middles, max_mid, target_floors=floors, preferred_lead=lead_sec, facade_angle=angle
         )
 
         total_secs = len(chosen_middles) + 2
@@ -1743,6 +1901,7 @@ class PlacementEngine:
             middle, end, floors, chosen_middles,
             cascade_floors=placement_config.cascade_floors,
             min_wing_floors=placement_config.min_wing_floors,
+            facade_angle=angle,
         )
 
         # Направление линии для микросдвига (nudge)
@@ -1768,6 +1927,7 @@ class PlacementEngine:
                 middle, end, floors, chosen_middles,
                 cascade_floors=placement_config.cascade_floors,
                 min_wing_floors=placement_config.min_wing_floors,
+                facade_angle=angle,
             )
             for s in shifts:
                 mx = midpoint.x + s * dx_l
@@ -1870,8 +2030,9 @@ class PlacementEngine:
         end: SectionType,
         floors: int,
         placement_config: PlacementConfig,
+        corner: SectionType | None = None,
     ) -> None:
-        """Дозаполнить свободные части участка (фланги, уличный фронт) соразмерными корпусами."""
+        """Дозаполнить свободные части участка (фланги, уличный фронт) соразмерными корпусами («П + Г», «П + башни»)."""
         if self._is_limit_reached(buildings, placement_config):
             return
         fire_gap = self._get_fire_gap(floors)
@@ -1901,6 +2062,43 @@ class PlacementEngine:
 
         remaining = inner_buildable.difference(occupied)
 
+        rad_p = math.radians(angle)
+        rad_n = math.radians(angle + 90.0)
+        ux = (math.cos(rad_p), math.sin(rad_p))
+        uy = (math.cos(rad_n), math.sin(rad_n))
+
+        # 1. ponytail: адаптивный гибрид «П + Г» — посадка компактного Г-образного блока на просторные фланги
+        corner_sec = corner or (self._corner_pool[0] if getattr(self, "_has_preferred_sections", False) and self._corner_pool else (self.library.get_corner_sections()[0] if self.library.get_corner_sections() else None))
+        if corner_sec is not None and not self._is_limit_reached(buildings, placement_config):
+            parts = remaining.geoms if isinstance(remaining, MultiPolygon) else [remaining]
+            for part in parts:
+                if self._is_limit_reached(buildings, placement_config):
+                    break
+                if part.is_empty or part.area < 1800.0:
+                    continue
+                p_len, p_w, _ = get_obb_dimensions(part)
+                if p_len < 40.0 or p_w < 30.0:
+                    continue
+
+                c_pt = part.representative_point()
+                court_angle = self._get_solar_courtyard_angle(placement_config, angle)
+                cand_l_shapes = [(1, 1), (1, 0), (0, 1), (0, 0)]
+                for nx, ny in cand_l_shapes:
+                    cand_l = self._try_place_with_nudge(
+                        lambda tx, ty, mx=nx, my=ny: self._create_l_building(
+                            tx, ty, court_angle, middle, corner_sec, end, floors,
+                            num_mid_x=mx, num_mid_y=my,
+                            cascade_floors=placement_config.cascade_floors,
+                            min_wing_floors=placement_config.min_wing_floors,
+                        ),
+                        c_pt.x, c_pt.y, ux, uy, buildings, placement_config
+                    )
+                    if cand_l:
+                        buildings.append(cand_l)
+                        occupied = unary_union([occupied, cand_l.footprint.convex_hull.buffer(min_clearance)])
+                        remaining = inner_buildable.difference(occupied)
+                        break
+
         for cand_ang in angles_to_try:
             parts = remaining.geoms if isinstance(remaining, MultiPolygon) else [remaining]
             for part in parts:
@@ -1908,11 +2106,11 @@ class PlacementEngine:
                     continue
 
                 rad = math.radians(cand_ang)
-                ux, uy = math.cos(rad), math.sin(rad)
-                px, py = -math.sin(rad), math.cos(rad)
+                u_x, u_y = math.cos(rad), math.sin(rad)
+                p_x, p_y = -math.sin(rad), math.cos(rad)
 
                 coords = list(part.exterior.coords)
-                proj = [x * px + y * py for x, y in coords]
+                proj = [x * p_x + y * p_y for x, y in coords]
                 t_min, t_max = min(proj), max(proj)
                 span = t_max - t_min
 
@@ -1928,11 +2126,11 @@ class PlacementEngine:
                 ray_len = max(span, 300.0)
 
                 for t in t_vals:
-                    lx = t * px
-                    ly = t * py
+                    lx = t * p_x
+                    ly = t * p_y
 
-                    p1 = (lx - ray_len * ux, ly - ray_len * uy)
-                    p2 = (lx + ray_len * ux, ly + ray_len * uy)
+                    p1 = (lx - ray_len * u_x, ly - ray_len * u_y)
+                    p2 = (lx + ray_len * u_x, ly + ray_len * u_y)
                     raw_line = LineString([p1, p2]).intersection(part)
 
                     if raw_line.is_empty:
@@ -1967,25 +2165,54 @@ class PlacementEngine:
                                 occupied = unary_union([occupied, cand.footprint.convex_hull.buffer(min_clearance)])
                                 remaining = inner_buildable.difference(occupied)
 
-        # Дополнительно: размещаем башни-акценты на оставшихся свободных пятнах
+        # 3. ponytail: адаптивный гибрид «П + башни» — посадка выбранных башен на свободных флангах участка
         if getattr(placement_config, "allow_towers_in_mixed", True) and not self._is_limit_reached(buildings, placement_config):
-            tower_secs = self.library.get_tower_sections()
+            tower_secs = self._tower_pool if getattr(self, "_tower_pool", None) else self.library.get_tower_sections()
             if tower_secs:
-                tower_sec = self._find_best_section(tower_secs, floors) or tower_secs[0]
-                t_parts = remaining.geoms if isinstance(remaining, MultiPolygon) else [remaining]
-                for p in t_parts:
-                    if self._is_limit_reached(buildings, placement_config):
+                max_extra_towers = 4
+                towers_added = 0
+                while towers_added < max_extra_towers and not self._is_limit_reached(buildings, placement_config):
+                    t_parts = remaining.geoms if isinstance(remaining, MultiPolygon) else [remaining]
+                    placed_in_iteration = False
+                    for p in t_parts:
+                        if self._is_limit_reached(buildings, placement_config):
+                            break
+                        for tower_sec in tower_secs:
+                            t_min_a = tower_sec.width * tower_sec.depth * 1.05
+                            if p.is_empty or p.area < t_min_a:
+                                continue
+
+                            pts_to_test = [p.representative_point(), p.centroid]
+                            p_l, p_w, p_ang = get_obb_dimensions(p)
+                            if p_l >= (tower_sec.width + min_clearance) * 1.5:
+                                rad_a = math.radians(p_ang)
+                                u_dx, u_dy = math.cos(rad_a), math.sin(rad_a)
+                                c_x, c_y = p.centroid.x, p.centroid.y
+                                d_span = p_l * 0.25
+                                pts_to_test.extend([
+                                    Point(c_x + d_span * u_dx, c_y + d_span * u_dy),
+                                    Point(c_x - d_span * u_dx, c_y - d_span * u_dy),
+                                ])
+
+                            for pt in pts_to_test:
+                                if not p.contains(pt):
+                                    continue
+                                cand_tower = self._create_single_tower(pt.x, pt.y, angle, tower_sec, floors)
+                                if self._fits_in_buildable(cand_tower) and self._check_constraints(
+                                    cand_tower, buildings, placement_config
+                                ):
+                                    buildings.append(cand_tower)
+                                    occupied = unary_union([occupied, cand_tower.footprint.buffer(min_clearance)])
+                                    remaining = inner_buildable.difference(occupied)
+                                    placed_in_iteration = True
+                                    towers_added += 1
+                                    break
+                            if placed_in_iteration:
+                                break
+                        if placed_in_iteration:
+                            break
+                    if not placed_in_iteration:
                         break
-                    if p.is_empty or p.area < (tower_sec.width * tower_sec.depth * 1.05):
-                        continue
-                    pt = p.centroid
-                    cand_tower = self._create_single_tower(pt.x, pt.y, angle, tower_sec, floors)
-                    if self._fits_in_buildable(cand_tower) and self._check_constraints(
-                        cand_tower, buildings, placement_config
-                    ):
-                        buildings.append(cand_tower)
-                        occupied = unary_union([occupied, cand_tower.footprint.buffer(min_clearance)])
-                        remaining = inner_buildable.difference(occupied)
 
     def _get_solar_courtyard_angle(
         self, placement_config: PlacementConfig, primary_angle: float
@@ -2021,33 +2248,67 @@ class PlacementEngine:
         self,
         sections: list[SectionType],
         target_floors: int | None,
+        role: str = "MIDDLE",
+        facade_angle: float | None = None,
     ) -> SectionType | None:
-        """Подобрать наилучшую секцию с учетом диапазона этажей и лифтовых ограничений."""
+        """Подобрать наилучшую секцию с учетом диапазона этажей, роли и ориентации фасада."""
         if not sections:
             return None
 
-        # Если задана предельная высота здания, отсекаем секции с завышенной минимальной этажностью
-        max_h_fl = getattr(self, "_max_floors_from_h", None)
-        if max_h_fl is not None:
-            viable = [s for s in sections if s.min_floors <= max_h_fl]
+        # Предельный потолок этажности (из высоты в метрах или целевой)
+        ceiling_f = getattr(self, "_max_floors_from_h", None)
+        if target_floors is not None:
+            ceiling_f = min(ceiling_f, target_floors) if ceiling_f is not None else target_floors
+
+        if ceiling_f is not None:
+            viable = [s for s in sections if s.min_floors <= ceiling_f]
             if viable:
                 sections = viable
 
         if target_floors is None:
             return sections[0]
 
+        is_near_horizontal = False
+        if facade_angle is not None:
+            is_near_horizontal = angle_to_horizontal(facade_angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG
+
+        # На горизонтальных (широтных) линиях меридиональные секции запрещены по СанПиН
+        if is_near_horizontal:
+            lat_sections = [
+                s for s in sections
+                if (getattr(s, "is_latitudinal", False) or getattr(s, "is_universal", False) or not getattr(s, "is_meridian", False))
+            ]
+            if not lat_sections:
+                lat_sections = [
+                    s for s in self.library.get_all()
+                    if (getattr(s, "is_latitudinal", False) or getattr(s, "is_universal", False) or not getattr(s, "is_meridian", False))
+                    and s.can_act_as(role)
+                ]
+            if lat_sections:
+                sections = lat_sections
+
         # 1. Секции, строго вмещающие заданную этажность
         matching = [s for s in sections if s.min_floors <= target_floors <= s.max_floors]
-        if matching:
-            return min(matching, key=lambda s: abs(s.default_floors - target_floors))
+        pool = matching if matching else sections
 
-        # 2. Иначе секция с минимальным расстоянием до допустимого диапазона
-        def dist(s: SectionType) -> int:
-            if target_floors < s.min_floors:
-                return s.min_floors - target_floors
-            return target_floors - s.max_floors
+        def rank_section(s: SectionType) -> tuple:
+            # ponytail: 4-факторный скоринг секции без избыточных деревьев
+            # 1. Ориентация фасада (меридианный / широтный)
+            if is_near_horizontal:
+                orient_p = 0 if (s.is_latitudinal or s.is_universal or not getattr(s, "is_meridian", False)) else 100
+            else:
+                orient_p = 0 if s.is_meridian else 1
+            # 2. Роль: выделенная секция (категория совпадает с ролью) приоритетнее универсала
+            role_p = 0 if s.category.upper() == role.upper() else 1
+            # 3. Дефицит высоты (если целевая этажность выше возможностей секции)
+            low_cap_p = max(0, target_floors - s.max_floors)
+            # 4. Отклонение от дефолтной этажности
+            fl_diff = abs(s.default_floors - target_floors) if matching else (
+                (s.min_floors - target_floors) if target_floors < s.min_floors else (target_floors - s.max_floors)
+            )
+            return (orient_p, role_p, low_cap_p, fl_diff)
 
-        return min(sections, key=dist)
+        return min(pool, key=rank_section)
 
     def _select_sections(
         self, placement_config: PlacementConfig
@@ -2065,45 +2326,44 @@ class PlacementEngine:
             for sid in placement_config.preferred_section_ids:
                 s = self.library.get_by_id(sid)
                 if s:
-                    cat = s.category.upper()
-                    if cat == "MIDDLE":
+                    if s.can_act_as("MIDDLE"):
                         pref_middles.append(s)
-                    elif cat == "END":
+                    if s.can_act_as("END"):
                         pref_ends.append(s)
-                    elif cat == "CORNER":
+                    if s.can_act_as("CORNER"):
                         pref_corners.append(s)
-                    elif cat == "TOWER" or s.id.lower().startswith("tower"):
+                    if s.can_act_as("TOWER"):
                         pref_towers.append(s)
 
             if pref_middles:
-                sections["middle"] = self._find_best_section(pref_middles, target_fl)
+                sections["middle"] = self._find_best_section(pref_middles, target_fl, role="MIDDLE")
                 sections["middle_pool"] = pref_middles
             else:
-                sections["middle"] = self._find_best_section(self.library.get_middle_sections(), target_fl)
+                sections["middle"] = self._find_best_section(self.library.get_middle_sections(), target_fl, role="MIDDLE")
                 sections["middle_pool"] = self.library.get_middle_sections()
 
             if pref_ends:
-                sections["end"] = self._find_best_section(pref_ends, target_fl)
+                sections["end"] = self._find_best_section(pref_ends, target_fl, role="END")
                 sections["end_pool"] = pref_ends
             else:
-                best_end = self._find_best_section(self.library.get_end_sections(), target_fl)
+                best_end = self._find_best_section(self.library.get_end_sections(), target_fl, role="END")
                 sections["end"] = best_end if best_end else sections.get("middle")
                 sections["end_pool"] = self.library.get_end_sections()
 
             if pref_corners:
-                sections["corner"] = self._find_best_section(pref_corners, target_fl)
+                sections["corner"] = self._find_best_section(pref_corners, target_fl, role="CORNER")
                 sections["corner_pool"] = pref_corners
             else:
-                best_cor = self._find_best_section(self.library.get_corner_sections(), target_fl)
+                best_cor = self._find_best_section(self.library.get_corner_sections(), target_fl, role="CORNER")
                 sections["corner"] = best_cor if best_cor else sections.get("middle")
                 sections["corner_pool"] = self.library.get_corner_sections()
 
             if pref_towers:
-                sections["tower"] = self._find_best_section(pref_towers, target_fl)
+                sections["tower"] = self._find_best_section(pref_towers, target_fl, role="TOWER")
                 sections["tower_pool"] = pref_towers
             else:
                 towers = self.library.get_tower_sections()
-                best_tower = self._find_best_section(towers, target_fl) if towers else None
+                best_tower = self._find_best_section(towers, target_fl, role="TOWER") if towers else None
                 sections["tower"] = best_tower if best_tower else sections.get("middle")
                 sections["tower_pool"] = towers
 
@@ -2138,20 +2398,25 @@ class PlacementEngine:
         if not middles and not towers:
             return None
 
-        best_middle = self._find_best_section(middles, target_fl) if middles else (towers[0] if towers else None)
-        best_end = self._find_best_section(ends, target_fl) if ends else best_middle
-        best_corner = self._find_best_section(corners, target_fl) if corners else best_middle
-        best_tower = self._find_best_section(towers, target_fl) if towers else best_middle
+        best_middle = self._find_best_section(middles, target_fl, role="MIDDLE") if middles else (towers[0] if towers else None)
+        best_end = self._find_best_section(ends, target_fl, role="END") if ends else best_middle
+        best_corner = self._find_best_section(corners, target_fl, role="CORNER") if corners else best_middle
+        best_tower = self._find_best_section(towers, target_fl, role="TOWER") if towers else best_middle
+
+        def _prioritize(lead_sec, pool_secs):
+            if not lead_sec or not pool_secs:
+                return pool_secs
+            return [lead_sec] + [s for s in pool_secs if s.id != lead_sec.id]
 
         result: dict[str, Any] = {
             "middle": best_middle,
             "end": best_end if best_end else best_middle,
             "corner": best_corner if best_corner else best_middle,
             "tower": best_tower if best_tower else best_middle,
-            "middle_pool": middles,
-            "end_pool": ends,
-            "corner_pool": corners,
-            "tower_pool": towers,
+            "middle_pool": _prioritize(best_middle, middles),
+            "end_pool": _prioritize(best_end, ends),
+            "corner_pool": _prioritize(best_corner, corners),
+            "tower_pool": _prioritize(best_tower, towers),
         }
         return result
 

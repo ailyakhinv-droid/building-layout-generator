@@ -5,6 +5,8 @@
   "category": "TOWER",
   "width": 29.7,
   "depth": 23.9,
+  "width_small": null,
+  "depth_small": null,
   "min_floors": 12,
   "max_floors": 25,
   "default_floors": 24,

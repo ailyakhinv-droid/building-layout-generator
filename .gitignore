@@ -9,12 +9,11 @@ __pycache__/
 *$py.class
 
 # Output files
-output/*.png
-output/*.txt
-output/*.geojson
-output/*.html
-output/*.dxf
-output/*.dwg
+output/
+
+# User uploaded GPZU files
+data/ГПЗУ/
+*.pdf
 
 # External / local libraries
 libs/

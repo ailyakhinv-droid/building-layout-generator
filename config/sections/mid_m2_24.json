@@ -5,6 +5,8 @@
   "category": "MIDDLE",
   "width": 47.85,
   "depth": 17.0,
+  "width_small": null,
+  "depth_small": null,
   "min_floors": 10,
   "max_floors": 25,
   "default_floors": 24,

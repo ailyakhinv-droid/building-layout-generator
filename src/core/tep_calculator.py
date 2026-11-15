@@ -74,6 +74,32 @@ def check_normatives(tep: TEP, config: dict[str, Any]) -> dict[str, dict[str, An
         },
     }
 
+    # Проверка предельной высоты (в метрах)
+    max_h_limit = config.get("max_building_height_m")
+    if max_h_limit is not None and float(max_h_limit) > 0:
+        actual_h = getattr(tep, "max_height_m", 0.0)
+        limit_h = float(max_h_limit)
+        results["max_height"] = {
+            "name": "Предельная высота",
+            "value": actual_h,
+            "limit": limit_h,
+            "ok": actual_h <= (limit_h + 0.1),
+            "unit": "м",
+        }
+
+    # Проверка предельной этажности (в этажах)
+    max_f_limit = config.get("max_floors") or config.get("target_floors")
+    if max_f_limit is not None and int(max_f_limit) > 0:
+        actual_f = getattr(tep, "max_floors", 0)
+        limit_f = int(max_f_limit)
+        results["max_floors"] = {
+            "name": "Предельная этажность",
+            "value": actual_f,
+            "limit": limit_f,
+            "ok": actual_f <= limit_f,
+            "unit": "эт.",
+        }
+
     return results
 
 

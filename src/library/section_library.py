@@ -79,9 +79,10 @@ class SectionLibrary:
         Returns:
             Список секций данной категории.
         """
+        cat_u = category.upper()
         return [
             s for s in self._sections.values()
-            if s.category.upper() == category.upper()
+            if s.can_act_as(cat_u)
         ]
 
     def get_middle_sections(self) -> list[SectionType]:
@@ -98,13 +99,16 @@ class SectionLibrary:
 
     def get_tower_sections(self) -> list[SectionType]:
         """Получить все точечные (башенные) секции."""
-        return [
+        towers = [
             s for s in self._sections.values()
-            if s.category.upper() == "TOWER"
+            if s.can_act_as("TOWER")
             or s.id.lower().startswith("tower")
             or "точечн" in s.name.lower()
             or "башн" in s.name.lower()
         ]
+        # Приоритет истинным башням (TOWER / Б1) над универсальными секциями
+        towers.sort(key=lambda s: (0 if (s.category or "").upper() == "TOWER" else 1, -s.max_floors))
+        return towers
 
     def get_sections_for_floors(self, floors: int) -> list[SectionType]:
         """Получить секции, поддерживающие заданную этажность (с учетом лифтовых ограничений)."""

@@ -70,10 +70,19 @@ def _parse_levels_and_height(tags: dict[str, str]) -> tuple[int, float]:
     return levels, round(height, 1)
 
 
+# Нежилые и вспомогательные постройки, не влияющие на инсоляцию и загромождающие сцену
+EXCLUDED_OSM_TYPES = {
+    "roof", "shed", "garage", "garages", "substation", "transformer",
+    "kiosk", "cabin", "construction", "service", "greenhouse", "ruins",
+    "demolished", "storage", "tank", "hangar", "barn", "carport", "parking",
+    "container", "storage_tank", "booth", "toilets", "trash", "gatehouse"
+}
+
+
 def get_surrounding_buildings(
     center_lat: float,
     center_lon: float,
-    radius_m: float = 400.0,
+    radius_m: float = 220.0,
     exclude_geom: Any | None = None,
     use_cache: bool = True,
 ) -> dict[str, Any]:
@@ -82,7 +91,7 @@ def get_surrounding_buildings(
     Args:
         center_lat: Широта центра участка (WGS84).
         center_lon: Долгота центра участка (WGS84).
-        radius_m: Радиус охвата в метрах от центра (по умолчанию 400м).
+        radius_m: Радиус охвата в метрах от центра (по умолчанию 220м — достаточно для инсоляции).
         exclude_geom: Геометрия участка в WGS84 (Shapely Polygon), здания внутри которого исключаются.
         use_cache: Использовать ли локальный кэш на диске.
 
@@ -159,17 +168,26 @@ def get_surrounding_buildings(
         if len(coords) < 4 or coords[0] != coords[-1]:
             continue
 
-        # Фильтрация по пересечению с границей проектируемого участка
-        if exclude_geom is not None and not exclude_geom.is_empty:
-            try:
-                b_poly = Polygon(coords)
-                if b_poly.intersects(exclude_geom):
-                    continue
-            except Exception:
-                pass
-
         levels, height = _parse_levels_and_height(tags)
         b_type = tags.get("building", "yes").lower()
+
+        # Отсекаем нерелевантные хозпостройки
+        if b_type in EXCLUDED_OSM_TYPES or height < 3.0:
+            continue
+
+        # Фильтрация по пересечению с границей проектируемого участка и площади
+        try:
+            b_poly = Polygon(coords)
+            if exclude_geom is not None and not exclude_geom.is_empty:
+                if b_poly.intersects(exclude_geom):
+                    continue
+            # Быстрая оценка площади в м²
+            lat_scale = math.cos(math.radians(center_lat)) * 111139.0 * 111139.0
+            approx_area = b_poly.area * lat_scale
+            if approx_area < 35.0:
+                continue
+        except Exception:
+            pass
 
         name = tags.get("name") or tags.get("addr:housenumber") or ""
         street = tags.get("addr:street") or ""

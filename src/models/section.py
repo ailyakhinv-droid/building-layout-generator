@@ -73,6 +73,27 @@ class SectionType:
         return cls(**filtered_data)
 
     @property
+    def min_height_m(self) -> float:
+        """Минимальная высота секции в метрах при min_floors."""
+        # ponytail: строгий расчет высоты по паспорту секции — upgrade path: учет парапетов и надстроек
+        if self.min_floors <= 0:
+            return 0.0
+        if self.has_commercial_ground and self.min_floors > 1:
+            gh = self.ground_floor_height if self.ground_floor_height > 0 else self.floor_height
+            return round(gh + (self.min_floors - 1) * self.floor_height, 2)
+        return round(self.min_floors * self.floor_height, 2)
+
+    @property
+    def max_height_m(self) -> float:
+        """Максимальная высота секции в метрах при max_floors."""
+        if self.max_floors <= 0:
+            return 0.0
+        if self.has_commercial_ground and self.max_floors > 1:
+            gh = self.ground_floor_height if self.ground_floor_height > 0 else self.floor_height
+            return round(gh + (self.max_floors - 1) * self.floor_height, 2)
+        return round(self.max_floors * self.floor_height, 2)
+
+    @property
     def residential_area_per_floor(self) -> float:
         """Жилая площадь на одном этаже в м².
 
@@ -107,6 +128,24 @@ class SectionType:
         code_l = (self.section_code or "").lower()
         id_l = (self.id or "").lower()
         return "широтн" in name_l or "latitud" in name_l or code_l.startswith("ш") or id_l.startswith("end_sh")
+
+    @property
+    def is_universal(self) -> bool:
+        """Ш-секции универсальны: могут использоваться как рядовые, торцевые и точечные башни."""
+        cat_u = (self.category or "").upper()
+        return cat_u == "UNIVERSAL" or self.is_latitudinal
+
+    def can_act_as(self, role: str) -> bool:
+        """Проверить, может ли секция выполнять роль (MIDDLE, END, TOWER, CORNER)."""
+        role_u = role.upper()
+        cat_u = (self.category or "").upper()
+        if cat_u == role_u:
+            return True
+        # ponytail: Ш-секции универсальны (встают как рядовые и торцевые, но не как угловые и не подменяют башни)
+        # upgrade path: добавить явное поле roles: list[str] в JSON при расширении библиотеки
+        if self.is_universal and role_u in ("MIDDLE", "END", "TOWER"):
+            return True
+        return False
 
     @property
     def total_apts_per_floor(self) -> int:

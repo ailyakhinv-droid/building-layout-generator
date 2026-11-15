@@ -304,8 +304,11 @@ class Optimizer:
         )
 
         if explore_angles:
+            base_ang = self.base_placement_config.placement_angle
             if angles is not None:
-                angles_to_check = angles
+                # ponytail: гарантируем включение базового угла в перебор для монотонности оптимизатора — upgrade path: адаптивный шаг сетки углов
+                angles_to_check = [base_ang] if base_ang not in angles else []
+                angles_to_check.extend(angles)
             else:
                 if self.base_placement_config.placement_angle is not None:
                     base_angle = self.base_placement_config.placement_angle
@@ -512,8 +515,15 @@ class Optimizer:
             if not buildings:
                 return None
 
-            tep = calculate_tep(self.site, buildings, self.config)
-            checks = check_normatives(tep, self.config)
+            checks_cfg = dict(self.config)
+            max_h_req = self.base_placement_config.max_building_height_m or self.config.get("max_building_height_m")
+            if max_h_req and float(max_h_req) > 0:
+                checks_cfg["max_building_height_m"] = float(max_h_req)
+            if self.base_placement_config.target_floors and self.base_placement_config.target_floors > 0:
+                checks_cfg["max_floors"] = int(self.base_placement_config.target_floors)
+
+            tep = calculate_tep(self.site, buildings, checks_cfg)
+            checks = check_normatives(tep, checks_cfg)
             normative_ok = all(c["ok"] for c in checks.values())
 
             # Оценка: жилая площадь с штрафом за нарушения

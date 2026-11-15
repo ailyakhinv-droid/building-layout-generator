@@ -57,6 +57,9 @@
     red_line_setback: 5,
     enable_red_line: false,
     currentScenario: null,
+    currentScenarios: [],
+    activeVariantIndex: 0,
+    lastVariantsMatrix: null,
     zouit_active: true,
     activeZouitZones: [],
     currentGpzuParsedData: null,
@@ -80,9 +83,12 @@
     typology: 'AUTO', // 'AUTO' | 'PERIMETER' | 'TOWER' | 'U_SHAPE' | 'SECTIONAL'
     courtyard_orientation: 'SOUTH', // 'SOUTH' | 'EAST'
     preferred_section_ids: [], // Whitelist секций (пусто = все типы из библиотеки)
+    sectionCatalog: [], // Полный каталог типовых секций из /api/library
+    section_overrides: {}, // Численные переопределения min_floors, max_floors
     cascade_floors: true, // Каскадная форма с пониженными крыльями по СанПиН
     asymmetric_wings: true,
     variable_insolation: true,
+    surrounding_height_overrides: {}, // Ручные переопределения высот окружающих зданий { osm_id: height_m }
     allow_towers_in_mixed: true,
     car_free_courtyard: true, // СП 113 Концепция «Двор без машин»
     only_ground_parking: false,
@@ -104,6 +110,13 @@
     drawingRoadStart: null,
     activeHandleDrag: null,
 
+    // Step 2: Entry Points (Въезды на границе)
+    uds_mode: 'entries', // 'entries' | 'free_draw'
+    isAddingEntryPoint: false,
+    entry_points: [], // [{ id, name, x, y, category, width, setback }]
+    activeEntryDrag: null,
+    activePresetTemplate: null, // 'longitudinal' | 'transverse' | 'cross_2x2' | null
+
     // Max sections per building
     max_sections: 8,
 
@@ -120,6 +133,8 @@
 
     // Viewport & Canvas
     activeView: 'osm', // 'osm' | 'svg'
+    activeBasemap: 'osm', // 'osm' | 'satellite' | 'light' | 'none'
+    basemapOpacity: 0.8,
     currentData: null,
     lastLeafletHtml: '',
     isBusy: false
@@ -274,8 +289,20 @@
     sliderRoadPosY: document.getElementById('slider-road-pos-y'),
     valRoadPosXY: document.getElementById('val-road-pos-xy'),
 
-    // Step 2: Custom Roads Drawing
+    // Step 2: Custom Roads Drawing & Entry Points
     valCustomCount: document.getElementById('val-custom-count'),
+    btnTabEntryPoints: document.getElementById('btn-tab-entry-points'),
+    btnTabFreeDraw: document.getElementById('btn-tab-free-draw'),
+    subviewEntryPoints: document.getElementById('subview-entry-points'),
+    subviewFreeDraw: document.getElementById('subview-free-draw'),
+    btnAddEntryPoint: document.getElementById('btn-add-entry-point'),
+    btnEntryIcon: document.getElementById('btn-entry-icon'),
+    btnEntryText: document.getElementById('btn-entry-text'),
+    btnClearEntries: document.getElementById('btn-clear-entries'),
+    entryRoadHint: document.getElementById('entry-road-hint'),
+    entryPointsList: document.getElementById('entry-points-list'),
+    svgEntryPointsLayer: document.getElementById('svg-entry-points-layer'),
+
     btnDrawRoad: document.getElementById('btn-draw-road'),
     btnDrawIcon: document.getElementById('btn-draw-icon'),
     btnDrawText: document.getElementById('btn-draw-text'),
@@ -297,6 +324,8 @@
       view3d: document.getElementById('pane-3d')
     },
     iframe3d: document.getElementById('iframe-3d'),
+    dock3dScenarios: document.getElementById('dock-3d-scenarios'),
+    dockScenarioButtons: document.getElementById('dock-scenario-buttons'),
     canvasLoadingOverlay: document.getElementById('canvas-loading-overlay'),
     canvasLoadingText: document.getElementById('canvas-loading-text'),
     canvasEmptyState: document.getElementById('canvas-empty-state'),
@@ -333,6 +362,7 @@
     // SVG Layers in Center Canvas
     svgCanvas: document.getElementById('svg-canvas'),
     svgWorld: document.getElementById('svg-world'),
+    svgBasemapLayer: document.getElementById('svg-basemap-layer'),
     svgSiteBoundLayer: document.getElementById('svg-site-bound-layer'),
     svgZouitLayer: document.getElementById('svg-zouit-layer'),
     svgRedlinesLayer: document.getElementById('svg-redlines-layer'),
@@ -346,6 +376,15 @@
     svgSectionsLayer: document.getElementById('svg-sections-layer'),
     svgRoadHandlesLayer: document.getElementById('svg-road-handles-layer'),
     svgRoadDrawingLayer: document.getElementById('svg-road-drawing-layer'),
+
+    // Canvas Basemap Controls
+    canvasBasemapBar: document.getElementById('canvas-basemap-bar'),
+    btnBmOsm: document.getElementById('btn-bm-osm'),
+    btnBmSatellite: document.getElementById('btn-bm-satellite'),
+    btnBmLight: document.getElementById('btn-bm-light'),
+    btnBmNone: document.getElementById('btn-bm-none'),
+    sliderBasemapOpacity: document.getElementById('slider-basemap-opacity'),
+    labelBasemapOpacity: document.getElementById('label-basemap-opacity'),
 
     // Right Panel: Step 3 TEP & Explication
     rightPanelStep3: document.getElementById('right-panel-step-3'),
@@ -513,6 +552,16 @@
     btnGenerateLayout: document.getElementById('btn-generate-layout'),
     btnStep3Back: document.getElementById('btn-step3-back'),
 
+    // Modal Sections Catalog & Heights
+    btnHeaderSections: document.getElementById('btn-header-sections'),
+    btnOpenSectionsModal: document.getElementById('btn-open-sections-modal'),
+    modalSectionsTable: document.getElementById('modal-sections-table'),
+    modalSectionsClose: document.getElementById('modal-sections-close'),
+    btnModalSectionsCancel: document.getElementById('btn-modal-sections-cancel'),
+    btnModalSectionsSave: document.getElementById('btn-modal-sections-save'),
+    modalSectionsTbody: document.getElementById('modal-sections-tbody'),
+    modalSectionsStatus: document.getElementById('modal-sections-status'),
+
     // Step 3 Regulations Popup Modal
     modalStep3Regs: document.getElementById('modal-step3-regulations'),
     modalStep3RegsClose: document.getElementById('modal-step3-regs-close'),
@@ -601,6 +650,142 @@
     }
 
     return { svgToSite, siteToSvg, scale, ox, oy, meta };
+  }
+
+  // --- LOCAL METRIC (METERS) TO WGS-84 (LON, LAT) ---
+  function localMetersToWgs84(x, y, centerLat, centerLon) {
+    const a = 6378137.0;
+    const e2 = 0.00669437999014;
+    const latRad = (centerLat * Math.PI) / 180.0;
+    const sinLat = Math.sin(latRad);
+    const cosLat = Math.cos(latRad);
+    const den = 1.0 - e2 * sinLat * sinLat;
+    const sqrtDen = Math.sqrt(den);
+    const N = a / sqrtDen;
+    const M = (a * (1.0 - e2)) / (den * sqrtDen);
+
+    const dlat = (y / M) * (180.0 / Math.PI);
+    const dlon = (x / (N * cosLat)) * (180.0 / Math.PI);
+
+    return [centerLon + dlon, centerLat + dlat];
+  }
+
+  // --- WGS-84 (LON, LAT) TO LOCAL METRIC (METERS) ---
+  function wgs84ToLocalMeters(lon, lat, centerLat, centerLon) {
+    const a = 6378137.0;
+    const e2 = 0.00669437999014;
+    const latRad = (centerLat * Math.PI) / 180.0;
+    const sinLat = Math.sin(latRad);
+    const cosLat = Math.cos(latRad);
+    const den = 1.0 - e2 * sinLat * sinLat;
+    const sqrtDen = Math.sqrt(den);
+    const N = a / sqrtDen;
+    const M = (a * (1.0 - e2)) / (den * sqrtDen);
+
+    const dlatRad = ((lat - centerLat) * Math.PI) / 180.0;
+    const dlonRad = ((lon - centerLon) * Math.PI) / 180.0;
+
+    return [dlonRad * N * cosLat, dlatRad * M];
+  }
+
+  // Slippy Map Tile Calculations (Web Mercator EPSG:3857)
+  function lon2tile(lon, zoom) {
+    return Math.floor(((lon + 180) / 360) * Math.pow(2, zoom));
+  }
+  function lat2tile(lat, zoom) {
+    return Math.floor(
+      ((1 - Math.log(Math.tan((lat * Math.PI) / 180) + 1 / Math.cos((lat * Math.PI) / 180)) / Math.PI) / 2) *
+        Math.pow(2, zoom)
+    );
+  }
+  function tile2lon(x, zoom) {
+    return (x / Math.pow(2, zoom)) * 360 - 180;
+  }
+  function tile2lat(y, zoom) {
+    const n = Math.PI - (2 * Math.PI * y) / Math.pow(2, zoom);
+    return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  }
+
+  // --- RENDER DYNAMIC SLIPPY-MAP BASEMAP ON 2D CAD SVG CANVAS ---
+  function updateSvgBasemap() {
+    if (!el.svgBasemapLayer) return;
+    if (state.activeBasemap === 'none' || !state.currentData) {
+      el.svgBasemapLayer.innerHTML = '';
+      return;
+    }
+
+    const helpers = getCoordHelpers();
+    const meta = helpers.meta;
+    const geoCenter = state.currentData.geo_center || { lat: 57.161069, lon: 65.674079 };
+
+    // Pad bounding box around site by 50% so user sees surrounding city streets & intersections
+    const padX = (meta.maxx - meta.minx) * 0.5;
+    const padY = (meta.maxy - meta.miny) * 0.5;
+    const bboxMinX = meta.minx - padX;
+    const bboxMaxX = meta.maxx + padX;
+    const bboxMinY = meta.miny - padY;
+    const bboxMaxY = meta.maxy + padY;
+
+    // Convert corners to WGS-84
+    const [minLon, minLat] = localMetersToWgs84(bboxMinX, bboxMinY, geoCenter.lat, geoCenter.lon);
+    const [maxLon, maxLat] = localMetersToWgs84(bboxMaxX, bboxMaxY, geoCenter.lat, geoCenter.lon);
+
+    // Dynamic zoom level matched to site scale (15 to 18)
+    const spanM = Math.max(bboxMaxX - bboxMinX, bboxMaxY - bboxMinY);
+    let z = 17;
+    if (spanM > 1000) z = 15;
+    else if (spanM > 450) z = 16;
+    else if (spanM < 160) z = 18;
+
+    const minTx = lon2tile(minLon, z);
+    const maxTx = lon2tile(maxLon, z);
+    const minTy = lat2tile(maxLat, z);
+    const maxTy = lat2tile(minLat, z);
+
+    let tilesMarkup = '';
+    for (let tx = minTx; tx <= maxTx; tx++) {
+      for (let ty = minTy; ty <= maxTy; ty++) {
+        const tMinLon = tile2lon(tx, z);
+        const tMaxLon = tile2lon(tx + 1, z);
+        const tMaxLat = tile2lat(ty, z);
+        const tMinLat = tile2lat(ty + 1, z);
+
+        const [mX1, mY1] = wgs84ToLocalMeters(tMinLon, tMaxLat, geoCenter.lat, geoCenter.lon);
+        const [mX2, mY2] = wgs84ToLocalMeters(tMaxLon, tMinLat, geoCenter.lat, geoCenter.lon);
+
+        const [sX1, sY1] = helpers.siteToSvg(mX1, mY1);
+        const [sX2, sY2] = helpers.siteToSvg(mX2, mY2);
+
+        const tileW = Math.max(1, sX2 - sX1);
+        const tileH = Math.max(1, sY2 - sY1);
+
+        let tileUrl = '';
+        if (state.activeBasemap === 'osm') {
+          // OpenStreetMap — exact same tile service as in the "Спутник OSM" tab!
+          tileUrl = `https://tile.openstreetmap.org/${z}/${tx}/${ty}.png`;
+        } else if (state.activeBasemap === 'satellite') {
+          // Esri World Imagery tiles — exact same satellite service as in Leaflet!
+          tileUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${ty}/${tx}`;
+        } else if (state.activeBasemap === 'light') {
+          // Esri Light Gray Canvas tiles
+          tileUrl = `https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/${z}/${ty}/${tx}`;
+        }
+
+        tilesMarkup += `
+          <image href="${tileUrl}"
+                 x="${round1(sX1)}"
+                 y="${round1(sY1)}"
+                 width="${round1(tileW)}"
+                 height="${round1(tileH)}"
+                 opacity="${state.basemapOpacity}"
+                 preserveAspectRatio="none"
+                 class="svg-basemap-tile"
+                 style="pointer-events: none;" />
+        `;
+      }
+    }
+
+    el.svgBasemapLayer.innerHTML = tilesMarkup;
   }
 
   // --- CLIENT GEOMETRY & HTML HELPERS ---
@@ -1106,6 +1291,9 @@
   function renderSvgWorld(data) {
     if (!data) return;
 
+    // 0. Basemap Underlay (Satellite / Streets / Light)
+    updateSvgBasemap();
+
     // 1. ZOUIT
     if (el.svgZouitLayer) {
       let zouitMarkup = '';
@@ -1196,11 +1384,13 @@
       bindSubBlockPolyEvents();
     }
 
-    // 7. Render Custom Road Handles
+    // 7. Render Custom Road Handles & Entry Points
     if (!isStep1) {
       renderCustomRoadHandles();
+      renderEntryPointsOnSvg();
     } else {
       if (el.svgRoadHandlesLayer) el.svgRoadHandlesLayer.innerHTML = '';
+      if (el.svgEntryPointsLayer) el.svgEntryPointsLayer.innerHTML = '';
       if (el.svgBuildingsLayer) el.svgBuildingsLayer.innerHTML = '';
       if (el.svgSectionsLayer) el.svgSectionsLayer.innerHTML = '';
       if (el.svgParkingLayer) el.svgParkingLayer.innerHTML = '';
@@ -1322,35 +1512,48 @@
   el.presetBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       const preset = btn.dataset.preset;
-      state.road_preset = preset;
-
       el.presetBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
 
       const presetLabels = {
         none: 'Без дорог',
-        longitudinal: 'Продольная',
-        transverse: 'Поперечная',
-        cross_2x2: 'Сетка 2×2',
+        longitudinal: 'Продольная (редактируемая)',
+        transverse: 'Поперечная (редактируемая)',
+        cross_2x2: 'Сетка 2×2 (редактируемая)',
         custom: 'На чертеже'
       };
       if (el.valPresetBadge) el.valPresetBadge.textContent = presetLabels[preset] || preset;
 
-      // Show/hide grid sliders vs single pos slider
-      if (el.groupRoadPos && el.groupRoadPosGrid) {
-        if (preset === 'cross_2x2') {
-          el.groupRoadPos.style.display = 'none';
-          el.groupRoadPosGrid.style.display = 'block';
-        } else if (preset === 'longitudinal' || preset === 'transverse') {
-          el.groupRoadPos.style.display = 'block';
-          el.groupRoadPosGrid.style.display = 'none';
-        } else {
-          el.groupRoadPos.style.display = 'none';
-          el.groupRoadPosGrid.style.display = 'none';
+      if (preset === 'none') {
+        state.activePresetTemplate = null;
+        state.road_preset = 'none';
+        state.custom_roads = [];
+        state.entry_points = [];
+        state.currentScenario = null;
+        if (el.groupRoadPos) el.groupRoadPos.style.display = 'none';
+        if (el.groupRoadPosGrid) el.groupRoadPosGrid.style.display = 'none';
+        updateCustomRoadsUI();
+        if (typeof updateEntryPointsUI === 'function') updateEntryPointsUI();
+        if (typeof renderEntryPointsOnSvg === 'function') renderEntryPointsOnSvg();
+        apiPreviewSite(true);
+      } else if (preset === 'longitudinal' || preset === 'transverse' || preset === 'cross_2x2') {
+        if (el.groupRoadPos && el.groupRoadPosGrid) {
+          if (preset === 'cross_2x2') {
+            el.groupRoadPos.style.display = 'none';
+            el.groupRoadPosGrid.style.display = 'block';
+          } else {
+            el.groupRoadPos.style.display = 'block';
+            el.groupRoadPosGrid.style.display = 'none';
+          }
         }
+        applyPresetToEntryPoints(preset);
+      } else if (preset === 'custom') {
+        state.activePresetTemplate = null;
+        state.road_preset = 'custom';
+        if (el.groupRoadPos) el.groupRoadPos.style.display = 'none';
+        if (el.groupRoadPosGrid) el.groupRoadPosGrid.style.display = 'none';
+        apiPreviewSite(true);
       }
-
-      apiPreviewSite(true);
     });
   });
 
@@ -1420,10 +1623,18 @@
       const val = parseInt(el.sliderRoadPos.value, 10);
       state.road_pos = val / 100.0;
       if (el.valRoadPos) el.valRoadPos.textContent = `${val}%`;
-      apiPreviewSite();
+      if (state.activePresetTemplate === 'longitudinal' || state.activePresetTemplate === 'transverse') {
+        applyPresetToEntryPoints(state.activePresetTemplate);
+      } else {
+        apiPreviewSite();
+      }
     });
     el.sliderRoadPos.addEventListener('change', () => {
-      apiPreviewSite(true);
+      if (state.activePresetTemplate === 'longitudinal' || state.activePresetTemplate === 'transverse') {
+        applyPresetToEntryPoints(state.activePresetTemplate);
+      } else {
+        apiPreviewSite(true);
+      }
     });
   }
 
@@ -1434,7 +1645,11 @@
     state.road_pos_x = px / 100.0;
     state.road_pos_y = py / 100.0;
     if (el.valRoadPosXY) el.valRoadPosXY.textContent = `${px}% / ${py}%`;
-    apiPreviewSite(true);
+    if (state.activePresetTemplate === 'cross_2x2') {
+      applyPresetToEntryPoints('cross_2x2');
+    } else {
+      apiPreviewSite(true);
+    }
   }
 
   if (el.sliderRoadPosX) {
@@ -1459,6 +1674,784 @@
   if (el.btnDrawRoad) {
     el.btnDrawRoad.addEventListener('click', () => {
       toggleDrawingMode(!state.isDrawingRoad);
+    });
+  }
+
+  // =========================================================================
+  // ENTRY POINTS (ВЪЕЗДЫ НА ГРАНИЦЕ УЧАСТКА ДЛЯ АВТО-ТРАССИРОВКИ УДС)
+  // =========================================================================
+
+  function projectPointToBoundary(px, py, boundaryCoords) {
+    if (!boundaryCoords || boundaryCoords.length < 2) return [px, py];
+    let bestDistSq = Infinity;
+    let bestPt = [px, py];
+    const n = boundaryCoords.length;
+    for (let i = 0; i < n; i++) {
+      const p1 = boundaryCoords[i];
+      const p2 = boundaryCoords[(i + 1) % n];
+      const x1 = p1[0], y1 = p1[1];
+      const x2 = p2[0], y2 = p2[1];
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const lenSq = dx * dx + dy * dy;
+      if (lenSq === 0) continue;
+      let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+      const projX = x1 + t * dx;
+      const projY = y1 + t * dy;
+      const distSq = (px - projX) * (px - projX) + (py - projY) * (py - projY);
+      if (distSq < bestDistSq) {
+        bestDistSq = distSq;
+        bestPt = [projX, projY];
+      }
+    }
+    return bestPt;
+  }
+
+  function findSegmentIntersection(p1, p2, p3, p4) {
+    const x1 = p1[0], y1 = p1[1];
+    const x2 = p2[0], y2 = p2[1];
+    const x3 = p3[0], y3 = p3[1];
+    const x4 = p4[0], y4 = p4[1];
+
+    const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+    if (Math.abs(denom) < 1e-9) return null;
+
+    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+
+    if (ua >= 0 && ua <= 1 && ub >= 0 && ub <= 1) {
+      return [x1 + ua * (x2 - x1), y1 + ua * (y2 - y1)];
+    }
+    return null;
+  }
+
+  function getBoundaryCutPoints(lineP1, lineP2, boundaryCoords) {
+    if (!boundaryCoords || boundaryCoords.length < 3) return [];
+    const hits = [];
+    const n = boundaryCoords.length;
+    for (let i = 0; i < n; i++) {
+      const b1 = boundaryCoords[i];
+      const b2 = boundaryCoords[(i + 1) % n];
+      const pt = findSegmentIntersection(lineP1, lineP2, b1, b2);
+      if (pt) {
+        if (!hits.some(h => Math.hypot(h[0] - pt[0], h[1] - pt[1]) < 0.5)) {
+          hits.push([round2(pt[0]), round2(pt[1])]);
+        }
+      }
+    }
+    return hits;
+  }
+
+  function applyPresetToEntryPoints(preset) {
+    if (!state.currentData || !state.currentData.boundary_coords || state.currentData.boundary_coords.length < 3) {
+      return;
+    }
+    const bCoords = state.currentData.boundary_coords;
+    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    bCoords.forEach(p => {
+      if (p[0] < minx) minx = p[0];
+      if (p[1] < miny) miny = p[1];
+      if (p[0] > maxx) maxx = p[0];
+      if (p[1] > maxy) maxy = p[1];
+    });
+
+    const width = maxx - minx;
+    const height = maxy - miny;
+    const pad = Math.max(width, height) * 0.2;
+
+    const rx = Math.max(0.15, Math.min(0.85, state.road_pos_x != null ? state.road_pos_x : (state.road_pos != null ? state.road_pos : 0.5)));
+    const ry = Math.max(0.15, Math.min(0.85, state.road_pos_y != null ? state.road_pos_y : (state.road_pos != null ? state.road_pos : 0.5)));
+
+    const cx = minx + width * rx;
+    const cy = miny + height * ry;
+
+    const newEntries = [];
+
+    if (preset === 'longitudinal') {
+      state.activePresetTemplate = 'longitudinal';
+      if (width >= height) {
+        const cuts = getBoundaryCutPoints([minx - pad, cy], [maxx + pad, cy], bCoords);
+        cuts.sort((a, b) => a[0] - b[0]);
+        if (cuts.length >= 2) {
+          newEntries.push({
+            id: 'ep_w',
+            name: 'Въезд Запад',
+            x: cuts[0][0],
+            y: cuts[0][1],
+            category: state.road_category || 'district',
+            width: state.road_width || 15.0,
+            setback: state.road_setback || 4.0
+          });
+          newEntries.push({
+            id: 'ep_e',
+            name: 'Въезд Восток',
+            x: cuts[cuts.length - 1][0],
+            y: cuts[cuts.length - 1][1],
+            category: state.road_category || 'district',
+            width: state.road_width || 15.0,
+            setback: state.road_setback || 4.0
+          });
+        }
+      } else {
+        const cuts = getBoundaryCutPoints([cx, miny - pad], [cx, maxy + pad], bCoords);
+        cuts.sort((a, b) => a[1] - b[1]);
+        if (cuts.length >= 2) {
+          newEntries.push({
+            id: 'ep_s',
+            name: 'Въезд Юг',
+            x: cuts[0][0],
+            y: cuts[0][1],
+            category: state.road_category || 'district',
+            width: state.road_width || 15.0,
+            setback: state.road_setback || 4.0
+          });
+          newEntries.push({
+            id: 'ep_n',
+            name: 'Въезд Север',
+            x: cuts[cuts.length - 1][0],
+            y: cuts[cuts.length - 1][1],
+            category: state.road_category || 'district',
+            width: state.road_width || 15.0,
+            setback: state.road_setback || 4.0
+          });
+        }
+      }
+    } else if (preset === 'transverse') {
+      state.activePresetTemplate = 'transverse';
+      if (width >= height) {
+        const cuts = getBoundaryCutPoints([cx, miny - pad], [cx, maxy + pad], bCoords);
+        cuts.sort((a, b) => a[1] - b[1]);
+        if (cuts.length >= 2) {
+          newEntries.push({
+            id: 'ep_s',
+            name: 'Въезд Юг',
+            x: cuts[0][0],
+            y: cuts[0][1],
+            category: state.road_category || 'district',
+            width: state.road_width || 15.0,
+            setback: state.road_setback || 4.0
+          });
+          newEntries.push({
+            id: 'ep_n',
+            name: 'Въезд Север',
+            x: cuts[cuts.length - 1][0],
+            y: cuts[cuts.length - 1][1],
+            category: state.road_category || 'district',
+            width: state.road_width || 15.0,
+            setback: state.road_setback || 4.0
+          });
+        }
+      } else {
+        const cuts = getBoundaryCutPoints([minx - pad, cy], [maxx + pad, cy], bCoords);
+        cuts.sort((a, b) => a[0] - b[0]);
+        if (cuts.length >= 2) {
+          newEntries.push({
+            id: 'ep_w',
+            name: 'Въезд Запад',
+            x: cuts[0][0],
+            y: cuts[0][1],
+            category: state.road_category || 'district',
+            width: state.road_width || 15.0,
+            setback: state.road_setback || 4.0
+          });
+          newEntries.push({
+            id: 'ep_e',
+            name: 'Въезд Восток',
+            x: cuts[cuts.length - 1][0],
+            y: cuts[cuts.length - 1][1],
+            category: state.road_category || 'district',
+            width: state.road_width || 15.0,
+            setback: state.road_setback || 4.0
+          });
+        }
+      }
+    } else if (preset === 'cross_2x2') {
+      state.activePresetTemplate = 'cross_2x2';
+      const cutsH = getBoundaryCutPoints([minx - pad, cy], [maxx + pad, cy], bCoords);
+      cutsH.sort((a, b) => a[0] - b[0]);
+      const cutsV = getBoundaryCutPoints([cx, miny - pad], [cx, maxy + pad], bCoords);
+      cutsV.sort((a, b) => a[1] - b[1]);
+
+      if (cutsH.length >= 2) {
+        newEntries.push({
+          id: 'ep_w',
+          name: 'Въезд Запад',
+          x: cutsH[0][0],
+          y: cutsH[0][1],
+          category: state.road_category || 'district',
+          width: state.road_width || 15.0,
+          setback: state.road_setback || 4.0
+        });
+        newEntries.push({
+          id: 'ep_e',
+          name: 'Въезд Восток',
+          x: cutsH[cutsH.length - 1][0],
+          y: cutsH[cutsH.length - 1][1],
+          category: state.road_category || 'district',
+          width: state.road_width || 15.0,
+          setback: state.road_setback || 4.0
+        });
+      }
+      if (cutsV.length >= 2) {
+        newEntries.push({
+          id: 'ep_s',
+          name: 'Въезд Юг',
+          x: cutsV[0][0],
+          y: cutsV[0][1],
+          category: state.road_category || 'district',
+          width: state.road_width || 15.0,
+          setback: state.road_setback || 4.0
+        });
+        newEntries.push({
+          id: 'ep_n',
+          name: 'Въезд Север',
+          x: cutsV[cutsV.length - 1][0],
+          y: cutsV[cutsV.length - 1][1],
+          category: state.road_category || 'district',
+          width: state.road_width || 15.0,
+          setback: state.road_setback || 4.0
+        });
+      }
+    }
+
+    if (newEntries.length > 0) {
+      state.entry_points = newEntries;
+      state.uds_mode = 'entries';
+      if (el.btnTabEntryPoints) {
+        el.btnTabEntryPoints.classList.add('active');
+        if (el.btnTabFreeDraw) el.btnTabFreeDraw.classList.remove('active');
+        if (el.subviewEntryPoints) el.subviewEntryPoints.style.display = 'block';
+        if (el.subviewFreeDraw) el.subviewFreeDraw.style.display = 'none';
+      }
+      updateEntryPointsUI();
+      renderEntryPointsOnSvg();
+      rebuildRoadsFromEntryPoints();
+    }
+  }
+
+  // Subtab switching (Въезды vs Свободное черчение)
+  if (el.btnTabEntryPoints) {
+    el.btnTabEntryPoints.addEventListener('click', () => {
+      state.uds_mode = 'entries';
+      if (el.btnTabEntryPoints) el.btnTabEntryPoints.classList.add('active');
+      if (el.btnTabFreeDraw) el.btnTabFreeDraw.classList.remove('active');
+      if (el.subviewEntryPoints) el.subviewEntryPoints.style.display = 'block';
+      if (el.subviewFreeDraw) el.subviewFreeDraw.style.display = 'none';
+      toggleDrawingMode(false);
+      renderCustomRoadHandles();
+      renderEntryPointsOnSvg();
+    });
+  }
+  if (el.btnTabFreeDraw) {
+    el.btnTabFreeDraw.addEventListener('click', () => {
+      state.uds_mode = 'free_draw';
+      if (el.btnTabEntryPoints) el.btnTabEntryPoints.classList.remove('active');
+      if (el.btnTabFreeDraw) el.btnTabFreeDraw.classList.add('active');
+      if (el.subviewEntryPoints) el.subviewEntryPoints.style.display = 'none';
+      if (el.subviewFreeDraw) el.subviewFreeDraw.style.display = 'block';
+      toggleAddEntryPointMode(false);
+      renderCustomRoadHandles();
+      renderEntryPointsOnSvg();
+    });
+  }
+
+  function toggleAddEntryPointMode(forceState = null) {
+    state.isAddingEntryPoint = forceState !== null ? forceState : !state.isAddingEntryPoint;
+    if (state.isAddingEntryPoint) {
+      toggleDrawingMode(false);
+    }
+    if (el.btnAddEntryPoint) {
+      el.btnAddEntryPoint.classList.toggle('active', state.isAddingEntryPoint);
+      if (state.isAddingEntryPoint) {
+        if (el.btnEntryIcon) el.btnEntryIcon.textContent = '❌';
+        if (el.btnEntryText) el.btnEntryText.textContent = 'Отменить установку';
+        if (el.entryRoadHint) {
+          el.entryRoadHint.innerHTML = '<b>Режим активен:</b> Кликните по красной/синей линии границы ЗУ, чтобы добавить точку въезда.';
+          el.entryRoadHint.style.borderColor = 'var(--accent)';
+          el.entryRoadHint.style.color = 'var(--accent)';
+        }
+      } else {
+        if (el.btnEntryIcon) el.btnEntryIcon.textContent = '📍';
+        if (el.btnEntryText) el.btnEntryText.textContent = 'Поставить въезд на границе';
+        if (el.entryRoadHint) {
+          el.entryRoadHint.innerHTML = state.entry_points.length === 0
+            ? 'Кликните <b>«Поставить въезд»</b>, затем укажите 2–4 точки на границе участка. Алгоритм увяжет их в связную сеть улиц и нарежет кварталы.'
+            : `Установлено въездов: <b>${state.entry_points.length}</b>. Перетаскивайте маркеры по границе ЗУ для тонкой настройки трассировки.`;
+          el.entryRoadHint.style.borderColor = 'var(--accent-border)';
+          el.entryRoadHint.style.color = 'var(--text-secondary)';
+        }
+      }
+    }
+    if (el.svgCanvas) {
+      el.svgCanvas.classList.toggle('drawing-mode', state.isAddingEntryPoint);
+    }
+  }
+
+  if (el.btnAddEntryPoint) {
+    el.btnAddEntryPoint.addEventListener('click', () => {
+      toggleAddEntryPointMode();
+    });
+  }
+
+  if (el.btnClearEntries) {
+    el.btnClearEntries.addEventListener('click', () => {
+      state.entry_points = [];
+      state.custom_roads = [];
+      updateEntryPointsUI();
+      renderEntryPointsOnSvg();
+      if (state.road_preset === 'custom') {
+        state.road_preset = 'none';
+        el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === 'none'));
+        if (el.valPresetBadge) el.valPresetBadge.textContent = 'Без дорог';
+      }
+      apiPreviewSite(true);
+    });
+  }
+
+  function getEntryCatLabel(cat) {
+    if (cat === 'arterial') return 'Магистральная';
+    if (cat === 'local') return 'Местная';
+    return 'Районная';
+  }
+
+  function updateEntryPointsUI() {
+    if (!el.entryPointsList) return;
+    if (state.entry_points.length === 0) {
+      el.entryPointsList.innerHTML = '';
+      if (el.entryRoadHint && !state.isAddingEntryPoint) {
+        el.entryRoadHint.innerHTML = 'Кликните <b>«Поставить въезд»</b>, затем укажите 2–4 точки на границе участка. Алгоритм увяжет их в связную сеть улиц и нарежет кварталы.';
+        el.entryRoadHint.style.borderColor = 'var(--accent-border)';
+        el.entryRoadHint.style.color = 'var(--text-secondary)';
+      }
+      return;
+    }
+
+    let html = '';
+    state.entry_points.forEach((ep, idx) => {
+      const w = ep.width || 15.0;
+      const isLocal = ep.category === 'local' || w <= 10.0;
+      const isArterial = ep.category === 'arterial' || w >= 20.0;
+      const isDistrict = !isLocal && !isArterial;
+
+      html += `
+        <div class="entry-point-card" data-entry-idx="${idx}">
+          <div class="entry-point-header">
+            <div class="entry-point-title">
+              <span class="entry-num-badge">${idx + 1}</span>
+              <span class="entry-point-name">${ep.name || ('Въезд ' + (idx + 1))}</span>
+              <span class="entry-point-coords">(${Math.round(ep.x)}м, ${Math.round(ep.y)}м)</span>
+            </div>
+            <button class="entry-del-btn" data-entry-del-idx="${idx}" title="Удалить въезд">×</button>
+          </div>
+
+          <div class="entry-cat-pills">
+            <button type="button" class="entry-cat-pill ${isLocal ? 'active' : ''}" data-cat="local" data-entry-idx="${idx}" title="Местная улица (8м)">
+              🚙 Местная
+            </button>
+            <button type="button" class="entry-cat-pill ${isDistrict ? 'active' : ''}" data-cat="district" data-entry-idx="${idx}" title="Районная улица (15м)">
+              🛣️ Районная
+            </button>
+            <button type="button" class="entry-cat-pill ${isArterial ? 'active' : ''}" data-cat="arterial" data-entry-idx="${idx}" title="Магистральная улица (22м)">
+              🚚 Магистраль
+            </button>
+          </div>
+
+          <div class="entry-width-row">
+            <span class="entry-width-label">Ширина улицы:</span>
+            <div class="entry-stepper">
+              <button type="button" class="entry-step-btn" data-entry-step-idx="${idx}" data-delta="-1" title="Уменьшить ширину на 1м">−</button>
+              <div class="entry-stepper-val">
+                <input type="number" class="entry-width-input" data-entry-input-idx="${idx}" min="6" max="40" step="0.5" value="${w}" />
+                <span class="entry-step-unit">м</span>
+              </div>
+              <button type="button" class="entry-step-btn" data-entry-step-idx="${idx}" data-delta="1" title="Увеличить ширину на 1м">+</button>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    el.entryPointsList.innerHTML = html;
+
+    // Category pills click handlers
+    el.entryPointsList.querySelectorAll('.entry-cat-pill').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const pIdx = parseInt(btn.dataset.entryIdx, 10);
+        const cat = btn.dataset.cat;
+        const ep = state.entry_points[pIdx];
+        if (!ep) return;
+
+        if (cat === 'local') {
+          ep.category = 'local';
+          ep.width = 8.0;
+          ep.setback = 3.0;
+        } else if (cat === 'arterial') {
+          ep.category = 'arterial';
+          ep.width = 22.0;
+          ep.setback = 6.0;
+        } else {
+          ep.category = 'district';
+          ep.width = 15.0;
+          ep.setback = 4.0;
+        }
+
+        // If 2 points, sync both so through-street stays coherent
+        if (state.entry_points.length === 2) {
+          const otherEp = state.entry_points[1 - pIdx];
+          if (otherEp) {
+            otherEp.category = ep.category;
+            otherEp.width = ep.width;
+            otherEp.setback = ep.setback;
+          }
+        }
+
+        updateEntryPointsUI();
+        renderEntryPointsOnSvg();
+        rebuildRoadsFromEntryPoints();
+      });
+    });
+
+    // Stepper minus/plus handlers
+    el.entryPointsList.querySelectorAll('.entry-step-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const sIdx = parseInt(btn.dataset.entryStepIdx, 10);
+        const delta = parseFloat(btn.dataset.delta) || 0;
+        const ep = state.entry_points[sIdx];
+        if (!ep) return;
+
+        const curW = ep.width || 15.0;
+        const newW = Math.max(6.0, Math.min(40.0, round1(curW + delta)));
+        ep.width = newW;
+        if (newW <= 10.0) ep.category = 'local';
+        else if (newW <= 18.0) ep.category = 'district';
+        else ep.category = 'arterial';
+
+        if (state.entry_points.length === 2) {
+          const otherEp = state.entry_points[1 - sIdx];
+          if (otherEp) {
+            otherEp.width = newW;
+            otherEp.category = ep.category;
+          }
+        }
+
+        updateEntryPointsUI();
+        renderEntryPointsOnSvg();
+        rebuildRoadsFromEntryPoints();
+      });
+    });
+
+    // Direct numeric input handlers
+    el.entryPointsList.querySelectorAll('.entry-width-input').forEach(input => {
+      const applyVal = () => {
+        const iIdx = parseInt(input.dataset.entryInputIdx, 10);
+        const val = parseFloat(input.value);
+        const ep = state.entry_points[iIdx];
+        if (!ep || isNaN(val)) return;
+
+        const clamped = Math.max(6.0, Math.min(40.0, round1(val)));
+        ep.width = clamped;
+        if (clamped <= 10.0) ep.category = 'local';
+        else if (clamped <= 18.0) ep.category = 'district';
+        else ep.category = 'arterial';
+
+        if (state.entry_points.length === 2) {
+          const otherEp = state.entry_points[1 - iIdx];
+          if (otherEp) {
+            otherEp.width = clamped;
+            otherEp.category = ep.category;
+          }
+        }
+
+        renderEntryPointsOnSvg();
+        rebuildRoadsFromEntryPoints();
+      };
+      input.addEventListener('change', applyVal);
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          input.blur();
+        }
+      });
+    });
+
+    // Delete buttons
+    el.entryPointsList.querySelectorAll('[data-entry-del-idx]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const dIdx = parseInt(btn.dataset.entryDelIdx, 10);
+        state.entry_points.splice(dIdx, 1);
+        updateEntryPointsUI();
+        renderEntryPointsOnSvg();
+        rebuildRoadsFromEntryPoints();
+      });
+    });
+
+    // Hover highlighting between card and canvas marker
+    el.entryPointsList.querySelectorAll('.entry-point-card').forEach(card => {
+      const idx = parseInt(card.dataset.entryIdx, 10);
+      card.addEventListener('mouseenter', () => {
+        card.classList.add('highlighted');
+        if (el.svgEntryPointsLayer) {
+          const m = el.svgEntryPointsLayer.querySelector(`.entry-marker[data-entry-idx="${idx}"]`);
+          if (m) m.classList.add('highlighted');
+          const line = el.svgEntryPointsLayer.querySelector(`.entry-ray-line[data-entry-idx="${idx}"]`);
+          if (line) {
+            line.setAttribute('stroke', '#38bdf8');
+            line.setAttribute('stroke-width', '4.5');
+          }
+        }
+      });
+      card.addEventListener('mouseleave', () => {
+        card.classList.remove('highlighted');
+        if (el.svgEntryPointsLayer) {
+          const m = el.svgEntryPointsLayer.querySelector(`.entry-marker[data-entry-idx="${idx}"]`);
+          if (m) m.classList.remove('highlighted');
+          const line = el.svgEntryPointsLayer.querySelector(`.entry-ray-line[data-entry-idx="${idx}"]`);
+          const ep = state.entry_points[idx];
+          if (line && ep) {
+            line.setAttribute('stroke', '#0284c7');
+            line.setAttribute('stroke-width', String(Math.max(2, Math.min(6, (ep.width || 15) / 4))));
+          }
+        }
+      });
+    });
+
+    // Update hints according to points count
+    if (el.entryRoadHint && !state.isAddingEntryPoint) {
+      if (state.entry_points.length === 1) {
+        el.entryRoadHint.innerHTML = '📍 <b>Въезд 1 установлен.</b> Добавьте еще хотя бы 1 точку въезда на границе для формирования улицы.';
+        el.entryRoadHint.style.borderColor = 'var(--accent-border)';
+      } else if (state.entry_points.length === 2) {
+        el.entryRoadHint.innerHTML = '🚗 <b>Сквозной проезд сформирован (2 въезда).</b> Перетаскивайте маркеры по границе ЗУ или добавьте 3-й въезд для T-перекрестка.';
+        el.entryRoadHint.style.borderColor = 'var(--success)';
+      } else if (state.entry_points.length === 3) {
+        el.entryRoadHint.innerHTML = '✨ <b>3-лучевой T-перекресток.</b> Участок разделен на 3 суб-квартала. Настройте ширину каждого въезда индивидуально.';
+        el.entryRoadHint.style.borderColor = 'var(--accent)';
+      } else {
+        el.entryRoadHint.innerHTML = `✨ <b>${state.entry_points.length}-лучевой перекресток.</b> Участок разделен на ${state.entry_points.length} суб-квартала. Толщина каждой улицы настраивается отдельно.`;
+        el.entryRoadHint.style.borderColor = 'var(--accent)';
+      }
+    }
+  }
+
+  function rebuildRoadsFromEntryPoints() {
+    state.currentScenario = null; // Invalidate Step 3 scenario cache so it regenerates on clean sub-blocks
+    if (state.entry_points.length === 0) {
+      state.custom_roads = [];
+      state.activePresetTemplate = null;
+      updateCustomRoadsUI();
+      if (state.road_preset === 'custom') {
+        state.road_preset = 'none';
+        el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === 'none'));
+        if (el.valPresetBadge) el.valPresetBadge.textContent = 'Без дорог';
+      }
+      apiPreviewSite(true);
+      return;
+    }
+
+    if (state.entry_points.length === 1) {
+      state.custom_roads = [];
+      updateCustomRoadsUI();
+      apiPreviewSite(true); // Clear old road corridors from canvas so there are no orphan roads
+      return;
+    }
+
+    if (state.entry_points.length === 2) {
+      const ep1 = state.entry_points[0];
+      const ep2 = state.entry_points[1];
+      const width = ep1.width || ep2.width || 15.0;
+      const category = ep1.category || ep2.category || 'district';
+      ep1.width = width;
+      ep2.width = width;
+      ep1.category = category;
+      ep2.category = category;
+
+      state.custom_roads = [
+        {
+          name: `Сквозной проезд (${width}м)`,
+          category: category,
+          width: width,
+          setback: ep1.setback || 4.0,
+          points: [
+            [ep1.x, ep1.y],
+            [ep2.x, ep2.y]
+          ]
+        }
+      ];
+    } else if (state.entry_points.length === 4) {
+      const p = state.entry_points;
+      let hub = null;
+      const cross1 = findSegmentIntersection([p[0].x, p[0].y], [p[1].x, p[1].y], [p[2].x, p[2].y], [p[3].x, p[3].y]);
+      const cross2 = findSegmentIntersection([p[0].x, p[0].y], [p[2].x, p[2].y], [p[1].x, p[1].y], [p[3].x, p[3].y]);
+      const cross3 = findSegmentIntersection([p[0].x, p[0].y], [p[3].x, p[3].y], [p[1].x, p[1].y], [p[2].x, p[2].y]);
+      if (cross1) hub = cross1;
+      else if (cross2) hub = cross2;
+      else if (cross3) hub = cross3;
+      else {
+        const sumX = p.reduce((acc, ep) => acc + ep.x, 0);
+        const sumY = p.reduce((acc, ep) => acc + ep.y, 0);
+        hub = [sumX / 4, sumY / 4];
+      }
+      const hubX = round2(hub[0]);
+      const hubY = round2(hub[1]);
+
+      state.custom_roads = p.map((ep, idx) => ({
+        name: `Въезд ${idx + 1} (${ep.width || 15.0}м)`,
+        category: ep.category || 'district',
+        width: ep.width || 15.0,
+        setback: ep.setback || 4.0,
+        points: [[ep.x, ep.y], [hubX, hubY]]
+      }));
+    } else {
+      const count = state.entry_points.length;
+      const sumX = state.entry_points.reduce((acc, ep) => acc + ep.x, 0);
+      const sumY = state.entry_points.reduce((acc, ep) => acc + ep.y, 0);
+      const hubX = round2(sumX / count);
+      const hubY = round2(sumY / count);
+
+      state.custom_roads = state.entry_points.map((ep, idx) => ({
+        name: `Въезд ${idx + 1} (${ep.width || 15.0}м)`,
+        category: ep.category || 'district',
+        width: ep.width || 15.0,
+        setback: ep.setback || 4.0,
+        points: [
+          [ep.x, ep.y],
+          [hubX, hubY]
+        ]
+      }));
+    }
+
+    state.road_preset = 'custom';
+    const activeKey = state.activePresetTemplate || 'custom';
+    el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === activeKey));
+    if (el.valPresetBadge) {
+      const pLabels = { longitudinal: 'Продольная', transverse: 'Поперечная', cross_2x2: 'Сетка 2×2', custom: 'Въезды на границе' };
+      el.valPresetBadge.textContent = pLabels[state.activePresetTemplate] || 'Въезды на границе';
+    }
+
+    updateCustomRoadsUI();
+    apiPreviewSite(true);
+  }
+
+  function renderEntryPointsOnSvg() {
+    if (!el.svgEntryPointsLayer) return;
+    if (state.uds_mode !== 'entries' || state.entry_points.length === 0) {
+      el.svgEntryPointsLayer.innerHTML = '';
+      return;
+    }
+
+    const helpers = getCoordHelpers();
+    let markup = '';
+
+    // If 2 points, draw connecting axis guideline
+    if (state.entry_points.length === 2) {
+      const p1 = helpers.siteToSvg(state.entry_points[0].x, state.entry_points[0].y);
+      const p2 = helpers.siteToSvg(state.entry_points[1].x, state.entry_points[1].y);
+      markup += `
+        <line x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}"
+              stroke="#0284c7" stroke-width="2.5" stroke-dasharray="6,4" opacity="0.85" style="pointer-events:none;" />
+      `;
+    } else if (state.entry_points.length === 4) {
+      const p = state.entry_points;
+      let hub = null;
+      const cross1 = findSegmentIntersection([p[0].x, p[0].y], [p[1].x, p[1].y], [p[2].x, p[2].y], [p[3].x, p[3].y]);
+      const cross2 = findSegmentIntersection([p[0].x, p[0].y], [p[2].x, p[2].y], [p[1].x, p[1].y], [p[3].x, p[3].y]);
+      const cross3 = findSegmentIntersection([p[0].x, p[0].y], [p[3].x, p[3].y], [p[1].x, p[1].y], [p[2].x, p[2].y]);
+      if (cross1) hub = cross1;
+      else if (cross2) hub = cross2;
+      else if (cross3) hub = cross3;
+      else {
+        const sumX = p.reduce((acc, ep) => acc + ep.x, 0);
+        const sumY = p.reduce((acc, ep) => acc + ep.y, 0);
+        hub = [sumX / 4, sumY / 4];
+      }
+      const sCross = helpers.siteToSvg(hub[0], hub[1]);
+
+      p.forEach((ep, idx) => {
+        const sPt = helpers.siteToSvg(ep.x, ep.y);
+        const rayW = Math.max(2, Math.min(6, (ep.width || 15) / 4));
+        markup += `
+          <line class="entry-ray-line" data-entry-idx="${idx}" x1="${sPt[0]}" y1="${sPt[1]}" x2="${sCross[0]}" y2="${sCross[1]}"
+                stroke="#0284c7" stroke-width="${rayW}" stroke-dasharray="6,4" opacity="0.85" style="pointer-events:none;" />
+        `;
+      });
+      markup += `
+        <g class="entry-hub" style="pointer-events:none;">
+          <circle cx="${sCross[0]}" cy="${sCross[1]}" r="8" fill="#0284c7" fill-opacity="0.3" stroke="#0284c7" stroke-width="2" />
+          <circle cx="${sCross[0]}" cy="${sCross[1]}" r="3" fill="#ffffff" />
+        </g>
+      `;
+    } else if (state.entry_points.length === 3) {
+      const sumX = state.entry_points.reduce((acc, ep) => acc + ep.x, 0);
+      const sumY = state.entry_points.reduce((acc, ep) => acc + ep.y, 0);
+      const cSite = [sumX / 3, sumY / 3];
+      const cSvg = helpers.siteToSvg(cSite[0], cSite[1]);
+
+      state.entry_points.forEach((ep, idx) => {
+        const sPt = helpers.siteToSvg(ep.x, ep.y);
+        const rayW = Math.max(2, Math.min(6, (ep.width || 15) / 4));
+        markup += `
+          <line class="entry-ray-line" data-entry-idx="${idx}" x1="${sPt[0]}" y1="${sPt[1]}" x2="${cSvg[0]}" y2="${cSvg[1]}"
+                stroke="#0284c7" stroke-width="${rayW}" stroke-dasharray="6,4" opacity="0.85" style="pointer-events:none;" />
+        `;
+      });
+
+      markup += `
+        <g class="entry-hub" style="pointer-events:none;">
+          <circle cx="${cSvg[0]}" cy="${cSvg[1]}" r="8" fill="#0284c7" fill-opacity="0.3" stroke="#0284c7" stroke-width="2" />
+          <circle cx="${cSvg[0]}" cy="${cSvg[1]}" r="3" fill="#ffffff" />
+        </g>
+      `;
+    }
+
+    // Draggable entry markers + Width text badges
+    state.entry_points.forEach((ep, idx) => {
+      const sPt = helpers.siteToSvg(ep.x, ep.y);
+      const label = `${idx + 1}`;
+      const badgeText = `${ep.width || 15}м`;
+      const badgeW = badgeText.length * 7 + 10;
+      markup += `
+        <g class="entry-marker" data-entry-idx="${idx}" transform="translate(${sPt[0]}, ${sPt[1]})">
+          <circle cx="0" cy="0" r="14" fill="#0284c7" stroke="#ffffff" stroke-width="2.5" filter="drop-shadow(0 2px 5px rgba(0,0,0,0.35))" />
+          <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="700" fill="#ffffff" style="pointer-events:none; font-family:var(--font-mono, sans-serif);">${label}</text>
+          <!-- Width badge pill -->
+          <g class="entry-canvas-badge" transform="translate(18, -9)">
+            <rect x="0" y="0" width="${badgeW}" height="18" rx="4" fill="#0f172a" fill-opacity="0.92" stroke="#0284c7" stroke-width="1.2" />
+            <text x="${badgeW / 2}" y="13" text-anchor="middle" fill="#38bdf8" font-size="10.5" font-weight="bold">${badgeText}</text>
+          </g>
+        </g>
+      `;
+    });
+
+    el.svgEntryPointsLayer.innerHTML = markup;
+    bindEntryMarkerDragEvents();
+  }
+
+  function bindEntryMarkerDragEvents() {
+    if (!el.svgEntryPointsLayer) return;
+    const markers = el.svgEntryPointsLayer.querySelectorAll('.entry-marker');
+    markers.forEach(m => {
+      const idx = parseInt(m.dataset.entryIdx, 10);
+      m.addEventListener('mousedown', e => {
+        e.stopPropagation();
+        state.activeEntryDrag = { idx };
+      });
+      m.addEventListener('mouseenter', () => {
+        m.classList.add('highlighted');
+        if (el.entryPointsList) {
+          const c = el.entryPointsList.querySelector(`.entry-point-card[data-entry-idx="${idx}"]`);
+          if (c) c.classList.add('highlighted');
+        }
+      });
+      m.addEventListener('mouseleave', () => {
+        m.classList.remove('highlighted');
+        if (el.entryPointsList) {
+          const c = el.entryPointsList.querySelector(`.entry-point-card[data-entry-idx="${idx}"]`);
+          if (c) c.classList.remove('highlighted');
+        }
+      });
     });
   }
 
@@ -1545,7 +2538,7 @@
   // --- RENDER CUSTOM ROAD HANDLES (DRAGGABLE ENDPOINTS & MIDPOINTS) ---
   function renderCustomRoadHandles() {
     if (!el.svgRoadHandlesLayer) return;
-    if (state.custom_roads.length === 0) {
+    if (state.uds_mode !== 'free_draw' || state.custom_roads.length === 0) {
       el.svgRoadHandlesLayer.innerHTML = '';
       return;
     }
@@ -1592,6 +2585,47 @@
 
   // --- CANVAS CLICK & MOUSEMOVE HANDLERS (DRAWING & DRAGGING) ---
   el.svgCanvas.addEventListener('click', e => {
+    // 1. Add Entry Point on Boundary Mode
+    if (state.isAddingEntryPoint) {
+      if (!state.currentData || !state.currentData.boundary_coords || state.currentData.boundary_coords.length < 3) {
+        showToast('Сначала загрузите или выберите участок', 'warning');
+        return;
+      }
+
+      const rect = el.svgCanvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const svgX = (mouseX - panZoom.tx) / panZoom.scale;
+      const svgY = (mouseY - panZoom.ty) / panZoom.scale;
+
+      const helpers = getCoordHelpers();
+      const [siteX, siteY] = helpers.svgToSite(svgX, svgY);
+      const boundaryCoords = state.currentData.boundary_coords;
+      const proj = projectPointToBoundary(siteX, siteY, boundaryCoords);
+
+      const newIdx = state.entry_points.length + 1;
+      state.entry_points.push({
+        id: 'ep_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        name: `Въезд ${newIdx}`,
+        x: round2(proj[0]),
+        y: round2(proj[1]),
+        category: state.road_category || 'district',
+        width: state.road_width || 15.0,
+        setback: state.road_setback || 4.0
+      });
+
+      updateEntryPointsUI();
+      renderEntryPointsOnSvg();
+      rebuildRoadsFromEntryPoints();
+
+      if (state.entry_points.length >= 4) {
+        toggleAddEntryPointMode(false);
+      }
+      return;
+    }
+
+    // 2. Free Draw Road Mode
     if (!state.isDrawingRoad) return;
 
     const rect = el.svgCanvas.getBoundingClientRect();
@@ -1662,6 +2696,29 @@
       }
     }
 
+    // 0. Dragging entry marker along boundary
+    if (state.activeEntryDrag) {
+      const drag = state.activeEntryDrag;
+      const ep = state.entry_points[drag.idx];
+      if (!ep) return;
+
+      const rect = el.svgCanvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const svgX = (mouseX - panZoom.tx) / panZoom.scale;
+      const svgY = (mouseY - panZoom.ty) / panZoom.scale;
+
+      const helpers = getCoordHelpers();
+      const [siteX, siteY] = helpers.svgToSite(svgX, svgY);
+      const boundaryCoords = (state.currentData && state.currentData.boundary_coords) || [];
+      const proj = projectPointToBoundary(siteX, siteY, boundaryCoords);
+
+      ep.x = round2(proj[0]);
+      ep.y = round2(proj[1]);
+      renderEntryPointsOnSvg();
+      return;
+    }
+
     // 2. Dragging road handle
     if (state.activeHandleDrag) {
       const drag = state.activeHandleDrag;
@@ -1698,6 +2755,12 @@
   });
 
   window.addEventListener('mouseup', () => {
+    if (state.activeEntryDrag) {
+      state.activeEntryDrag = null;
+      state.activePresetTemplate = null; // User fine-tuned positions manually on canvas -> custom
+      updateEntryPointsUI();
+      rebuildRoadsFromEntryPoints();
+    }
     if (state.activeHandleDrag) {
       state.activeHandleDrag = null;
       updateCustomRoadsUI();
@@ -1707,8 +2770,9 @@
 
   // Cancel drawing on Escape
   window.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && state.isDrawingRoad) {
-      toggleDrawingMode(false);
+    if (e.key === 'Escape') {
+      if (state.isDrawingRoad) toggleDrawingMode(false);
+      if (state.isAddingEntryPoint) toggleAddEntryPointMode(false);
     }
   });
 
@@ -3109,25 +4173,53 @@
       const typ = btn.dataset.typology;
       state.typology = typ;
       const names = {
-        AUTO: 'Квартальная / Смешанная (AUTO)',
-        PERIMETER: 'Периметр (R2-Style)',
-        TOWER: 'Башни (Towers)',
+        AUTO: 'Квартальная (AUTO)',
         U_SHAPE: 'П-образные дворы',
+        TOWER: 'Башни (Towers)',
         SECTIONAL: 'Секционная'
       };
       if (el.valTypologyTag) el.valTypologyTag.textContent = names[typ] || typ;
+      if (typ === 'TOWER') {
+        const maxH = state.max_height_m || 50.0;
+        // башня Б1: коммерческий 1-й этаж 4.2 м, типовой этаж 3.15 м
+        const maxFitFloors = Math.max(1, Math.floor((maxH - 4.2) / 3.15) + 1);
+        const targetTowerFloors = Math.min(16, maxFitFloors);
+        state.max_floors = targetTowerFloors;
+        if (el.sliderStep3Floors) el.sliderStep3Floors.value = targetTowerFloors;
+        if (el.labelStep3Floors) el.labelStep3Floors.textContent = `${targetTowerFloors} эт.`;
+        const estH = (4.2 + (targetTowerFloors - 1) * 3.15).toFixed(1);
+        if (el.valStep3FloorsTag) el.valStep3FloorsTag.textContent = `${targetTowerFloors} эт. (${estH} м)`;
+        if (el.step3CardFloors) el.step3CardFloors.textContent = `${targetTowerFloors} эт. (${estH} м)`;
+      }
+
+      // Auto-recalculate layout on Step 3: instantly update buildings inside the existing UDS sub-blocks!
+      if (state.currentStep === 3 && state.currentData && !state.isGenerating) {
+        apiGenerateLayout();
+      }
     });
   });
+
+  // Вспомогательный дебаунсер для живого отклика параметров и ползунков Шага 3
+  let step3DebounceTimer = null;
+  function triggerStep3LiveUpdate(delay = 250) {
+    if (state.currentStep !== 3 || !state.currentData || state.isGenerating) return;
+    clearTimeout(step3DebounceTimer);
+    step3DebounceTimer = setTimeout(() => {
+      apiGenerateLayout();
+    }, delay);
+  }
 
   // Step 3: Принципы застройки (СанПиН инсоляция, Двор без машин, ориентация)
   if (el.chkStep3Cascade) {
     el.chkStep3Cascade.addEventListener('change', () => {
       state.cascade_floors = el.chkStep3Cascade.checked;
+      triggerStep3LiveUpdate(100);
     });
   }
   if (el.chkStep3CarFree) {
     el.chkStep3CarFree.addEventListener('change', () => {
       state.car_free_courtyard = el.chkStep3CarFree.checked;
+      triggerStep3LiveUpdate(100);
     });
   }
   
@@ -3157,6 +4249,7 @@
     if (el.selectStep3RegionalNorm) {
       el.selectStep3RegionalNorm.addEventListener('change', (e) => {
         applyRegionalNorm(e.target.value);
+        triggerStep3LiveUpdate(100);
       });
     }
 
@@ -3164,6 +4257,7 @@
       el.chkStep3AllowZouit.checked = !!state.allow_parking_in_zouit;
       el.chkStep3AllowZouit.addEventListener('change', () => {
         state.allow_parking_in_zouit = el.chkStep3AllowZouit.checked;
+        triggerStep3LiveUpdate(100);
       });
     }
 
@@ -3178,63 +4272,251 @@
   if (el.chkStep3TowersMixed) {
     el.chkStep3TowersMixed.addEventListener('change', () => {
       state.allow_towers_in_mixed = el.chkStep3TowersMixed.checked;
+      triggerStep3LiveUpdate(100);
     });
   }
   if (el.selectStep3CourtOrient) {
     el.selectStep3CourtOrient.addEventListener('change', () => {
       state.courtyard_orientation = el.selectStep3CourtOrient.value;
+      triggerStep3LiveUpdate(100);
     });
   }
-  // --- Чипы выбора секций (preferred_section_ids: whitelist для генерации) ---
-  if (el.prefSectionsContainer) {
-    (async () => {
-      let catalog = [];
-      try {
-        const resp = await fetch('/api/library');
-        if (resp.ok) {
-          const data = await resp.json();
-          catalog = data.catalog || [];
-        }
-      } catch (_) {}
-      const catOrder = { MIDDLE: 0, CORNER: 1, END: 2, TOWER: 3 };
-      catalog
-        .slice()
-        .sort((a, b) => ((catOrder[a.category] ?? 9) - (catOrder[b.category] ?? 9)) || (a.width - b.width))
-        .forEach(sec => {
-          const chip = document.createElement('button');
-          chip.type = 'button';
-          chip.className = 'cat-pill';
-          chip.setAttribute('data-id', sec.id);
-          chip.textContent = (sec.code && sec.code !== sec.id) ? sec.code : sec.name;
-          chip.title = `${sec.name}: ${sec.width}×${sec.depth} м, этажи ${sec.min_floors}–${sec.max_floors}`;
-          chip.addEventListener('click', () => {
-            chip.classList.toggle('active');
-            const id = chip.getAttribute('data-id');
-            const idx = state.preferred_section_ids.indexOf(id);
-            if (idx >= 0) state.preferred_section_ids.splice(idx, 1);
-            else state.preferred_section_ids.push(id);
-            if (el.hintPrefSections) {
-              el.hintPrefSections.textContent = state.preferred_section_ids.length
-                ? `Выбрано: ${state.preferred_section_ids.length}`
-                : 'Все типы';
-            }
-          });
-          el.prefSectionsContainer.appendChild(chip);
-        });
-    })();
+  // --- Чипы выбора секций и Каталог типовых секций с численными высотами ---
+  function calcSectionHeight(sec, floors) {
+    if (!floors || floors <= 0) return 0;
+    const gh = (sec.has_commercial_ground && sec.ground_floor_height) ? sec.ground_floor_height : (sec.floor_height || 3.15);
+    const fh = sec.floor_height || 3.15;
+    if (sec.has_commercial_ground && floors > 1) {
+      return Number((gh + (floors - 1) * fh).toFixed(2));
+    }
+    return Number((floors * fh).toFixed(2));
   }
+
+  function refreshPrefSectionChips() {
+    if (!el.prefSectionsContainer) return;
+    el.prefSectionsContainer.innerHTML = '';
+    const catOrder = { MIDDLE: 0, CORNER: 1, END: 2, TOWER: 3, UNIVERSAL: 4 };
+    (state.sectionCatalog || [])
+      .slice()
+      .sort((a, b) => ((catOrder[a.category] ?? 9) - (catOrder[b.category] ?? 9)) || (a.width - b.width))
+      .forEach(sec => {
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'cat-pill';
+        if (state.preferred_section_ids.includes(sec.id)) chip.classList.add('active');
+        chip.setAttribute('data-id', sec.id);
+        chip.textContent = (sec.code && sec.code !== sec.id) ? sec.code : sec.name;
+        const minH = calcSectionHeight(sec, sec.min_floors);
+        const maxH = calcSectionHeight(sec, sec.max_floors);
+        chip.title = `${sec.name}: ${sec.width}×${sec.depth} м, этажи ${sec.min_floors}–${sec.max_floors} (${minH.toFixed(1)}–${maxH.toFixed(1)} м)`;
+        chip.addEventListener('click', () => {
+          chip.classList.toggle('active');
+          const id = chip.getAttribute('data-id');
+          const idx = state.preferred_section_ids.indexOf(id);
+          if (idx >= 0) state.preferred_section_ids.splice(idx, 1);
+          else state.preferred_section_ids.push(id);
+          if (el.hintPrefSections) {
+            el.hintPrefSections.textContent = state.preferred_section_ids.length
+              ? `Выбрано: ${state.preferred_section_ids.length}`
+              : 'Все типы';
+          }
+          triggerStep3LiveUpdate(150);
+        });
+        el.prefSectionsContainer.appendChild(chip);
+      });
+  }
+
+  function renderSectionsCatalogModal() {
+    if (!el.modalSectionsTbody) return;
+    el.modalSectionsTbody.innerHTML = '';
+    const catOrder = { TOWER: 0, MIDDLE: 1, CORNER: 2, END: 3, UNIVERSAL: 4 };
+    const catBadges = {
+      TOWER: '<span class="sec-badge-category badge-accent">🗼 Башня</span>',
+      MIDDLE: '<span class="sec-badge-category badge-neutral">🏢 Рядовая</span>',
+      CORNER: '<span class="sec-badge-category badge-neutral">↩️ Угловая</span>',
+      END: '<span class="sec-badge-category badge-neutral">↔️ Торцевая</span>',
+      UNIVERSAL: '<span class="sec-badge-category badge-ok">🌟 Универсал</span>',
+    };
+
+    const sorted = (state.sectionCatalog || []).slice().sort((a, b) => {
+      return (catOrder[a.category] ?? 9) - (catOrder[b.category] ?? 9) || (a.width - b.width);
+    });
+
+    sorted.forEach(sec => {
+      const tr = document.createElement('tr');
+      tr.setAttribute('data-sec-id', sec.id);
+
+      const minH = calcSectionHeight(sec, sec.min_floors);
+      const maxH = calcSectionHeight(sec, sec.max_floors);
+
+      tr.innerHTML = `
+        <td class="sec-cell-num" style="font-weight:700; color:var(--text-primary);">
+          ${sec.code || sec.id}
+        </td>
+        <td title="${sec.name}">
+          ${catBadges[sec.category] || sec.category}
+        </td>
+        <td class="sec-cell-num" style="color:var(--text-secondary);">
+          ${sec.width} × ${sec.depth} м
+        </td>
+        <td style="text-align:right;">
+          <input type="number" class="sec-input-floors sec-input-min-floors" data-id="${sec.id}"
+            value="${sec.min_floors}" min="1" max="75" step="1" title="Минимальная этажность">
+        </td>
+        <td style="text-align:right;">
+          <input type="number" class="sec-input-floors sec-input-max-floors" data-id="${sec.id}"
+            value="${sec.max_floors}" min="1" max="75" step="1" title="Максимальная этажность">
+        </td>
+        <td class="sec-cell-num sec-cell-min-h" style="text-align:right; font-weight:600; color:var(--text-primary);">
+          ${minH.toFixed(1)} м
+        </td>
+        <td class="sec-cell-num sec-cell-max-h" style="text-align:right; font-weight:600; color:var(--text-primary);">
+          ${maxH.toFixed(1)} м
+        </td>
+        <td class="sec-cell-num" style="color:var(--text-secondary);">
+          ${sec.ground_floor_height || 4.2} / ${sec.floor_height || 3.15} м
+        </td>
+        <td class="sec-cell-num">
+          <b>${sec.floor_area}</b> / <span style="color:var(--text-secondary);">${sec.living_area_per_floor || '—'} м²</span>
+        </td>
+        <td class="sec-cell-num" style="color:var(--text-secondary);">
+          <b>${sec.total_apartments_per_floor || 0}</b> кв.
+        </td>
+      `;
+
+      // Live updates of heights when numbers are typed
+      const inpMin = tr.querySelector('.sec-input-min-floors');
+      const inpMax = tr.querySelector('.sec-input-max-floors');
+      const cellMinH = tr.querySelector('.sec-cell-min-h');
+      const cellMaxH = tr.querySelector('.sec-cell-max-h');
+
+      function updateRowHeights() {
+        const minVal = parseInt(inpMin.value, 10);
+        const maxVal = parseInt(inpMax.value, 10);
+        if (!isNaN(minVal) && minVal > 0) {
+          cellMinH.textContent = `${calcSectionHeight(sec, minVal).toFixed(1)} м`;
+        }
+        if (!isNaN(maxVal) && maxVal > 0) {
+          cellMaxH.textContent = `${calcSectionHeight(sec, maxVal).toFixed(1)} м`;
+        }
+      }
+
+      function sanitizeFloorsOnBlur() {
+        let minF = parseInt(inpMin.value, 10);
+        let maxF = parseInt(inpMax.value, 10);
+        if (isNaN(minF) || minF < 1) {
+          minF = 1;
+          inpMin.value = minF;
+        }
+        if (isNaN(maxF) || maxF < 1) {
+          maxF = minF;
+          inpMax.value = maxF;
+        }
+        if (maxF < minF) {
+          maxF = minF;
+          inpMax.value = maxF;
+        }
+        updateRowHeights();
+      }
+
+      inpMin.addEventListener('input', updateRowHeights);
+      inpMax.addEventListener('input', updateRowHeights);
+      inpMin.addEventListener('change', sanitizeFloorsOnBlur);
+      inpMax.addEventListener('change', sanitizeFloorsOnBlur);
+
+      el.modalSectionsTbody.appendChild(tr);
+    });
+  }
+
+  function openSectionsCatalogModal() {
+    renderSectionsCatalogModal();
+    if (el.modalSectionsTable) el.modalSectionsTable.style.display = 'flex';
+  }
+  function closeSectionsCatalogModal() {
+    if (el.modalSectionsTable) el.modalSectionsTable.style.display = 'none';
+  }
+
+  if (el.btnHeaderSections) el.btnHeaderSections.addEventListener('click', openSectionsCatalogModal);
+  if (el.btnOpenSectionsModal) el.btnOpenSectionsModal.addEventListener('click', openSectionsCatalogModal);
+  if (el.modalSectionsClose) el.modalSectionsClose.addEventListener('click', closeSectionsCatalogModal);
+  if (el.btnModalSectionsCancel) el.btnModalSectionsCancel.addEventListener('click', closeSectionsCatalogModal);
+  if (el.modalSectionsTable) {
+    el.modalSectionsTable.addEventListener('click', e => {
+      if (e.target === el.modalSectionsTable) closeSectionsCatalogModal();
+    });
+  }
+
+  if (el.btnModalSectionsSave) {
+    el.btnModalSectionsSave.addEventListener('click', async () => {
+      const updates = [];
+      const rows = el.modalSectionsTbody ? el.modalSectionsTbody.querySelectorAll('tr[data-sec-id]') : [];
+      rows.forEach(tr => {
+        const id = tr.getAttribute('data-sec-id');
+        const inpMin = tr.querySelector('.sec-input-min-floors');
+        const inpMax = tr.querySelector('.sec-input-max-floors');
+        if (id && inpMin && inpMax) {
+          let minF = parseInt(inpMin.value, 10) || 1;
+          let maxF = parseInt(inpMax.value, 10) || minF;
+          if (maxF < minF) maxF = minF;
+          updates.push({ id, min_floors: minF, max_floors: maxF });
+        }
+      });
+
+      if (el.modalSectionsStatus) el.modalSectionsStatus.textContent = '⏳ Сохранение параметров секций...';
+      try {
+        const resp = await fetch('/api/library/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sections: updates }),
+        });
+        if (resp.ok) {
+          const res = await resp.json();
+          if (res.catalog) state.sectionCatalog = res.catalog;
+          refreshPrefSectionChips();
+          showToast('✅ Параметры и высотности секций успешно сохранены!');
+          closeSectionsCatalogModal();
+        } else {
+          showToast('❌ Ошибка сохранения параметров секций');
+        }
+      } catch (err) {
+        showToast(`❌ Ошибка сети: ${err.message}`);
+      } finally {
+        if (el.modalSectionsStatus) el.modalSectionsStatus.textContent = 'Все изменения автоматически сохраняются в библиотеку и влияют на генерацию';
+      }
+    });
+  }
+
+  // Загрузка каталога секций при инициализации
+  (async () => {
+    try {
+      const resp = await fetch('/api/library');
+      if (resp.ok) {
+        const data = await resp.json();
+        state.sectionCatalog = data.catalog || [];
+        refreshPrefSectionChips();
+      }
+    } catch (_) {}
+  })();
   if (el.sliderStep3Floors) {
     el.sliderStep3Floors.addEventListener('input', () => {
       state.max_floors = parseInt(el.sliderStep3Floors.value, 10);
       if (el.labelStep3Floors) el.labelStep3Floors.textContent = `${state.max_floors} эт.`;
       if (el.valStep3FloorsTag) el.valStep3FloorsTag.textContent = `${state.max_floors} эт. (${state.max_floors * 3} м)`;
       if (el.step3CardFloors) el.step3CardFloors.textContent = `${state.max_floors} эт. (${state.max_floors * 3} м)`;
+      triggerStep3LiveUpdate(350);
+    });
+    el.sliderStep3Floors.addEventListener('change', () => {
+      triggerStep3LiveUpdate(0);
     });
   }
   if (el.sliderStep3Setback) {
     el.sliderStep3Setback.addEventListener('input', () => {
       state.boundary_setback = parseFloat(el.sliderStep3Setback.value);
       if (el.labelStep3Setback) el.labelStep3Setback.textContent = `${state.boundary_setback.toFixed(1)} м`;
+      triggerStep3LiveUpdate(350);
+    });
+    el.sliderStep3Setback.addEventListener('change', () => {
+      triggerStep3LiveUpdate(0);
     });
   }
 
@@ -3243,6 +4525,10 @@
       const val = parseInt(el.sliderStep3MaxSections.value, 10);
       state.max_sections = val;
       if (el.labelStep3MaxSections) el.labelStep3MaxSections.textContent = `${val} секций`;
+      triggerStep3LiveUpdate(350);
+    });
+    el.sliderStep3MaxSections.addEventListener('change', () => {
+      triggerStep3LiveUpdate(0);
     });
   }
 
@@ -3288,16 +4574,24 @@
       boundary_setback: state.boundary_setback != null ? state.boundary_setback : 6.0,
       red_line_setback: state.red_line_setback != null ? state.red_line_setback : 5.0,
       target_floors: state.max_floors || 14,
+      max_building_height_m: state.max_height_m || null,
       floor_height: 3.0,
       cascade_floors: state.cascade_floors !== false,
       asymmetric_wings: state.asymmetric_wings !== false,
       car_free_courtyard: state.car_free_courtyard !== false,
       only_ground_parking: !!state.only_ground_parking,
-      typology: state.typology || 'AUTO',
+      typology: state.typology === 'SECTIONAL' ? 'LINEAR' : (state.typology || 'AUTO'),
       courtyard_orientation: state.courtyard_orientation || 'SOUTH',
       preferred_section_ids: (state.preferred_section_ids && state.preferred_section_ids.length)
         ? state.preferred_section_ids.slice()
         : null,
+      section_overrides: (() => {
+        const ovr = {};
+        (state.sectionCatalog || []).forEach(s => {
+          ovr[s.id] = { min_floors: s.min_floors, max_floors: s.max_floors };
+        });
+        return ovr;
+      })(),
       max_far: state.max_far || 2.5,
       max_bcr: (state.max_bcr ? state.max_bcr / 100.0 : 0.4),
       enable_red_line: state.enable_red_line || false,
@@ -3314,6 +4608,16 @@
       allow_parking_in_zouit: !!state.allow_parking_in_zouit,
       allow_towers_in_mixed: state.allow_towers_in_mixed !== false,
       regional_norm_id: state.regional_norm_id || 'russia_sp42',
+      surrounding_height_overrides: state.surrounding_height_overrides || {},
+      insolation: {
+        enabled: document.getElementById('chk-insolation-enable') ? document.getElementById('chk-insolation-enable').checked : true,
+        norm_hours: parseFloat(document.getElementById('select-insolation-zone')?.value || 2.0),
+        allow_intermittent: document.getElementById('chk-insolation-allow-intermittent') ? document.getElementById('chk-insolation-allow-intermittent').checked : true,
+        include_surroundings: document.getElementById('chk-insolation-include-surroundings') ? document.getElementById('chk-insolation-include-surroundings').checked : true,
+        default_surrounding_height: parseFloat(document.getElementById('input-insolation-surr-height')?.value || 15.0),
+        grid_step_m: parseFloat(document.getElementById('select-insolation-grid-step')?.value || 3.0),
+        auto_cascade_reduction: document.getElementById('chk-insolation-auto-cascade') ? document.getElementById('chk-insolation-auto-cascade').checked : true,
+      },
       respect_norms: true,
       explore_angles: (overrides.gen_mode === 'maximize'),
       explore_all_typologies: false,
@@ -3393,6 +4697,96 @@
     }, 2200);
   }
 
+  // --- STEP 3: MASTERPLAN CALCULATION PROGRESS INDICATOR ---
+  // ponytail: многостадийный понятный индикатор расчета без тяжелых библиотек — upgrade path: стриминг SSE шагов бэкенда
+  let calcProgressInterval = null;
+  let calcProgressTimeout = null;
+
+  function setCalcProgressStage(pct, activeStep, title, subtitle) {
+    const bar = document.getElementById('calc-progress-bar-fill');
+    const badge = document.getElementById('calc-progress-pct-badge');
+    const txtTitle = document.getElementById('canvas-loading-text');
+    const txtSub = document.getElementById('canvas-loading-subtext');
+
+    if (bar) bar.style.width = `${pct}%`;
+    if (badge) badge.textContent = `${pct}%`;
+    if (txtTitle && title) txtTitle.textContent = title;
+    if (txtSub && subtitle) txtSub.textContent = subtitle;
+
+    for (let i = 1; i <= 5; i++) {
+      const row = document.getElementById(`calc-step-${i}`);
+      if (!row) continue;
+      const icon = row.querySelector('.calc-step-icon');
+      row.classList.remove('done', 'active', 'pending');
+      if (i < activeStep) {
+        row.classList.add('done');
+        if (icon) icon.textContent = '✓';
+      } else if (i === activeStep) {
+        row.classList.add('active');
+        if (icon) icon.textContent = '⏳';
+      } else {
+        row.classList.add('pending');
+        if (icon) icon.textContent = '○';
+      }
+    }
+  }
+
+  function startCalcProgressIndicator(isMaximize) {
+    if (calcProgressInterval) clearInterval(calcProgressInterval);
+    if (calcProgressTimeout) clearTimeout(calcProgressTimeout);
+
+    if (el.canvasLoadingOverlay) {
+      el.canvasLoadingOverlay.style.display = 'flex';
+      el.canvasLoadingOverlay.style.opacity = '1';
+    }
+
+    if (isMaximize) {
+      setCalcProgressStage(10, 1, 'Поиск оптимального решения...', 'Перебор этажности и конфигураций');
+    } else {
+      setCalcProgressStage(15, 1, 'Размещение корпусов...', 'Трассировка осей и противопожарные разрывы');
+    }
+
+    const startTime = Date.now();
+    calcProgressInterval = setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      if (elapsed < 800) {
+        setCalcProgressStage(22, 1, 'Размещение корпусов...', 'Трассировка осей и противопожарные разрывы');
+      } else if (elapsed < 3500) {
+        const p = Math.min(65, 30 + Math.round(((elapsed - 800) / 2700) * 35));
+        setCalcProgressStage(p, 2, 'Расчет инсоляции СанПиН 1.2.3685-21...', 'Трассировка солнечных лучей и калибровка этажей');
+      } else if (elapsed < 6500) {
+        const p = Math.min(82, 65 + Math.round(((elapsed - 3500) / 3000) * 17));
+        setCalcProgressStage(p, 3, 'Влияние на окружающую застройку...', 'Анализ затенения окон и фасадов соседей');
+      } else {
+        const p = Math.min(89, 82 + Math.round(((elapsed - 6500) / 4000) * 7));
+        setCalcProgressStage(p, 4, 'Баланс территории и парковок...', 'Расчет машиномест, озеленения и ТЭП');
+      }
+    }, 150);
+  }
+
+  function stopCalcProgressIndicator(success = true) {
+    if (calcProgressInterval) {
+      clearInterval(calcProgressInterval);
+      calcProgressInterval = null;
+    }
+    if (success) {
+      setCalcProgressStage(100, 6, '✓ Расчет завершен', 'Мастер-план и ТЭП готовы');
+      calcProgressTimeout = setTimeout(() => {
+        if (el.canvasLoadingOverlay) {
+          el.canvasLoadingOverlay.style.opacity = '0';
+          setTimeout(() => {
+            el.canvasLoadingOverlay.style.display = 'none';
+            el.canvasLoadingOverlay.style.opacity = '1';
+          }, 200);
+        }
+      }, 350);
+    } else {
+      if (el.canvasLoadingOverlay) {
+        el.canvasLoadingOverlay.style.display = 'none';
+      }
+    }
+  }
+
   // --- STEP 3: API CALL TO GENERATE LAYOUT ---
   let optProgressInterval = null;
 
@@ -3400,15 +4794,12 @@
     const isMaximize = options.gen_mode === 'maximize';
     state.isGenerating = true;
     try {
-      if (el.canvasLoadingOverlay) {
-        el.canvasLoadingOverlay.style.display = 'flex';
-        if (el.canvasLoadingText) {
-          el.canvasLoadingText.textContent = isMaximize 
-            ? '⚡ Оптимизация Top-1: подбор лучшей сетки углов и этажей по СП 42...' 
-            : 'Расчет застройки, инсоляции и ТЭП...';
-        }
+      startCalcProgressIndicator(isMaximize);
+
+      if (el.btnGenerateLayout) {
+        el.btnGenerateLayout.disabled = true;
+        el.btnGenerateLayout.innerHTML = '<span class="loading-spinner" style="width:13px; height:13px; border-width:2px; display:inline-block; vertical-align:middle; margin-right:6px;"></span> Идет расчет застройки...';
       }
-      if (el.btnGenerateLayout) el.btnGenerateLayout.disabled = true;
       if (el.btnRunMaximize) {
         el.btnRunMaximize.disabled = true;
         el.btnRunMaximize.textContent = '⏳ Оптимизация по закону...';
@@ -3443,6 +4834,17 @@
       const data = await res.json();
 
       if (optProgressInterval) clearInterval(optProgressInterval);
+      if (calcProgressInterval) {
+        clearInterval(calcProgressInterval);
+        calcProgressInterval = null;
+      }
+
+      // Переключаем на шаг 5 только после реального получения данных от сервера
+      setCalcProgressStage(95, 5, 'Сборка 3D-модели...', 'Генерация фасадов и визуализация');
+
+      renderGeneratedLayout(data);
+      setCanvasView('3d');
+
       if (isMaximize) {
         const bestGfa = (data && data.tep) ? data.tep.gfa : null;
         const bestFloors = (data && data.buildings && data.buildings.length)
@@ -3451,19 +4853,20 @@
         finishOptimizationIndicator(bestGfa, bestFloors);
       }
 
-      renderGeneratedLayout(data);
-      setCanvasView('3d');
+      setTimeout(() => {
+        stopCalcProgressIndicator(true);
+      }, 250);
     } catch (err) {
       if (optProgressInterval) clearInterval(optProgressInterval);
       if (el.optProgressPanel) el.optProgressPanel.style.display = 'none';
+      stopCalcProgressIndicator(false);
       console.error('Error generating layout:', err);
       alert('Ошибка при расчете застройки: ' + err.message);
     } finally {
       state.isGenerating = false;
-      if (el.canvasLoadingOverlay) el.canvasLoadingOverlay.style.display = 'none';
       if (el.btnGenerateLayout) {
         el.btnGenerateLayout.disabled = false;
-        el.btnGenerateLayout.textContent = '⚡ Пересчитать застройку';
+        el.btnGenerateLayout.innerHTML = '⚡ Пересчитать застройку';
       }
       if (el.btnRunMaximize) {
         el.btnRunMaximize.disabled = false;
@@ -3477,7 +4880,7 @@
     try {
       if (el.btnCalcVariants) {
         el.btnCalcVariants.disabled = true;
-        el.btnCalcVariants.textContent = '⏳ Расчет...';
+        el.btnCalcVariants.innerHTML = '<span class="loading-spinner" style="width:11px; height:11px; border-width:2px; display:inline-block; vertical-align:middle; margin-right:4px;"></span> Расчет...';
       }
       const payload = buildGeneratePayload();
       const res = await fetch('/api/variants', {
@@ -3491,6 +4894,7 @@
       }
       const data = await res.json();
       if (data.variants && data.variants.length > 0) {
+        state.lastVariantsMatrix = data.variants;
         renderVariantsMatrix(data.variants);
       }
     } catch (err) {
@@ -3499,7 +4903,7 @@
     } finally {
       if (el.btnCalcVariants) {
         el.btnCalcVariants.disabled = false;
-        el.btnCalcVariants.textContent = '⚡ Рассчитать';
+        el.btnCalcVariants.innerHTML = '⚡ Рассчитать';
       }
     }
   }
@@ -3508,10 +4912,10 @@
   function renderVariantsMatrix(variants) {
     if (!el.tbodyVariantsMatrix) return;
     if (!variants || !variants.length) {
-      el.tbodyVariantsMatrix.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">Нажмите «Рассчитать» для матрицы сценариев</td></tr>';
+      el.tbodyVariantsMatrix.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">Нажмите «⚡ Рассчитать» для анализа этажей</td></tr>';
       return;
     }
-    const currentFloors = state.max_floors || 14;
+    const currentFloors = (state.currentScenario && state.currentScenario.floors) || state.max_floors || 14;
     el.tbodyVariantsMatrix.innerHTML = variants.map(v => {
       const isActive = (v.floors === currentFloors);
       const okBadge = v.normative_ok 
@@ -3544,6 +4948,66 @@
         apiGenerateLayout();
       });
     });
+  }
+
+  // --- 3D SCENARIO VARIANTS DOCK ---
+  // ponytail: компактный переключатель сценариев в 3D без громоздких оберток — upgrade path: поддержка анимации камеры при смене сценария
+  function render3dScenariosDock(scenarios, activeIdx = 0) {
+    if (!el.dock3dScenarios || !el.dockScenarioButtons) return;
+    if (!scenarios || scenarios.length <= 1) {
+      el.dock3dScenarios.style.display = 'none';
+      return;
+    }
+    el.dock3dScenarios.style.display = 'flex';
+    el.dockScenarioButtons.innerHTML = scenarios.map((v, i) => {
+      const isActive = (i === activeIdx);
+      const fl = v.floors || (v.tep && v.tep.max_floors) || state.max_floors || 14;
+      const gfa = v.tep ? (v.tep.gfa || v.tep.total_gfa) : (v.gfa || 0);
+      const isNormOk = v.normative_ok !== false && (!v.norm_checks || Object.values(v.norm_checks).every(c => c.ok !== false));
+      const statusText = isNormOk ? 'В норме' : 'Превышение норматива';
+      const titleAttr = `Вариант ${i + 1}: GFA ${fmtNum(gfa)} м² (${statusText})`;
+      return `<button type="button" class="dock-variant-btn ${isActive ? 'active' : ''}" data-idx="${i}" title="${escapeHtml(titleAttr)}">Вариант ${i + 1}</button>`;
+    }).join('');
+
+    el.dockScenarioButtons.querySelectorAll('.dock-variant-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const idx = parseInt(btn.dataset.idx, 10);
+        switchScenarioVariant(idx);
+      });
+    });
+  }
+
+  function update3dScenariosDockActive(activeIdx) {
+    if (!el.dockScenarioButtons) return;
+    el.dockScenarioButtons.querySelectorAll('.dock-variant-btn').forEach(btn => {
+      const idx = parseInt(btn.dataset.idx, 10);
+      btn.classList.toggle('active', idx === activeIdx);
+    });
+  }
+
+  function switchScenarioVariant(idx) {
+    if (!state.currentScenarios || !state.currentScenarios[idx]) return;
+    state.activeVariantIndex = idx;
+    const targetScenario = state.currentScenarios[idx];
+
+    // Рендерим выбранный сценарий (флаг true предотвращает перезапись state.currentScenarios)
+    renderGeneratedLayout(targetScenario, true);
+
+    // Обновляем визуальный активный статус кнопок в доке
+    update3dScenariosDockActive(idx);
+
+    // Синхронизируем строку матрицы этажности справа, если матрица была рассчитана
+    if (state.lastVariantsMatrix) {
+      renderVariantsMatrix(state.lastVariantsMatrix);
+    }
+
+    // Сохраняем активный вариант на сервере для экспортов (DXF, 3D, отчет)
+    fetch('/api/activate-variant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index: idx })
+    }).catch(err => console.warn('Не удалось активировать сценарий на сервере:', err));
   }
 
   // --- STEP 3: RENDER APARTMENTS BREAKDOWN ---
@@ -3611,6 +5075,148 @@
     }
   }
 
+  // --- STEP 3: RENDER INSOLATION RESULTS (САНПИН 1.2.3685-21) ---
+  function renderInsolationResults(insol) {
+    const rateEl = document.getElementById('insolation-stat-rate');
+    const tepRateEl = document.getElementById('tep-insol-pct');
+    const ptsEl = document.getElementById('insolation-stat-pts');
+    const badgeCalc = document.getElementById('badge-insolation-calc-status');
+    const badgeRight = document.getElementById('badge-insol-status');
+    const descEl = document.getElementById('insolation-stat-desc');
+    const normEl = document.getElementById('tep-insol-norm');
+    const dateEl = document.getElementById('tep-insol-date');
+    const surrEl = document.getElementById('tep-insol-surr');
+    const contEl = document.getElementById('insolation-stat-cont');
+    const intermEl = document.getElementById('insolation-stat-interm');
+    const tepIntermEl = document.getElementById('tep-insol-interm');
+    const tepSurrImpactEl = document.getElementById('tep-insol-surr-impact');
+
+    const badgeSurrImpact = document.getElementById('badge-surr-impact-status');
+    const descSurrImpact = document.getElementById('surr-impact-desc');
+    const wrapSurrImpact = document.getElementById('surr-impact-table-wrap');
+    const tbodySurrImpact = document.getElementById('surr-impact-tbody');
+
+    if (!insol || insol.compliance_rate_percent == null) {
+      if (rateEl) rateEl.textContent = '— %';
+      if (tepRateEl) tepRateEl.textContent = '— %';
+      if (ptsEl) ptsEl.textContent = '—';
+      if (contEl) contEl.textContent = 'Непрерывно (≥2ч): —';
+      if (intermEl) intermEl.textContent = 'Прерывисто: —';
+      if (tepIntermEl) tepIntermEl.textContent = '—';
+      if (tepSurrImpactEl) tepSurrImpactEl.textContent = '—';
+      if (badgeCalc) {
+        badgeCalc.textContent = 'Не рассчитано';
+        badgeCalc.className = 'badge-status';
+      }
+      if (badgeRight) {
+        badgeRight.textContent = '—';
+        badgeRight.className = 'badge-status';
+      }
+      if (wrapSurrImpact) wrapSurrImpact.style.display = 'none';
+      return;
+    }
+
+    const rate = insol.compliance_rate_percent;
+    const isOk = !!insol.sanpin_compliant;
+    const reqH = insol.required_hours || 2.0;
+    const contPts = insol.continuous_compliant_points || 0;
+    const intermPts = insol.intermittent_compliant_points || 0;
+    const totalPts = insol.total_facade_points || 0;
+
+    if (rateEl) {
+      rateEl.textContent = `${rate}%`;
+      rateEl.style.color = isOk ? 'var(--success)' : 'var(--danger)';
+    }
+    if (tepRateEl) {
+      tepRateEl.textContent = `${rate}%`;
+      tepRateEl.style.color = isOk ? 'var(--success)' : 'var(--danger)';
+    }
+    if (ptsEl) {
+      ptsEl.textContent = `${insol.compliant_points || 0} / ${totalPts}`;
+    }
+    if (contEl) {
+      contEl.textContent = `Непрерывно (≥${reqH}ч): ${contPts} яч.`;
+    }
+    if (intermEl) {
+      intermEl.textContent = `Прерывисто: ${intermPts} яч.`;
+    }
+    if (tepIntermEl) {
+      const pct = totalPts > 0 ? ((intermPts / totalPts) * 100).toFixed(0) : '0';
+      tepIntermEl.textContent = `${intermPts} яч. (${pct}%)`;
+    }
+
+    if (badgeCalc) {
+      badgeCalc.textContent = isOk ? 'Норма выполнена' : 'Есть дефицит';
+      badgeCalc.className = isOk ? 'badge-status badge-ok' : 'badge-status badge-warn';
+    }
+    if (badgeRight) {
+      badgeRight.textContent = isOk ? 'В норме' : 'Внимание';
+      badgeRight.className = isOk ? 'badge-status badge-ok' : 'badge-status badge-warn';
+    }
+    if (normEl) {
+      normEl.textContent = `≥ ${reqH.toFixed(1)} ч (или прерыв. ≥ 2.5 ч)`;
+    }
+    if (dateEl && insol.calculation_date) {
+      dateEl.textContent = insol.calculation_date;
+    }
+    if (surrEl) {
+      surrEl.textContent = 'Учтено (OSM)';
+    }
+    if (descEl) {
+      if (isOk) {
+        descEl.innerHTML = `<span style="color:var(--success); font-weight:600;">✓ Требования СанПиН 1.2.3685-21 выполнены.</span> Непрерывная или прерывистая норма обеспечена на ${rate}% фасадов (${contPts} непрер. + ${intermPts} прерыв.).`;
+      } else {
+        descEl.innerHTML = `<span style="color:var(--danger); font-weight:600;">⚠ Теневой дефицит:</span> ${Number(100 - rate).toFixed(1)}% фасадов затенены. Применено каскадное понижение южных крыльев.`;
+      }
+    }
+
+    // Влияние на окружающую застройку (затенение соседних домов)
+    const surrImpact = insol.surrounding_impact;
+    if (surrImpact) {
+      const isSurrOk = surrImpact.sanpin_surroundings_compliant !== false && (surrImpact.critical_violations_count || 0) === 0;
+      if (tepSurrImpactEl) {
+        tepSurrImpactEl.textContent = isSurrOk ? 'Норма соблюдена' : `Дефицит (${surrImpact.critical_violations_count} тчк)`;
+        tepSurrImpactEl.style.color = isSurrOk ? 'var(--success)' : 'var(--danger)';
+      }
+      if (badgeSurrImpact) {
+        badgeSurrImpact.textContent = isSurrOk ? 'Норма соблюдена' : 'Есть дефицит';
+        badgeSurrImpact.className = isSurrOk ? 'badge-status badge-ok' : 'badge-status badge-warn';
+      }
+      if (descSurrImpact && surrImpact.summary_text) {
+        descSurrImpact.textContent = surrImpact.summary_text;
+      }
+      if (tbodySurrImpact && surrImpact.buildings && surrImpact.buildings.length > 0) {
+        tbodySurrImpact.innerHTML = surrImpact.buildings.map(b => {
+          const isCrit = b.sanpin_status === 'CRITICAL_DEFICIT';
+          const isShaded = b.is_shaded_by_project;
+          const statBadge = isCrit
+            ? '<span style="color:#ef4444;font-weight:700;">Дефицит</span>'
+            : isShaded
+              ? '<span style="color:#f59e0b;font-weight:600;">Тень</span>'
+              : '<span style="color:#10b981;">Норма</span>';
+          const ovrMark = b.is_overridden ? ' <span title="Высота изменена вручную">✏️</span>' : '';
+          return `
+            <tr>
+              <td style="padding:4px 6px;max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${b.name || b.id}">${b.name || b.id}${ovrMark}</td>
+              <td style="padding:4px 6px;text-align:right;">${b.height_m}м (${b.levels}эт)</td>
+              <td style="padding:4px 6px;text-align:right;color:${b.delta_hours < -0.1 ? '#ef4444' : 'inherit'};font-family:var(--font-mono);">${b.delta_hours > 0 ? '+' : ''}${b.delta_hours}ч</td>
+              <td style="padding:4px 6px;text-align:center;">${statBadge}</td>
+            </tr>
+          `;
+        }).join('');
+        if (wrapSurrImpact) wrapSurrImpact.style.display = 'block';
+      } else if (wrapSurrImpact) {
+        wrapSurrImpact.style.display = 'none';
+      }
+    } else {
+      if (tepSurrImpactEl) {
+        tepSurrImpactEl.textContent = 'Норма соблюдена';
+        tepSurrImpactEl.style.color = 'var(--success)';
+      }
+      if (wrapSurrImpact) wrapSurrImpact.style.display = 'none';
+    }
+  }
+
   // --- STEP 3: SECTION INSPECTOR ---
   function renderSectionInspector(secId) {
     if (!el.sectionInspectorCard) return;
@@ -3637,7 +5243,9 @@
     if (el.inspSecCategory) el.inspSecCategory.textContent = sec.category_label || sec.category || 'Секция';
     if (el.inspSecBuilding) el.inspSecBuilding.textContent = sec.building_name || '—';
     if (el.inspSecType) el.inspSecType.textContent = `${sec.type_name || ''} (${sec.type_id || ''})`;
-    if (el.inspSecFloors) el.inspSecFloors.textContent = `${sec.floors} эт. (${sec.height_m || (sec.floors * 3.0).toFixed(1)} м)`;
+    const catSec = (state.sectionCatalog || []).find(c => c.id === (sec.type_id || sec.id) || c.code === (sec.type_name || ''));
+    const rangeText = catSec ? ` [лимит: ${catSec.min_floors}–${catSec.max_floors} эт.]` : '';
+    if (el.inspSecFloors) el.inspSecFloors.textContent = `${sec.floors} эт. (${sec.height_m || (sec.floors * 3.0).toFixed(1)} м)${rangeText}`;
     if (el.inspSecGfa) {
       const liv = sec.residential_area || Math.round((sec.gfa || 0) * 0.7);
       el.inspSecGfa.textContent = `${fmtNum(sec.gfa || 0)} м² (жил. ~${fmtNum(liv)} м²)`;
@@ -3661,9 +5269,20 @@
   }
 
   // --- STEP 3: RENDER GENERATED 2D/3D LAYOUT & TEP ---
-  function renderGeneratedLayout(data) {
+  function renderGeneratedLayout(data, isVariantSwitch = false) {
     if (!data) return;
     state.currentScenario = data;
+
+    if (!isVariantSwitch) {
+      state.currentScenarios = (data.variants && data.variants.length > 0) ? data.variants : [data];
+      state.activeVariantIndex = data.active_variant_index || 0;
+      render3dScenariosDock(state.currentScenarios, state.activeVariantIndex);
+      if (!state.lastVariantsMatrix && el.tbodyVariantsMatrix) {
+        el.tbodyVariantsMatrix.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 12px;">Нажмите «⚡ Рассчитать» для анализа этажей</td></tr>';
+      }
+    } else {
+      update3dScenariosDockActive(state.activeVariantIndex);
+    }
 
     // 1. Update verification card
     const bCount = (data.buildings || []).length;
@@ -3779,6 +5398,7 @@
     if (el.svgRoadHandlesLayer) {
       el.svgRoadHandlesLayer.innerHTML = '';
     }
+    renderEntryPointsOnSvg();
 
     // 7. Render 2D SVG Layers
     if (el.svgParkingLayer) {
@@ -3843,9 +5463,14 @@
     // 8. Sanitary and TKO
     renderSanitaryAndTko(data.sanitary || {});
 
-    // 9. Variants Matrix & Apartments Breakdown
-    renderVariantsMatrix(data.variants || []);
+    // 8.5. Insolation (СанПиН 1.2.3685-21)
+    renderInsolationResults(data.insolation || {});
+
+    // 9. Apartments Breakdown & Variants Matrix Sync
     renderApartmentsBreakdown(data.buildings || []);
+    if (state.lastVariantsMatrix) {
+      renderVariantsMatrix(state.lastVariantsMatrix);
+    }
 
     // 10. Update 3D Viewer iframe
     if (data.viewer_3d_data) {
@@ -3919,7 +5544,7 @@
     } catch (_) {}
   }
 
-  // 3D Viewer Message Handler (Ready & Section Clicks & Generate Trigger)
+  // 3D Viewer Message Handler (Ready & Section Clicks & Generate Trigger & Surrounding Overrides)
   window.addEventListener('message', (e) => {
     if (!e.data) return;
     if (e.data.type === 'viewer3dReady') {
@@ -3929,8 +5554,39 @@
       apiGenerateLayout();
     } else if (e.data.type === 'section_click' && e.data.section_id) {
       renderSectionInspector(e.data.section_id);
+    } else if (e.data.type === 'surrounding_height_override') {
+      const bId = e.data.id;
+      const newH = parseFloat(e.data.height);
+      state.surrounding_height_overrides = state.surrounding_height_overrides || {};
+      state.surrounding_height_overrides[bId] = newH;
+      updateSurroundingOverridesBadge();
+      if (e.data.recalculate) {
+        setStep(3);
+        apiGenerateLayout();
+      }
     }
   });
+
+  function updateSurroundingOverridesBadge() {
+    const badgeText = document.getElementById('surr-overrides-count-text');
+    const resetBtn = document.getElementById('btn-reset-surr-overrides');
+    const count = Object.keys(state.surrounding_height_overrides || {}).length;
+    if (badgeText) {
+      badgeText.textContent = `Ручных правок высоты: ${count}`;
+    }
+    if (resetBtn) {
+      resetBtn.style.display = count > 0 ? 'inline-block' : 'none';
+    }
+  }
+
+  const btnResetSurr = document.getElementById('btn-reset-surr-overrides');
+  if (btnResetSurr) {
+    btnResetSurr.addEventListener('click', () => {
+      state.surrounding_height_overrides = {};
+      updateSurroundingOverridesBadge();
+      apiGenerateLayout();
+    });
+  }
 
     // Orientation & Setbacks (Step 1)
   if (el.sliderRotation) {
@@ -4028,10 +5684,16 @@
     if (el.cadZoomControls) {
       el.cadZoomControls.style.display = viewKey === 'svg' ? 'flex' : 'none';
     }
+    if (el.canvasBasemapBar) {
+      el.canvasBasemapBar.style.display = viewKey === 'svg' ? 'flex' : 'none';
+    }
 
-    if (viewKey === 'svg' && (state.currentScenario || state.currentData)) {
-      const vb = (state.currentScenario && state.currentScenario.svg_viewbox) || (state.currentData && state.currentData.svg_viewbox) || '0 0 1000 700';
-      fitSvgToViewport(vb);
+    if (viewKey === 'svg') {
+      updateSvgBasemap();
+      if (state.currentScenario || state.currentData) {
+        const vb = (state.currentScenario && state.currentScenario.svg_viewbox) || (state.currentData && state.currentData.svg_viewbox) || '0 0 1000 700';
+        fitSvgToViewport(vb);
+      }
     }
 
     if (viewKey === '3d') {
@@ -4050,6 +5712,29 @@
   if (el.tabCanvasOsm) el.tabCanvasOsm.addEventListener('click', () => setCanvasView('osm'));
   if (el.tabCanvasSvg) el.tabCanvasSvg.addEventListener('click', () => setCanvasView('svg'));
   if (el.tabCanvas3d) el.tabCanvas3d.addEventListener('click', () => setCanvasView('3d'));
+
+  // Canvas Basemap Switcher Handlers
+  const basemapBtns = [el.btnBmOsm, el.btnBmSatellite, el.btnBmLight, el.btnBmNone].filter(Boolean);
+  basemapBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const bm = btn.dataset.basemap;
+      state.activeBasemap = bm;
+      basemapBtns.forEach(b => b.classList.toggle('active', b === btn));
+      updateSvgBasemap();
+    });
+  });
+
+  if (el.sliderBasemapOpacity) {
+    el.sliderBasemapOpacity.addEventListener('input', e => {
+      const val = parseInt(e.target.value, 10);
+      state.basemapOpacity = val / 100.0;
+      if (el.labelBasemapOpacity) el.labelBasemapOpacity.textContent = `${val}%`;
+      if (el.svgBasemapLayer) {
+        const tiles = el.svgBasemapLayer.querySelectorAll('.svg-basemap-tile');
+        tiles.forEach(t => t.setAttribute('opacity', String(state.basemapOpacity)));
+      }
+    });
+  }
 
   // SVG Pan & Zoom Handlers
   if (el.svgCanvas) {
@@ -4071,7 +5756,7 @@
     );
 
     el.svgCanvas.addEventListener('mousedown', e => {
-      if (e.button !== 0 || state.isDrawingRoad || state.activeHandleDrag) return;
+      if (e.button !== 0 || state.isDrawingRoad || state.activeHandleDrag || state.isAddingEntryPoint || state.activeEntryDrag) return;
       panZoom.isDragging = true;
       panZoom.startX = e.clientX - panZoom.tx;
       panZoom.startY = e.clientY - panZoom.ty;
@@ -4143,9 +5828,9 @@
   }
 
   function initTheme() {
-    let saved = 'dark';
+    let saved = 'light';
     try {
-      saved = localStorage.getItem(THEME_STORAGE_KEY) || 'dark';
+      saved = localStorage.getItem(THEME_STORAGE_KEY) || 'light';
     } catch (_) {}
     applyTheme(saved);
 
@@ -4157,9 +5842,135 @@
     }
   }
 
+  // --- STEP 3: INSOLATION UI CONTROLS & SUB-TABS ---
+  function setupInsolationControls() {
+    const subtabParamsBtn = document.getElementById('subtab-btn-step3-params');
+    const subtabInsolBtn = document.getElementById('subtab-btn-step3-insolation');
+    const subtabParamsView = document.getElementById('subtab-view-step3-params');
+    const subtabInsolView = document.getElementById('subtab-view-step3-insolation');
+
+    if (subtabParamsBtn && subtabInsolBtn) {
+      subtabParamsBtn.addEventListener('click', () => {
+        subtabParamsBtn.classList.add('active');
+        subtabInsolBtn.classList.remove('active');
+        if (subtabParamsView) subtabParamsView.style.display = 'block';
+        if (subtabInsolView) subtabInsolView.style.display = 'none';
+      });
+      subtabInsolBtn.addEventListener('click', () => {
+        subtabInsolBtn.classList.add('active');
+        subtabParamsBtn.classList.remove('active');
+        if (subtabParamsView) subtabParamsView.style.display = 'none';
+        if (subtabInsolView) subtabInsolView.style.display = 'block';
+      });
+    }
+
+    const selInsolZone = document.getElementById('select-insolation-zone');
+    const badgeInsolZone = document.getElementById('badge-insolation-zone-tag');
+    if (selInsolZone && badgeInsolZone) {
+      selInsolZone.addEventListener('change', () => {
+        const v = selInsolZone.value;
+        if (v === '1.5') badgeInsolZone.textContent = '1.5 ч (Юг)';
+        else if (v === '2.5') badgeInsolZone.textContent = '2.5 ч (Север)';
+        else badgeInsolZone.textContent = '2.0 ч (Центр)';
+      });
+    }
+
+    let isProjectInsolActive = false;
+    let isSurrInsolActive = false;
+
+    const btnOpen3dInsol = document.getElementById('btn-insolation-open-3d');
+    const btnRightOpen3dInsol = document.getElementById('btn-right-show-insolation-3d');
+    const btnShowSurrHeatmap = document.getElementById('btn-show-surr-heatmap-3d');
+
+    const updateInsolButtonsUI = () => {
+      if (btnOpen3dInsol) {
+        if (isProjectInsolActive) {
+          btnOpen3dInsol.innerHTML = '☀️ Скрыть тепловую карту проекта';
+          btnOpen3dInsol.classList.add('active');
+          btnOpen3dInsol.style.background = 'rgba(2, 132, 199, 0.22)';
+          btnOpen3dInsol.style.borderColor = 'var(--accent)';
+          btnOpen3dInsol.style.color = '#38bdf8';
+        } else {
+          btnOpen3dInsol.innerHTML = '☀️ Включить тепловую карту в 3D';
+          btnOpen3dInsol.classList.remove('active');
+          btnOpen3dInsol.style.background = '';
+          btnOpen3dInsol.style.borderColor = '';
+          btnOpen3dInsol.style.color = 'var(--accent)';
+        }
+      }
+      if (btnRightOpen3dInsol) {
+        if (isProjectInsolActive) {
+          btnRightOpen3dInsol.innerHTML = '☀️ Скрыть тепловую карту проекта';
+          btnRightOpen3dInsol.classList.add('active');
+          btnRightOpen3dInsol.style.background = 'rgba(2, 132, 199, 0.22)';
+          btnRightOpen3dInsol.style.borderColor = 'var(--accent)';
+          btnRightOpen3dInsol.style.color = '#38bdf8';
+        } else {
+          btnRightOpen3dInsol.innerHTML = '☀️ Показать тепловую карту в 3D';
+          btnRightOpen3dInsol.classList.remove('active');
+          btnRightOpen3dInsol.style.background = '';
+          btnRightOpen3dInsol.style.borderColor = '';
+          btnRightOpen3dInsol.style.color = 'var(--accent)';
+        }
+      }
+      if (btnShowSurrHeatmap) {
+        if (isSurrInsolActive) {
+          btnShowSurrHeatmap.innerHTML = '🏘️ Скрыть тепловую карту окружения';
+          btnShowSurrHeatmap.classList.add('active');
+          btnShowSurrHeatmap.style.background = 'rgba(245, 158, 11, 0.25)';
+          btnShowSurrHeatmap.style.borderColor = '#f59e0b';
+          btnShowSurrHeatmap.style.color = '#b45309';
+          btnShowSurrHeatmap.style.fontWeight = '700';
+        } else {
+          btnShowSurrHeatmap.innerHTML = '☀️ Показать тепловую карту окружения в 3D';
+          btnShowSurrHeatmap.classList.remove('active');
+          btnShowSurrHeatmap.style.background = 'rgba(245, 158, 11, 0.08)';
+          btnShowSurrHeatmap.style.borderColor = '#f59e0b';
+          btnShowSurrHeatmap.style.color = '#d97706';
+          btnShowSurrHeatmap.style.fontWeight = '600';
+        }
+      }
+    };
+
+    const syncTo3dViewer = () => {
+      const tab3d = document.getElementById('tab-canvas-3d');
+      if (tab3d && !tab3d.classList.contains('active')) {
+        tab3d.click();
+      }
+      setTimeout(() => {
+        if (el.iframe3d && el.iframe3d.contentWindow) {
+          el.iframe3d.contentWindow.postMessage({
+            type: 'toggleInsolation',
+            showProject: isProjectInsolActive,
+            showSurroundings: isSurrInsolActive
+          }, '*');
+        }
+      }, 100);
+    };
+
+    const toggleProjectInsol = (e) => {
+      if (e) e.preventDefault();
+      isProjectInsolActive = !isProjectInsolActive;
+      updateInsolButtonsUI();
+      syncTo3dViewer();
+    };
+
+    const toggleSurrInsol = (e) => {
+      if (e) e.preventDefault();
+      isSurrInsolActive = !isSurrInsolActive;
+      updateInsolButtonsUI();
+      syncTo3dViewer();
+    };
+
+    if (btnOpen3dInsol) btnOpen3dInsol.addEventListener('click', toggleProjectInsol);
+    if (btnRightOpen3dInsol) btnRightOpen3dInsol.addEventListener('click', toggleProjectInsol);
+    if (btnShowSurrHeatmap) btnShowSurrHeatmap.addEventListener('click', toggleSurrInsol);
+  }
+
   // --- INITIALIZATION ---
   initTheme();
   initEmptyState();
   setupExportButtons();
   setupLayerToggleButtons();
+  setupInsolationControls();
 })();

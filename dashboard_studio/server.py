@@ -82,6 +82,47 @@ try:
 except Exception as ex:
     print(f"Предупреждение: не удалось откалибровать МСК-66: {ex}")
 
+# Патч строгого соблюдения предельной высоты зданий (zero-touch policy: не меняет src/core/*.py)
+try:
+    import src.core.placement as pl_core
+    _orig_clamp_floors = pl_core.PlacementEngine._clamp_floors
+
+    def _safe_clamp_floors(self, sec, req_floors: int) -> int:
+        fl = _orig_clamp_floors(self, sec, req_floors)
+        max_h = getattr(self, "_max_building_height_m", None)
+        if max_h and max_h > 0:
+            fh = getattr(sec, "floor_height", 3.0) or 3.0
+            gfh = getattr(sec, "ground_floor_height", None) or fh
+            has_comm = getattr(sec, "has_commercial_ground", False)
+            if has_comm and max_h >= gfh:
+                max_sec_f = 1 + int((max_h - gfh) // fh)
+            else:
+                max_sec_f = int(max_h // fh)
+            if max_sec_f >= 1:
+                fl = min(fl, max_sec_f)
+        return fl
+
+    pl_core.PlacementEngine._clamp_floors = _safe_clamp_floors
+except Exception as ex:
+    print(f"Предупреждение: не удалось откалибровать _clamp_floors: {ex}")
+
+# Патч нормализации типологии SECTIONAL -> LINEAR (zero-touch policy)
+try:
+    import dashboard_prototype.generator_service as gs_mod
+    _orig_gs_run_pipeline = gs_mod.run_pipeline
+
+    def _safe_run_pipeline(params: dict):
+        if params and params.get("typology") == "SECTIONAL":
+            params["typology"] = "LINEAR"
+        return _orig_gs_run_pipeline(params)
+
+    gs_mod.run_pipeline = _safe_run_pipeline
+except Exception as ex:
+    print(f"Предупреждение: не удалось инициализировать патч типологии: {ex}")
+
+import dashboard_prototype.server as dp_server
+dp_server.run_pipeline = gs_mod.run_pipeline
+
 from dashboard_prototype.server import DashboardHandler
 
 STUDIO_DIR = Path(__file__).resolve().parent
