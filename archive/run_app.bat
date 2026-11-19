@@ -1,7 +1,6 @@
 @echo off
-chcp 65001 >nul
-title Генератор застройки по ТЭП
+title Urban TEP Generator
 cd /d "%~dp0"
-echo Запуск Генератора застройки...
+echo Starting TEP Generator...
 ".venv\Scripts\streamlit.exe" run app\streamlit_app.py
 pause

@@ -182,76 +182,80 @@ def generate_parking_layout(
     # 1. Трассировка вдоль сегментов внешней границы участка
     # Защита от узких клиньев/хвостов: для размещения машиноместа 5.0 м требуется проезд перед ним не менее 5.5 м (СП 113.13330 п. 5.1.5).
     # Поэтому в узких местах участка (< 12.0 м общей ширины) машиноместа не размещаются.
-    coords = list(site_poly.exterior.coords)
-    for i in range(len(coords) - 1):
+    sub_polys = [site_poly] if isinstance(site_poly, Polygon) else [p for p in site_poly.geoms if isinstance(p, Polygon) and not p.is_empty]
+    for sp in sub_polys:
         if len(placed_slots) >= target_spaces:
             break
-        p1 = coords[i]
-        p2 = coords[i + 1]
-        dx = p2[0] - p1[0]
-        dy = p2[1] - p1[1]
-        length = math.hypot(dx, dy)
-        if length < 8.0:
-            continue
-
-        tx, ty = dx / length, dy / length
-        # Внутренняя нормаль
-        nx, ny = -ty, tx
-        mid_test = Point((p1[0] + p2[0]) / 2.0 + nx * 2.0, (p1[1] + p2[1]) / 2.0 + ny * 2.0)
-        if not site_poly.contains(mid_test):
-            nx, ny = ty, -tx
-
-        # Отступ от угла 2.5 м
-        start_offset = 2.5
-        usable_len = length - 5.0
-        if usable_len < stall_w:
-            continue
-
-        num_slots = int(usable_len // stall_w)
-        for s_idx in range(num_slots):
+        coords = list(sp.exterior.coords)
+        for i in range(len(coords) - 1):
             if len(placed_slots) >= target_spaces:
                 break
-            sx = p1[0] + tx * (start_offset + s_idx * stall_w) + nx * 1.5
-            sy = p1[1] + ty * (start_offset + s_idx * stall_w) + ny * 1.5
+            p1 = coords[i]
+            p2 = coords[i + 1]
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            length = math.hypot(dx, dy)
+            if length < 8.0:
+                continue
 
-            c1 = (sx, sy)
-            c2 = (sx + tx * (stall_w - 0.1), sy + ty * (stall_w - 0.1))
-            c3 = (c2[0] + nx * stall_d, c2[1] + ny * stall_d)
-            c4 = (sx + nx * stall_d, sy + ny * stall_d)
-            slot_poly = Polygon([c1, c2, c3, c4])
+            tx, ty = dx / length, dy / length
+            # Внутренняя нормаль
+            nx, ny = -ty, tx
+            mid_test = Point((p1[0] + p2[0]) / 2.0 + nx * 2.0, (p1[1] + p2[1]) / 2.0 + ny * 2.0)
+            if not site_poly.contains(mid_test):
+                nx, ny = ty, -tx
 
-            # Нормативная полоса маневрирования перед машиноместом (СП 113.13330 п. 5.1.5: глубина 5.5 м)
-            driveway_poly = Polygon([
-                c4,
-                c3,
-                (c3[0] + nx * 5.5, c3[1] + ny * 5.5),
-                (c4[0] + nx * 5.5, c4[1] + ny * 5.5),
-            ])
+            # Отступ от угла 2.5 м
+            start_offset = 2.5
+            usable_len = length - 5.0
+            if usable_len < stall_w:
+                continue
 
-            # Контроль проезда: полоса обязана целиком помещаться в границы участка
-            if not site_poly.contains(driveway_poly.buffer(-0.1)):
-                continue  # Узкий клин/хвост участка, маневр и выезд автомобиля невозможен
+            num_slots = int(usable_len // stall_w)
+            for s_idx in range(num_slots):
+                if len(placed_slots) >= target_spaces:
+                    break
+                sx = p1[0] + tx * (start_offset + s_idx * stall_w) + nx * 1.5
+                sy = p1[1] + ty * (start_offset + s_idx * stall_w) + ny * 1.5
 
-            # Запрет наложений на ЗОУИТ: ни машиноместо, ни проезд не могут пересекать охранную зону
-            if zouit_union_all and not allow_parking_in_zouit:
-                if slot_poly.intersects(zouit_union_all) or driveway_poly.intersects(zouit_union_all):
+                c1 = (sx, sy)
+                c2 = (sx + tx * (stall_w - 0.1), sy + ty * (stall_w - 0.1))
+                c3 = (c2[0] + nx * stall_d, c2[1] + ny * stall_d)
+                c4 = (sx + nx * stall_d, sy + ny * stall_d)
+                slot_poly = Polygon([c1, c2, c3, c4])
+
+                # Нормативная полоса маневрирования перед машиноместом (СП 113.13330 п. 5.1.5: глубина 5.5 м)
+                driveway_poly = Polygon([
+                    c4,
+                    c3,
+                    (c3[0] + nx * 5.5, c3[1] + ny * 5.5),
+                    (c4[0] + nx * 5.5, c4[1] + ny * 5.5),
+                ])
+
+                # Контроль проезда: полоса обязана целиком помещаться в границы участка
+                if not site_poly.contains(driveway_poly.buffer(-0.1)):
+                    continue  # Узкий клин/хвост участка, маневр и выезд автомобиля невозможен
+
+                # Запрет наложений на ЗОУИТ: ни машиноместо, ни проезд не могут пересекать охранную зону
+                if zouit_union_all and not allow_parking_in_zouit:
+                    if slot_poly.intersects(zouit_union_all) or driveway_poly.intersects(zouit_union_all):
+                        continue
+
+                # Запрет наложения на дорогу и пожарный проезд
+                if roads_poly and (slot_poly.intersects(roads_poly) or driveway_poly.intersects(roads_poly)):
+                    continue
+                if fire_lanes_poly and (slot_poly.intersects(fire_lanes_poly) or driveway_poly.intersects(fire_lanes_poly)):
                     continue
 
-            # Запрет наложения на дорогу и пожарный проезд
-            if roads_poly and (slot_poly.intersects(roads_poly) or driveway_poly.intersects(roads_poly)):
-                continue
-            if fire_lanes_poly and (slot_poly.intersects(fire_lanes_poly) or driveway_poly.intersects(fire_lanes_poly)):
-                continue
-
-            if base_available.contains(slot_poly.buffer(-0.1)):
-                placed_slots.append(
-                    ParkingSlot(
-                        polygon=slot_poly,
-                        width_m=stall_w,
-                        depth_m=stall_d,
-                        is_courtyard=False,
+                if base_available.contains(slot_poly.buffer(-0.1)):
+                    placed_slots.append(
+                        ParkingSlot(
+                            polygon=slot_poly,
+                            width_m=stall_w,
+                            depth_m=stall_d,
+                            is_courtyard=False,
+                        )
                     )
-                )
 
     # 2. Если мест вдоль забора не хватило, добавляем карманы вдоль внешних фасадов
     if len(placed_slots) < target_spaces and not b_union.is_empty:
@@ -261,24 +265,28 @@ def generate_parking_layout(
             fp = b.footprint
             if not fp or fp.is_empty:
                 continue
-            b_coords = list(fp.exterior.coords)
-            for j in range(len(b_coords) - 1):
+            fp_polys = [fp] if isinstance(fp, Polygon) else [p for p in getattr(fp, "geoms", []) if isinstance(p, Polygon) and not p.is_empty]
+            for sub_fp in fp_polys:
                 if len(placed_slots) >= target_spaces:
                     break
-                bp1 = b_coords[j]
-                bp2 = b_coords[j + 1]
-                bdx = bp2[0] - bp1[0]
-                bdy = bp2[1] - bp1[1]
-                blen = math.hypot(bdx, bdy)
-                if blen < 12.0:
-                    continue
+                b_coords = list(sub_fp.exterior.coords)
+                for j in range(len(b_coords) - 1):
+                    if len(placed_slots) >= target_spaces:
+                        break
+                    bp1 = b_coords[j]
+                    bp2 = b_coords[j + 1]
+                    bdx = bp2[0] - bp1[0]
+                    bdy = bp2[1] - bp1[1]
+                    blen = math.hypot(bdx, bdy)
+                    if blen < 12.0:
+                        continue
 
-                btx, bty = bdx / blen, bdy / blen
-                bnx, bny = -bty, btx
-                # Проверяем, что нормаль смотрит НАРУЖУ от здания
-                out_test = Point((bp1[0] + bp2[0]) / 2.0 + bnx * 2.0, (bp1[1] + bp2[1]) / 2.0 + bny * 2.0)
-                if fp.contains(out_test):
-                    bnx, bny = bty, -btx
+                    btx, bty = bdx / blen, bdy / blen
+                    bnx, bny = -bty, btx
+                    # Проверяем, что нормаль смотрит НАРУЖУ от здания
+                    out_test = Point((bp1[0] + bp2[0]) / 2.0 + bnx * 2.0, (bp1[1] + bp2[1]) / 2.0 + bny * 2.0)
+                    if sub_fp.contains(out_test):
+                        bnx, bny = bty, -btx
 
                 # Если включен двор без машин, проверяем, что вектор наружу направлен от двора
                 if car_free_courtyard and not courtyard_poly.is_empty:

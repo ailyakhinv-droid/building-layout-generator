@@ -1,8 +1,7 @@
 @echo off
-chcp 65001 >nul
-title Дашборд ТЭП (Modern Design Skills)
+title Urban TEP Modern Dashboard
 cd /d "%~dp0"
-echo Сборка и запуск современного дашборда ТЭП на порту 8060...
+echo Building and starting dashboard on port 8060...
 ".venv\Scripts\python.exe" dashboard_modern\build_modern_dashboard.py
 ".venv\Scripts\python.exe" dashboard_modern\server_modern.py
 pause

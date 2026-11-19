@@ -23,8 +23,15 @@ _OCR_ENGINE = None
 def get_ocr_engine():
     global _OCR_ENGINE
     if _OCR_ENGINE is None:
-        from rapidocr_onnxruntime import RapidOCR
-        _OCR_ENGINE = RapidOCR()
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+            _OCR_ENGINE = RapidOCR()
+        except (ImportError, ModuleNotFoundError) as err:
+            print(f"[OCR] Библиотека rapidocr_onnxruntime недоступна: {err}")
+            return None
+        except Exception as ex:
+            print(f"[OCR] Ошибка инициализации RapidOCR: {ex}")
+            return None
     return _OCR_ENGINE
 
 
@@ -141,6 +148,12 @@ def process_scanned_gpzu(
         pass
 
     engine = get_ocr_engine()
+    if engine is None:
+        return {
+            "success": False,
+            "error": "Для оптического распознавания сканированных документов (без текстового слоя) требуется пакет rapidocr-onnxruntime. Установите: pip install rapidocr-onnxruntime",
+            "ocr_missing": True,
+        }
     reader = pypdf.PdfReader(io.BytesIO(file_bytes))
     num_pages = len(reader.pages)
     if num_pages == 0:

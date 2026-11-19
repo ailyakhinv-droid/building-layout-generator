@@ -81,7 +81,7 @@
     road_preset: 'none', // 'none' | 'longitudinal' | 'transverse' | 'cross_2x2' | 'custom'
     road_category: 'district', // 'district' | 'arterial' | 'local' | 'custom'
     typology: 'AUTO', // 'AUTO' | 'PERIMETER' | 'TOWER' | 'U_SHAPE' | 'SECTIONAL'
-    courtyard_orientation: 'SOUTH', // 'SOUTH' | 'EAST'
+    courtyard_orientation: 'STREET', // 'STREET' (вдоль дорог / симбиоз с УДС) | 'SOUTH' | 'EAST'
     preferred_section_ids: [], // Whitelist секций (пусто = все типы из библиотеки)
     sectionCatalog: [], // Полный каталог типовых секций из /api/library
     section_overrides: {}, // Численные переопределения min_floors, max_floors
@@ -96,22 +96,29 @@
     regional_norm_id: 'russia_sp42',
     floor_height: 3.0,
     urban_block_size: 100.0,
-    internal_road_width: 16.0,
+    internal_road_width: 8.0,
     perimeter_layout_style: 'U_SHAPE',
     fire_gap_end_to_end: 10.0,
     fire_gap_parallel: 18.0,
-    road_width: 15.0,
-    road_setback: 4.0,
+    road_category: 'local',
+    road_width: 8.0,
+    road_setback: 3.0,
+    road_fillet: 8.0,
     road_pos: 0.5,
     road_pos_x: 0.5,
     road_pos_y: 0.5,
     custom_roads: [],
     isDrawingRoad: false,
-    drawingRoadStart: null,
+    drawingRoadPoints: [],
     activeHandleDrag: null,
 
     // Step 2: Entry Points (Въезды на границе)
     uds_mode: 'entries', // 'entries' | 'free_draw'
+    entry_road_mode: 'skeleton', // 'skeleton' (скелетная нарезка кварталов) | 'contour' | 'gates_only'
+    road_shape: 'l1', // 'l1' | 'l2' | 'straight' | 'center' | 'custom_hub'
+    road_shape_changed: false,
+    active_hub: null,
+    activeHubDrag: false,
     isAddingEntryPoint: false,
     entry_points: [], // [{ id, name, x, y, category, width, setback }]
     activeEntryDrag: null,
@@ -122,6 +129,7 @@
 
     // Layer visibility
     layerVisibility: {
+      road: true,
       fire: true,
       parking: true,
       tko: true,
@@ -142,6 +150,13 @@
 
   // --- ENGINEERING LAYERS VISIBILITY CONTROLS ---
   function applyLayerVisibility() {
+    const showRoad = state.layerVisibility.road !== false;
+    if (el.svgRoadCorridorLayer) el.svgRoadCorridorLayer.style.display = showRoad ? '' : 'none';
+    if (el.svgRoadBufferLayer) el.svgRoadBufferLayer.style.display = showRoad ? '' : 'none';
+    if (el.svgRoadCenterlinesLayer) el.svgRoadCenterlinesLayer.style.display = showRoad ? '' : 'none';
+    if (el.svgSubBlocksLayer) el.svgSubBlocksLayer.style.display = showRoad ? '' : 'none';
+    if (el.svgEntryPointsLayer) el.svgEntryPointsLayer.style.display = showRoad ? '' : 'none';
+
     if (el.svgFireSafetyLayer) {
       el.svgFireSafetyLayer.style.display = state.layerVisibility.fire ? '' : 'none';
     }
@@ -158,6 +173,7 @@
 
   function setupLayerToggleButtons() {
     const layerDefs = [
+      { btn: el.btnToggleRoad, key: 'road' },
       { btn: el.btnToggleFire, key: 'fire' },
       { btn: el.btnToggleParking, key: 'parking' },
       { btn: el.btnToggleTko, key: 'tko' },
@@ -281,6 +297,8 @@
     valRoadWidth: document.getElementById('val-road-width'),
     sliderRoadSetback: document.getElementById('slider-road-setback'),
     valRoadSetback: document.getElementById('val-road-setback'),
+    sliderRoadFillet: document.getElementById('slider-road-fillet'),
+    valRoadFillet: document.getElementById('val-road-fillet'),
     groupRoadPos: document.getElementById('group-road-pos'),
     sliderRoadPos: document.getElementById('slider-road-pos'),
     valRoadPos: document.getElementById('val-road-pos'),
@@ -299,6 +317,16 @@
     btnEntryIcon: document.getElementById('btn-entry-icon'),
     btnEntryText: document.getElementById('btn-entry-text'),
     btnClearEntries: document.getElementById('btn-clear-entries'),
+    btnEntryModeSkeleton: document.getElementById('btn-entry-mode-skeleton'),
+    btnEntryModeContour: document.getElementById('btn-entry-mode-contour'),
+    btnEntryModeGates: document.getElementById('btn-entry-mode-gates'),
+    labelEntryModeDesc: document.getElementById('label-entry-mode-desc'),
+    roadShapeSelectorContainer: document.getElementById('road-shape-selector-container'),
+    labelRoadShapeDesc: document.getElementById('label-road-shape-desc'),
+    btnRoadShapeStraight: document.getElementById('btn-road-shape-straight'),
+    btnRoadShapeL1: document.getElementById('btn-road-shape-l1'),
+    btnRoadShapeL2: document.getElementById('btn-road-shape-l2'),
+    btnRoadShapeCenter: document.getElementById('btn-road-shape-center'),
     entryRoadHint: document.getElementById('entry-road-hint'),
     entryPointsList: document.getElementById('entry-points-list'),
     svgEntryPointsLayer: document.getElementById('svg-entry-points-layer'),
@@ -306,6 +334,7 @@
     btnDrawRoad: document.getElementById('btn-draw-road'),
     btnDrawIcon: document.getElementById('btn-draw-icon'),
     btnDrawText: document.getElementById('btn-draw-text'),
+    btnFinishCurrentRoad: document.getElementById('btn-finish-current-road'),
     btnClearRoads: document.getElementById('btn-clear-roads'),
     drawRoadHint: document.getElementById('draw-road-hint'),
     customRoadsList: document.getElementById('custom-roads-list'),
@@ -340,6 +369,7 @@
 
     // Canvas Engineering Layer Toggles
     canvasLayersBar: document.getElementById('canvas-layers-bar'),
+    btnToggleRoad: document.getElementById('btn-toggle-road'),
     btnToggleFire: document.getElementById('btn-toggle-fire'),
     btnToggleParking: document.getElementById('btn-toggle-parking'),
     btnToggleTko: document.getElementById('btn-toggle-tko'),
@@ -963,6 +993,9 @@
     const sendOverrideLat = state.userHasMovedSite ? state.override_lat : 0.0;
     const sendOverrideLon = state.userHasMovedSite ? state.override_lon : 0.0;
 
+    const hasRoadEntries = (state.entry_points && state.entry_points.length > 0) || (state.custom_roads && state.custom_roads.length > 0);
+    const effectivePreset = (state.currentStep === 1 && !hasRoadEntries) ? 'none' : (state.road_preset === 'none' && hasRoadEntries ? 'custom' : (state.road_preset || 'none'));
+
     const payload = {
       site_mode: state.mode === 'cad' ? 'cad' : (state.mode === 'points' ? 'points' : 'cadastre'),
       site_rotation: state.site_rotation,
@@ -976,10 +1009,12 @@
       stage: 1,
       preview_only: true,
 
-      // Step 2: Roads (strictly inactive on Step 1)
-      road_preset: state.currentStep === 1 ? 'none' : state.road_preset,
+      // Step 2: Roads
+      road_preset: effectivePreset,
       road_width: state.road_width,
       road_setback: state.road_setback,
+      road_fillet_radius: state.road_fillet || 8.0,
+      fillet_radius: state.road_fillet || 8.0,
       road_pos: state.road_pos,
       road_pos_x: state.road_pos_x,
       road_pos_y: state.road_pos_y,
@@ -1000,8 +1035,21 @@
       payload.zouit_list = [];
     }
 
-    if (state.currentStep > 1 && state.custom_roads && state.custom_roads.length > 0) {
-      payload.custom_roads = state.custom_roads;
+    if (state.currentStep > 1 || (state.entry_points && state.entry_points.length > 0) || (state.custom_roads && state.custom_roads.length > 0)) {
+      payload.uds_mode = state.uds_mode || 'entries';
+      payload.entry_road_mode = state.entry_road_mode || 'skeleton';
+      payload.road_shape = state.road_shape || 'l1';
+      if (state.road_shape === 'straight') {
+        payload.hub_point = false;
+      } else if (state.active_hub) {
+        payload.hub_point = state.active_hub;
+      }
+      if (state.entry_points && state.entry_points.length > 0) {
+        payload.entry_points = state.entry_points;
+      }
+      if (state.custom_roads && state.custom_roads.length > 0) {
+        payload.custom_roads = state.custom_roads;
+      }
     }
 
     if (state.mode === 'cadastre') {
@@ -1082,6 +1130,7 @@
   // --- RENDER COMPLETE SITE (STEP 1 & STEP 2) ---
   function renderSite(data) {
     if (!data) return;
+    const isStep1 = (state.currentStep === 1);
 
     // 1. Hide Empty State, show Map & SVG
     if (el.canvasEmptyState) el.canvasEmptyState.style.display = 'none';
@@ -1290,6 +1339,7 @@
   // --- RENDER 2D VECTOR CAD (SVG WORLD) ---
   function renderSvgWorld(data) {
     if (!data) return;
+    const isStep1 = (state.currentStep === 1);
 
     // 0. Basemap Underlay (Satellite / Streets / Light)
     updateSvgBasemap();
@@ -1328,12 +1378,12 @@
     }
 
     // 4. Roads Corridor & Buffer
-    const isStep1 = state.currentStep === 1;
-    const roads = isStep1 ? null : data.roads;
+    const hasEntries = (state.entry_points && state.entry_points.length > 0) || (state.custom_roads && state.custom_roads.length > 0);
+    const roads = (state.currentStep === 1 && !hasEntries) ? null : data.roads;
     if (el.svgRoadCorridorLayer) {
       let cMarkup = '';
       if (roads && roads.corridor_path) {
-        cMarkup = `<path id="cad-roads-corridor" d="${roads.corridor_path}" fill="rgba(30, 41, 59, 0.75)" stroke="#475569" stroke-width="1.5" />`;
+        cMarkup = `<path id="cad-roads-corridor" d="${roads.corridor_path}" fill="#1e293b" stroke="#94a3b8" stroke-width="2.5" />`;
       }
       el.svgRoadCorridorLayer.innerHTML = cMarkup;
     }
@@ -1341,7 +1391,7 @@
     if (el.svgRoadBufferLayer) {
       let bufMarkup = '';
       if (roads && roads.buffer_path) {
-        bufMarkup = `<path id="cad-roads-buffer" d="${roads.buffer_path}" fill="rgba(245, 158, 11, 0.06)" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="6,4" />`;
+        bufMarkup = `<path id="cad-roads-buffer" d="${roads.buffer_path}" fill="rgba(245, 158, 11, 0.08)" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,4" />`;
       }
       el.svgRoadBufferLayer.innerHTML = bufMarkup;
     }
@@ -1351,7 +1401,7 @@
       let clMarkup = '';
       if (roads && roads.centerlines_paths) {
         roads.centerlines_paths.forEach(p => {
-          clMarkup += `<path class="cad-centerline" d="${p}" fill="none" stroke="#f8fafc" stroke-width="2" stroke-dasharray="8,5" />`;
+          clMarkup += `<path class="cad-centerline" d="${p}" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="8,5" />`;
         });
       }
       el.svgRoadCenterlinesLayer.innerHTML = clMarkup;
@@ -1360,7 +1410,7 @@
     // 6. Sub-blocks (Planning Quarters - strictly Step 2 & 3)
     if (el.svgSubBlocksLayer) {
       let sbMarkup = '';
-      if (!isStep1 && roads && roads.sub_blocks_data && roads.sub_blocks_data.length > 0) {
+      if ((state.currentStep > 1 || hasEntries) && roads && roads.sub_blocks_data && roads.sub_blocks_data.length > 0) {
         roads.sub_blocks_data.forEach(b => {
           // Polygon
           sbMarkup += `<path class="sub-block-poly" data-block-idx="${b.index}" d="${b.path}" fill="rgba(16, 185, 129, 0.12)" stroke="#10b981" stroke-width="2" />`;
@@ -1388,6 +1438,14 @@
     if (!isStep1) {
       renderCustomRoadHandles();
       renderEntryPointsOnSvg();
+      // Если сценарий застройки был сброшен (например, изменилась нарезка УДС/въезды),
+      // очищаем устаревшие корпуса, секции и парковки со слоя 2D, чтобы они не висели на дорогах
+      if (!state.currentScenario) {
+        if (el.svgBuildingsLayer) el.svgBuildingsLayer.innerHTML = '';
+        if (el.svgSectionsLayer) el.svgSectionsLayer.innerHTML = '';
+        if (el.svgParkingLayer) el.svgParkingLayer.innerHTML = '';
+        if (el.svgFireSafetyLayer) el.svgFireSafetyLayer.innerHTML = '';
+      }
     } else {
       if (el.svgRoadHandlesLayer) el.svgRoadHandlesLayer.innerHTML = '';
       if (el.svgEntryPointsLayer) el.svgEntryPointsLayer.innerHTML = '';
@@ -1508,6 +1566,66 @@
     });
   }
 
+  // --- COMPLETE RESET OF ALL ROADS, PRESETS & ENTRY POINTS ---
+  function resetAllRoads(triggerServerUpdate = true) {
+    // 1. Reset all road states
+    state.road_preset = 'none';
+    state.activePresetTemplate = null;
+    state.entry_points = [];
+    state.custom_roads = [];
+    state.drawingRoadPoints = [];
+    state.active_hub = null;
+    state.activeHubDrag = false;
+    state.activeEntryDrag = null;
+    state.activeHandleDrag = null;
+    state.road_shape = 'l1';
+    state.road_shape_changed = false;
+    state.currentScenario = null;
+
+    // 2. Cancel any active drawing / entry placement mode
+    if (typeof toggleDrawingMode === 'function') toggleDrawingMode(false);
+    if (typeof toggleAddEntryPointMode === 'function') toggleAddEntryPointMode(false);
+    state.drawingRoadPoints = [];
+
+    // 3. Update preset UI buttons and badge
+    if (el.presetBtns) {
+      el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === 'none'));
+    }
+    if (el.valPresetBadge) el.valPresetBadge.textContent = 'Без дорог';
+    if (el.groupRoadPos) el.groupRoadPos.style.display = 'none';
+    if (el.groupRoadPosGrid) el.groupRoadPosGrid.style.display = 'none';
+
+    // 4. Update subviews and card lists
+    if (typeof updateCustomRoadsUI === 'function') updateCustomRoadsUI();
+    if (typeof updateEntryPointsUI === 'function') updateEntryPointsUI();
+
+    // 5. Instantly clear all SVG road layers on canvas
+    if (el.svgRoadHandlesLayer) el.svgRoadHandlesLayer.innerHTML = '';
+    if (el.svgRoadDrawingLayer) el.svgRoadDrawingLayer.innerHTML = '';
+    if (el.svgEntryPointsLayer) el.svgEntryPointsLayer.innerHTML = '';
+    if (el.svgRoadCorridorLayer) el.svgRoadCorridorLayer.innerHTML = '';
+    if (el.svgRoadBufferLayer) el.svgRoadBufferLayer.innerHTML = '';
+    if (el.svgRoadCenterlinesLayer) el.svgRoadCenterlinesLayer.innerHTML = '';
+    if (el.btnFinishCurrentRoad) el.btnFinishCurrentRoad.style.display = 'none';
+
+    // 6. Reset hint texts
+    if (el.drawRoadHint) {
+      el.drawRoadHint.innerHTML = 'Кликните <b>«Начертить улицу»</b>, затем кликайте по чертежу для построения оси улицы (2 или более точек).';
+      el.drawRoadHint.style.borderColor = 'var(--accent-border)';
+      el.drawRoadHint.style.color = 'var(--text-secondary)';
+    }
+    if (el.entryRoadHint) {
+      el.entryRoadHint.innerHTML = 'Кликните <b>«Поставить въезд»</b>, затем укажите 2–4 точки на границе участка. Алгоритм увяжет их в связную сеть улиц и нарежет кварталы.';
+      el.entryRoadHint.style.borderColor = 'var(--accent-border)';
+      el.entryRoadHint.style.color = 'var(--text-secondary)';
+    }
+
+    // 7. Request clean preview from backend
+    if (triggerServerUpdate && typeof apiPreviewSite === 'function') {
+      apiPreviewSite(true);
+    }
+  }
+
   // --- STEP 2: ROAD PRESETS & CATEGORIES CONTROLS ---
   el.presetBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1525,17 +1643,7 @@
       if (el.valPresetBadge) el.valPresetBadge.textContent = presetLabels[preset] || preset;
 
       if (preset === 'none') {
-        state.activePresetTemplate = null;
-        state.road_preset = 'none';
-        state.custom_roads = [];
-        state.entry_points = [];
-        state.currentScenario = null;
-        if (el.groupRoadPos) el.groupRoadPos.style.display = 'none';
-        if (el.groupRoadPosGrid) el.groupRoadPosGrid.style.display = 'none';
-        updateCustomRoadsUI();
-        if (typeof updateEntryPointsUI === 'function') updateEntryPointsUI();
-        if (typeof renderEntryPointsOnSvg === 'function') renderEntryPointsOnSvg();
-        apiPreviewSite(true);
+        resetAllRoads(true);
       } else if (preset === 'longitudinal' || preset === 'transverse' || preset === 'cross_2x2') {
         if (el.groupRoadPos && el.groupRoadPosGrid) {
           if (preset === 'cross_2x2') {
@@ -1613,6 +1721,19 @@
       apiPreviewSite();
     });
     el.sliderRoadSetback.addEventListener('change', () => {
+      apiPreviewSite(true);
+    });
+  }
+
+  // Road Fillet Radius Slider (СП 42.13330 п. 11.14)
+  if (el.sliderRoadFillet) {
+    el.sliderRoadFillet.addEventListener('input', () => {
+      const val = parseFloat(el.sliderRoadFillet.value);
+      state.road_fillet = val;
+      if (el.valRoadFillet) el.valRoadFillet.textContent = `${val.toFixed(1)} м`;
+      apiPreviewSite();
+    });
+    el.sliderRoadFillet.addEventListener('change', () => {
       apiPreviewSite(true);
     });
   }
@@ -1996,17 +2117,76 @@
 
   if (el.btnClearEntries) {
     el.btnClearEntries.addEventListener('click', () => {
-      state.entry_points = [];
-      state.custom_roads = [];
-      updateEntryPointsUI();
-      renderEntryPointsOnSvg();
-      if (state.road_preset === 'custom') {
-        state.road_preset = 'none';
-        el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === 'none'));
-        if (el.valPresetBadge) el.valPresetBadge.textContent = 'Без дорог';
-      }
-      apiPreviewSite(true);
+      resetAllRoads(true);
     });
+  }
+
+  function setEntryRoadMode(mode) {
+    state.entry_road_mode = mode;
+    if (el.btnEntryModeSkeleton) el.btnEntryModeSkeleton.classList.toggle('active', mode === 'skeleton');
+    if (el.btnEntryModeContour) el.btnEntryModeContour.classList.toggle('active', mode === 'contour');
+    if (el.btnEntryModeGates) el.btnEntryModeGates.classList.toggle('active', mode === 'gates_only');
+    if (el.labelEntryModeDesc) {
+      const descMap = { skeleton: 'Нарезка кварталов (граф дорог)', contour: 'Вокруг застройки', gates_only: 'Без внутренних дорог (створы)' };
+      el.labelEntryModeDesc.textContent = descMap[mode] || 'Нарезка кварталов (граф дорог)';
+    }
+    updateEntryPointsUI();
+    renderEntryPointsOnSvg();
+    rebuildRoadsFromEntryPoints();
+  }
+
+  if (el.btnEntryModeSkeleton) {
+    el.btnEntryModeSkeleton.addEventListener('click', () => setEntryRoadMode('skeleton'));
+  }
+  if (el.btnEntryModeContour) {
+    el.btnEntryModeContour.addEventListener('click', () => setEntryRoadMode('contour'));
+  }
+  if (el.btnEntryModeGates) {
+    el.btnEntryModeGates.addEventListener('click', () => setEntryRoadMode('gates_only'));
+  }
+
+  function updateRoadShapeButtonsUI() {
+    if (!el.roadShapeSelectorContainer) return;
+    const show = (state.uds_mode === 'entries' && state.entry_road_mode === 'skeleton' && state.entry_points.length === 2);
+    el.roadShapeSelectorContainer.style.display = show ? 'block' : 'none';
+    if (!show) return;
+
+    const shape = state.road_shape || 'l1';
+    if (el.btnRoadShapeL1) el.btnRoadShapeL1.classList.toggle('active', shape === 'l1');
+    if (el.btnRoadShapeL2) el.btnRoadShapeL2.classList.toggle('active', shape === 'l2');
+    if (el.btnRoadShapeStraight) el.btnRoadShapeStraight.classList.toggle('active', shape === 'straight');
+    if (el.btnRoadShapeCenter) el.btnRoadShapeCenter.classList.toggle('active', shape === 'center');
+
+    if (el.labelRoadShapeDesc) {
+      const descMap = {
+        l1: 'Г-образная ⬏ (угол 1)',
+        l2: 'Г-образная ⬎ (угол 2)',
+        straight: 'Прямая',
+        center: 'Через центр ЗУ',
+        custom_hub: 'Свой излом (тянуть точку)'
+      };
+      el.labelRoadShapeDesc.textContent = descMap[shape] || 'Г-образная ⬏';
+    }
+  }
+
+  function setRoadShape(shape) {
+    state.road_shape = shape;
+    state.road_shape_changed = true;
+    updateRoadShapeButtonsUI();
+    rebuildRoadsFromEntryPoints();
+  }
+
+  if (el.btnRoadShapeL1) {
+    el.btnRoadShapeL1.addEventListener('click', () => setRoadShape('l1'));
+  }
+  if (el.btnRoadShapeL2) {
+    el.btnRoadShapeL2.addEventListener('click', () => setRoadShape('l2'));
+  }
+  if (el.btnRoadShapeStraight) {
+    el.btnRoadShapeStraight.addEventListener('click', () => setRoadShape('straight'));
+  }
+  if (el.btnRoadShapeCenter) {
+    el.btnRoadShapeCenter.addEventListener('click', () => setRoadShape('center'));
   }
 
   function getEntryCatLabel(cat) {
@@ -2016,6 +2196,7 @@
   }
 
   function updateEntryPointsUI() {
+    updateRoadShapeButtonsUI();
     if (!el.entryPointsList) return;
     if (state.entry_points.length === 0) {
       el.entryPointsList.innerHTML = '';
@@ -2218,28 +2399,47 @@
       });
     });
 
-    // Update hints according to points count
+    // Update hints according to points count and mode
     if (el.entryRoadHint && !state.isAddingEntryPoint) {
-      if (state.entry_points.length === 1) {
-        el.entryRoadHint.innerHTML = '📍 <b>Въезд 1 установлен.</b> Добавьте еще хотя бы 1 точку въезда на границе для формирования улицы.';
-        el.entryRoadHint.style.borderColor = 'var(--accent-border)';
-      } else if (state.entry_points.length === 2) {
-        el.entryRoadHint.innerHTML = '🚗 <b>Сквозной проезд сформирован (2 въезда).</b> Перетаскивайте маркеры по границе ЗУ или добавьте 3-й въезд для T-перекрестка.';
-        el.entryRoadHint.style.borderColor = 'var(--success)';
-      } else if (state.entry_points.length === 3) {
-        el.entryRoadHint.innerHTML = '✨ <b>3-лучевой T-перекресток.</b> Участок разделен на 3 суб-квартала. Настройте ширину каждого въезда индивидуально.';
+      const mode = state.entry_road_mode || 'skeleton';
+      if (mode === 'skeleton' || mode === 'through') {
+        if (state.entry_points.length === 0) {
+          el.entryRoadHint.innerHTML = 'Кликните <b>«Поставить въезд»</b>, затем укажите 2–4 точки на границе участка для рассечения на кварталы (скелетная сеть УДС).';
+          el.entryRoadHint.style.borderColor = 'var(--accent-border)';
+        } else if (state.entry_points.length === 1) {
+          el.entryRoadHint.innerHTML = '📍 <b>Въезд 1 установлен.</b> Добавьте еще хотя бы 1 точку въезда на границе для формирования сквозной улицы.';
+          el.entryRoadHint.style.borderColor = 'var(--accent-border)';
+        } else if (state.entry_points.length === 2) {
+          el.entryRoadHint.innerHTML = '🚗 <b>Сквозная улица (2 въезда).</b> Участок рассечен на кварталы. Перетаскивайте маркеры или добавьте 3-й въезд для T-перекрестка.';
+          el.entryRoadHint.style.borderColor = 'var(--success)';
+        } else if (state.entry_points.length === 3) {
+          el.entryRoadHint.innerHTML = '✨ <b>3-лучевой T-перекресток.</b> Участок разделен на 3 урбан-блока. Настройте ширину каждого въезда индивидуально.';
+          el.entryRoadHint.style.borderColor = 'var(--accent)';
+        } else if (state.entry_points.length === 4) {
+          el.entryRoadHint.innerHTML = '📐 <b>4-лучевой Х-перекресток.</b> Участок разделен на 4 урбан-блока (сетка 2×2). Настройте ширину каждого въезда.';
+          el.entryRoadHint.style.borderColor = 'var(--accent)';
+        } else {
+          el.entryRoadHint.innerHTML = `✨ <b>${state.entry_points.length}-лучевой перекресток.</b> Участок разделен на ${state.entry_points.length} урбан-блока.`;
+          el.entryRoadHint.style.borderColor = 'var(--accent)';
+        }
+      } else if (mode === 'contour') {
+        el.entryRoadHint.innerHTML = state.entry_points.length === 0
+          ? 'Кликните <b>«Поставить въезд»</b>, затем укажите точки на границе ЗУ. Дороги обогнут застройку по контуру, не рассекая двор и дома.'
+          : `🛡️ <b>Установлено въездов: ${state.entry_points.length}.</b> Дорожная сеть огибает застройку по контуру, обеспечивая пожарный объезд и подъезды к домам без сквозного транзита.`;
         el.entryRoadHint.style.borderColor = 'var(--accent)';
-      } else {
-        el.entryRoadHint.innerHTML = `✨ <b>${state.entry_points.length}-лучевой перекресток.</b> Участок разделен на ${state.entry_points.length} суб-квартала. Толщина каждой улицы настраивается отдельно.`;
-        el.entryRoadHint.style.borderColor = 'var(--accent)';
+      } else if (mode === 'gates_only') {
+        el.entryRoadHint.innerHTML = `⚠️ <b>Режим «Без внутренних дорог»:</b> установлены только 15-метровые створы въезда у забора. Сквозные улицы между въездами <u>не связываются в граф</u>, участок не нарезается на кварталы, поэтому дома строятся сплошным массивом. Чтобы связать въезды в сеть улиц и нарезать кварталы, нажмите <b>«📐 Нарезка кварталов»</b> выше.`;
+        el.entryRoadHint.style.borderColor = 'var(--warning, #f59e0b)';
       }
     }
+    updateRoadShapeButtonsUI();
   }
 
-  function rebuildRoadsFromEntryPoints() {
+  function rebuildRoadsFromEntryPoints(skipServerCall = false) {
     state.currentScenario = null; // Invalidate Step 3 scenario cache so it regenerates on clean sub-blocks
     if (state.entry_points.length === 0) {
       state.custom_roads = [];
+      state.active_hub = null;
       state.activePresetTemplate = null;
       updateCustomRoadsUI();
       if (state.road_preset === 'custom') {
@@ -2247,75 +2447,170 @@
         el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === 'none'));
         if (el.valPresetBadge) el.valPresetBadge.textContent = 'Без дорог';
       }
-      apiPreviewSite(true);
+      if (!skipServerCall) apiPreviewSite(true);
       return;
     }
 
-    if (state.entry_points.length === 1) {
+    // Режимы "По контуру" или "Только въезды"
+    if (state.entry_road_mode === 'contour' || state.entry_road_mode === 'gates_only') {
       state.custom_roads = [];
+      state.active_hub = null;
+      state.road_preset = 'custom';
+      const activeKey = state.activePresetTemplate || 'custom';
+      el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === activeKey));
+      if (el.valPresetBadge) {
+        el.valPresetBadge.textContent = state.entry_road_mode === 'gates_only' ? 'Только въезды' : 'Контурная УДС';
+      }
       updateCustomRoadsUI();
-      apiPreviewSite(true); // Clear old road corridors from canvas so there are no orphan roads
+      renderEntryPointsOnSvg();
+      if (!skipServerCall) apiPreviewSite(true);
       return;
     }
+
+    // Режим 'skeleton': Скелетная нарезка на урбан-блоки
+    if (state.entry_points.length === 1) {
+      state.custom_roads = [];
+      state.active_hub = null;
+      state.road_preset = 'custom';
+      updateCustomRoadsUI();
+      renderEntryPointsOnSvg();
+      if (!skipServerCall) apiPreviewSite(true);
+      return;
+    }
+
+    const defaultW = state.road_width || 8.0;
+    const defaultS = state.road_setback || 3.0;
+    const defaultCat = state.road_category || 'local';
 
     if (state.entry_points.length === 2) {
       const ep1 = state.entry_points[0];
       const ep2 = state.entry_points[1];
-      const width = ep1.width || ep2.width || 15.0;
-      const category = ep1.category || ep2.category || 'district';
+      const width = ep1.width || ep2.width || defaultW;
+      const setback = ep1.setback || ep2.setback || defaultS;
+      const category = ep1.category || ep2.category || defaultCat;
       ep1.width = width;
       ep2.width = width;
+      ep1.setback = setback;
+      ep2.setback = setback;
       ep1.category = category;
       ep2.category = category;
 
-      state.custom_roads = [
-        {
-          name: `Сквозной проезд (${width}м)`,
-          category: category,
-          width: width,
-          setback: ep1.setback || 4.0,
-          points: [
-            [ep1.x, ep1.y],
-            [ep2.x, ep2.y]
-          ]
+      const boundaryCoords = (state.currentData && state.currentData.boundary_coords) || [];
+      const shape = state.road_shape || 'l1';
+
+      let hub = state.active_hub;
+
+      if (shape === 'straight') {
+        hub = null;
+        state.active_hub = null;
+      } else if (shape === 'l1') {
+        // Угол 1: [ep1.x, ep2.y]
+        if (!hub || state.road_shape_changed) {
+          hub = [round2(ep1.x), round2(ep2.y)];
+          state.active_hub = hub;
         }
-      ];
+      } else if (shape === 'l2') {
+        // Угол 2: [ep2.x, ep1.y]
+        if (!hub || state.road_shape_changed) {
+          hub = [round2(ep2.x), round2(ep1.y)];
+          state.active_hub = hub;
+        }
+      } else if (shape === 'center') {
+        if (!hub || state.road_shape_changed) {
+          if (boundaryCoords.length >= 3) {
+            const sumX = boundaryCoords.reduce((a, c) => a + c[0], 0) / boundaryCoords.length;
+            const sumY = boundaryCoords.reduce((a, c) => a + c[1], 0) / boundaryCoords.length;
+            hub = [round2(sumX), round2(sumY)];
+          } else {
+            hub = [round2((ep1.x + ep2.x) / 2), round2((ep1.y + ep2.y) / 2)];
+          }
+          state.active_hub = hub;
+        }
+      } else if (shape === 'custom_hub') {
+        if (!hub) {
+          hub = [round2((ep1.x + ep2.x) / 2), round2((ep1.y + ep2.y) / 2)];
+          state.active_hub = hub;
+        }
+      }
+      state.road_shape_changed = false;
+
+      if (hub) {
+        state.custom_roads = [
+          {
+            name: `Въезд 1 (${width}м)`,
+            category: category,
+            width: width,
+            setback: setback,
+            points: [[ep1.x, ep1.y], [hub[0], hub[1]]]
+          },
+          {
+            name: `Въезд 2 (${width}м)`,
+            category: category,
+            width: width,
+            setback: setback,
+            points: [[ep2.x, ep2.y], [hub[0], hub[1]]]
+          }
+        ];
+      } else {
+        state.active_hub = null;
+        state.custom_roads = [
+          {
+            name: `Сквозная улица (${width}м)`,
+            category: category,
+            width: width,
+            setback: setback,
+            points: [
+              [ep1.x, ep1.y],
+              [ep2.x, ep2.y]
+            ]
+          }
+        ];
+      }
     } else if (state.entry_points.length === 4) {
       const p = state.entry_points;
-      let hub = null;
-      const cross1 = findSegmentIntersection([p[0].x, p[0].y], [p[1].x, p[1].y], [p[2].x, p[2].y], [p[3].x, p[3].y]);
-      const cross2 = findSegmentIntersection([p[0].x, p[0].y], [p[2].x, p[2].y], [p[1].x, p[1].y], [p[3].x, p[3].y]);
-      const cross3 = findSegmentIntersection([p[0].x, p[0].y], [p[3].x, p[3].y], [p[1].x, p[1].y], [p[2].x, p[2].y]);
-      if (cross1) hub = cross1;
-      else if (cross2) hub = cross2;
-      else if (cross3) hub = cross3;
-      else {
-        const sumX = p.reduce((acc, ep) => acc + ep.x, 0);
-        const sumY = p.reduce((acc, ep) => acc + ep.y, 0);
-        hub = [sumX / 4, sumY / 4];
+      let hub = state.active_hub;
+      if (!hub) {
+        const cross1 = findSegmentIntersection([p[0].x, p[0].y], [p[1].x, p[1].y], [p[2].x, p[2].y], [p[3].x, p[3].y]);
+        const cross2 = findSegmentIntersection([p[0].x, p[0].y], [p[2].x, p[2].y], [p[1].x, p[1].y], [p[3].x, p[3].y]);
+        const cross3 = findSegmentIntersection([p[0].x, p[0].y], [p[3].x, p[3].y], [p[1].x, p[1].y], [p[2].x, p[2].y]);
+        if (cross1) hub = cross1;
+        else if (cross2) hub = cross2;
+        else if (cross3) hub = cross3;
+        else {
+          const sumX = p.reduce((acc, ep) => acc + ep.x, 0);
+          const sumY = p.reduce((acc, ep) => acc + ep.y, 0);
+          hub = [sumX / 4, sumY / 4];
+        }
+        hub = [round2(hub[0]), round2(hub[1])];
+        state.active_hub = hub;
       }
-      const hubX = round2(hub[0]);
-      const hubY = round2(hub[1]);
+      const hubX = hub[0];
+      const hubY = hub[1];
 
       state.custom_roads = p.map((ep, idx) => ({
-        name: `Въезд ${idx + 1} (${ep.width || 15.0}м)`,
-        category: ep.category || 'district',
-        width: ep.width || 15.0,
-        setback: ep.setback || 4.0,
+        name: `Въезд ${idx + 1} (${ep.width || defaultW}м)`,
+        category: ep.category || defaultCat,
+        width: ep.width || defaultW,
+        setback: ep.setback || defaultS,
         points: [[ep.x, ep.y], [hubX, hubY]]
       }));
     } else {
       const count = state.entry_points.length;
-      const sumX = state.entry_points.reduce((acc, ep) => acc + ep.x, 0);
-      const sumY = state.entry_points.reduce((acc, ep) => acc + ep.y, 0);
-      const hubX = round2(sumX / count);
-      const hubY = round2(sumY / count);
+      let hub = state.active_hub;
+      if (!hub) {
+        const sumX = state.entry_points.reduce((acc, ep) => acc + ep.x, 0);
+        const sumY = state.entry_points.reduce((acc, ep) => acc + ep.y, 0);
+        hub = [round2(sumX / count), round2(sumY / count)];
+        state.active_hub = hub;
+      }
+      const hubX = hub[0];
+      const hubY = hub[1];
 
       state.custom_roads = state.entry_points.map((ep, idx) => ({
-        name: `Въезд ${idx + 1} (${ep.width || 15.0}м)`,
-        category: ep.category || 'district',
-        width: ep.width || 15.0,
-        setback: ep.setback || 4.0,
+        name: `Въезд ${idx + 1} (${ep.width || defaultW}м)`,
+        category: ep.category || defaultCat,
+        width: ep.width || defaultW,
+        setback: ep.setback || defaultS,
         points: [
           [ep.x, ep.y],
           [hubX, hubY]
@@ -2327,12 +2622,14 @@
     const activeKey = state.activePresetTemplate || 'custom';
     el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === activeKey));
     if (el.valPresetBadge) {
-      const pLabels = { longitudinal: 'Продольная', transverse: 'Поперечная', cross_2x2: 'Сетка 2×2', custom: 'Въезды на границе' };
-      el.valPresetBadge.textContent = pLabels[state.activePresetTemplate] || 'Въезды на границе';
+      el.valPresetBadge.textContent = 'Нарезка кварталов';
     }
 
     updateCustomRoadsUI();
-    apiPreviewSite(true);
+    renderEntryPointsOnSvg();
+    if (!skipServerCall) {
+      apiPreviewSite(true);
+    }
   }
 
   function renderEntryPointsOnSvg() {
@@ -2345,72 +2642,68 @@
     const helpers = getCoordHelpers();
     let markup = '';
 
-    // If 2 points, draw connecting axis guideline
-    if (state.entry_points.length === 2) {
-      const p1 = helpers.siteToSvg(state.entry_points[0].x, state.entry_points[0].y);
-      const p2 = helpers.siteToSvg(state.entry_points[1].x, state.entry_points[1].y);
-      markup += `
-        <line x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}"
-              stroke="#0284c7" stroke-width="2.5" stroke-dasharray="6,4" opacity="0.85" style="pointer-events:none;" />
-      `;
-    } else if (state.entry_points.length === 4) {
-      const p = state.entry_points;
-      let hub = null;
-      const cross1 = findSegmentIntersection([p[0].x, p[0].y], [p[1].x, p[1].y], [p[2].x, p[2].y], [p[3].x, p[3].y]);
-      const cross2 = findSegmentIntersection([p[0].x, p[0].y], [p[2].x, p[2].y], [p[1].x, p[1].y], [p[3].x, p[3].y]);
-      const cross3 = findSegmentIntersection([p[0].x, p[0].y], [p[3].x, p[3].y], [p[1].x, p[1].y], [p[2].x, p[2].y]);
-      if (cross1) hub = cross1;
-      else if (cross2) hub = cross2;
-      else if (cross3) hub = cross3;
-      else {
-        const sumX = p.reduce((acc, ep) => acc + ep.x, 0);
-        const sumY = p.reduce((acc, ep) => acc + ep.y, 0);
-        hub = [sumX / 4, sumY / 4];
+    // Guidelines across plot only drawn in skeleton / through mode
+    if ((state.entry_road_mode === 'skeleton' || state.entry_road_mode === 'through') && state.entry_points.length >= 2) {
+      if (state.entry_points.length === 2 && !state.active_hub) {
+        const p1 = helpers.siteToSvg(state.entry_points[0].x, state.entry_points[0].y);
+        const p2 = helpers.siteToSvg(state.entry_points[1].x, state.entry_points[1].y);
+        const rayW = Math.max(2, Math.min(6, (state.entry_points[0].width || 8) / 4));
+        markup += `
+          <line class="entry-ray-line" data-entry-idx="0" x1="${p1[0]}" y1="${p1[1]}" x2="${p2[0]}" y2="${p2[1]}"
+                stroke="#0284c7" stroke-width="${rayW}" stroke-dasharray="6,4" opacity="0.85" style="pointer-events:none;" />
+        `;
+      } else {
+        let hub = state.active_hub;
+        if (!hub) {
+          if (state.entry_points.length === 2) {
+            hub = [round2(state.entry_points[0].x), round2(state.entry_points[1].y)];
+          } else if (state.entry_points.length === 4) {
+            const p = state.entry_points;
+            const cross1 = findSegmentIntersection([p[0].x, p[0].y], [p[1].x, p[1].y], [p[2].x, p[2].y], [p[3].x, p[3].y]);
+            const cross2 = findSegmentIntersection([p[0].x, p[0].y], [p[2].x, p[2].y], [p[1].x, p[1].y], [p[3].x, p[3].y]);
+            const cross3 = findSegmentIntersection([p[0].x, p[0].y], [p[3].x, p[3].y], [p[1].x, p[1].y], [p[2].x, p[2].y]);
+            hub = cross1 || cross2 || cross3;
+          }
+          if (!hub) {
+            const sumX = state.entry_points.reduce((acc, ep) => acc + ep.x, 0);
+            const sumY = state.entry_points.reduce((acc, ep) => acc + ep.y, 0);
+            hub = [sumX / state.entry_points.length, sumY / state.entry_points.length];
+          }
+        }
+        const sCross = helpers.siteToSvg(hub[0], hub[1]);
+
+        state.entry_points.forEach((ep, idx) => {
+          const sPt = helpers.siteToSvg(ep.x, ep.y);
+          const rayW = Math.max(2, Math.min(6, (ep.width || 8) / 4));
+          markup += `
+            <line class="entry-ray-line" data-entry-idx="${idx}" x1="${sPt[0]}" y1="${sPt[1]}" x2="${sCross[0]}" y2="${sCross[1]}"
+                  stroke="#0284c7" stroke-width="${rayW}" stroke-dasharray="6,4" opacity="0.85" style="pointer-events:none;" />
+          `;
+        });
+
+        // Draggable Hub Handle
+        const is2pt = (state.entry_points.length === 2);
+        const hubTitle = is2pt ? 'Потяните, чтобы изогнуть проезд' : 'Потяните узел перекрестка';
+        const hubLabel = is2pt ? '⤹ Излом' : 'Перекресток';
+        const hubBadgeW = is2pt ? 56 : 74;
+        markup += `
+          <g class="entry-hub-handle" data-hub="true" transform="translate(${sCross[0]}, ${sCross[1]})" style="cursor: grab;" title="${hubTitle}">
+            <circle cx="0" cy="0" r="14" fill="#f59e0b" fill-opacity="0.25" stroke="#f59e0b" stroke-width="2.5" filter="drop-shadow(0 2px 5px rgba(0,0,0,0.35))" />
+            <circle cx="0" cy="0" r="5" fill="#f59e0b" stroke="#ffffff" stroke-width="1.5" />
+            <g transform="translate(14, -10)">
+              <rect x="0" y="0" width="${hubBadgeW}" height="20" rx="4" fill="#0f172a" fill-opacity="0.94" stroke="#f59e0b" stroke-width="1.2" />
+              <text x="${hubBadgeW / 2}" y="14" text-anchor="middle" fill="#fbbf24" font-size="10.5" font-weight="bold">${hubLabel}</text>
+            </g>
+          </g>
+        `;
       }
-      const sCross = helpers.siteToSvg(hub[0], hub[1]);
-
-      p.forEach((ep, idx) => {
-        const sPt = helpers.siteToSvg(ep.x, ep.y);
-        const rayW = Math.max(2, Math.min(6, (ep.width || 15) / 4));
-        markup += `
-          <line class="entry-ray-line" data-entry-idx="${idx}" x1="${sPt[0]}" y1="${sPt[1]}" x2="${sCross[0]}" y2="${sCross[1]}"
-                stroke="#0284c7" stroke-width="${rayW}" stroke-dasharray="6,4" opacity="0.85" style="pointer-events:none;" />
-        `;
-      });
-      markup += `
-        <g class="entry-hub" style="pointer-events:none;">
-          <circle cx="${sCross[0]}" cy="${sCross[1]}" r="8" fill="#0284c7" fill-opacity="0.3" stroke="#0284c7" stroke-width="2" />
-          <circle cx="${sCross[0]}" cy="${sCross[1]}" r="3" fill="#ffffff" />
-        </g>
-      `;
-    } else if (state.entry_points.length === 3) {
-      const sumX = state.entry_points.reduce((acc, ep) => acc + ep.x, 0);
-      const sumY = state.entry_points.reduce((acc, ep) => acc + ep.y, 0);
-      const cSite = [sumX / 3, sumY / 3];
-      const cSvg = helpers.siteToSvg(cSite[0], cSite[1]);
-
-      state.entry_points.forEach((ep, idx) => {
-        const sPt = helpers.siteToSvg(ep.x, ep.y);
-        const rayW = Math.max(2, Math.min(6, (ep.width || 15) / 4));
-        markup += `
-          <line class="entry-ray-line" data-entry-idx="${idx}" x1="${sPt[0]}" y1="${sPt[1]}" x2="${cSvg[0]}" y2="${cSvg[1]}"
-                stroke="#0284c7" stroke-width="${rayW}" stroke-dasharray="6,4" opacity="0.85" style="pointer-events:none;" />
-        `;
-      });
-
-      markup += `
-        <g class="entry-hub" style="pointer-events:none;">
-          <circle cx="${cSvg[0]}" cy="${cSvg[1]}" r="8" fill="#0284c7" fill-opacity="0.3" stroke="#0284c7" stroke-width="2" />
-          <circle cx="${cSvg[0]}" cy="${cSvg[1]}" r="3" fill="#ffffff" />
-        </g>
-      `;
     }
 
     // Draggable entry markers + Width text badges
     state.entry_points.forEach((ep, idx) => {
       const sPt = helpers.siteToSvg(ep.x, ep.y);
       const label = `${idx + 1}`;
-      const badgeText = `${ep.width || 15}м`;
+      const badgeText = `${ep.width || 8}м`;
       const badgeW = badgeText.length * 7 + 10;
       markup += `
         <g class="entry-marker" data-entry-idx="${idx}" transform="translate(${sPt[0]}, ${sPt[1]})">
@@ -2453,12 +2746,21 @@
         }
       });
     });
+
+    const hubHandles = el.svgEntryPointsLayer.querySelectorAll('.entry-hub-handle');
+    hubHandles.forEach(h => {
+      h.addEventListener('mousedown', e => {
+        e.stopPropagation();
+        state.activeHubDrag = true;
+      });
+    });
   }
 
   function toggleDrawingMode(active) {
     state.isDrawingRoad = active;
-    state.drawingRoadStart = null;
+    state.drawingRoadPoints = [];
     if (el.svgRoadDrawingLayer) el.svgRoadDrawingLayer.innerHTML = '';
+    if (el.btnFinishCurrentRoad) el.btnFinishCurrentRoad.style.display = 'none';
 
     if (el.btnDrawRoad) el.btnDrawRoad.classList.toggle('active', active);
     if (el.btnDrawText) el.btnDrawText.textContent = active ? '⏹ Завершить черчение' : 'Начертить улицу на плане';
@@ -2467,28 +2769,62 @@
 
     if (el.drawRoadHint) {
       if (active) {
-        el.drawRoadHint.innerHTML = '<b>Режим черчения:</b> Кликните 1-ю точку входа на границе, затем 2-ю точку выхода.';
+        el.drawRoadHint.innerHTML = '<b>Режим черчения:</b> Кликайте по чертежу для построения ломаной оси улицы. Для завершения улицы — <b>Enter</b>, 2-й клик или зелёная кнопка.';
         el.drawRoadHint.style.borderColor = 'var(--success)';
         el.drawRoadHint.style.color = 'var(--text-primary)';
       } else {
-        el.drawRoadHint.innerHTML = 'Кликните <b>«Начертить улицу»</b>, затем укажите начальную и конечную точку на 2D CAD чертеже.';
+        el.drawRoadHint.innerHTML = 'Кликните <b>«Начертить улицу»</b>, затем кликайте по чертежу для построения оси улицы (2 или более точек).';
         el.drawRoadHint.style.borderColor = 'var(--accent-border)';
         el.drawRoadHint.style.color = 'var(--text-secondary)';
       }
     }
   }
 
+  function finishCurrentRoad() {
+    if (!state.isDrawingRoad || !state.drawingRoadPoints || state.drawingRoadPoints.length < 2) {
+      if (el.drawRoadHint) {
+        el.drawRoadHint.innerHTML = '⚠️ Для создания улицы необходимо отметить минимум 2 точки.';
+      }
+      return;
+    }
+
+    const pts = state.drawingRoadPoints.map(p => [round2(p.siteX), round2(p.siteY)]);
+    const newRoad = {
+      name: `Улица ${state.custom_roads.length + 1}`,
+      category: state.road_category || 'local',
+      width: state.road_width || 8.0,
+      setback: state.road_setback || 3.0,
+      points: pts
+    };
+
+    state.custom_roads.push(newRoad);
+    state.road_preset = 'custom';
+    el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === 'custom'));
+    if (el.valPresetBadge) el.valPresetBadge.textContent = 'На чертеже';
+
+    state.drawingRoadPoints = [];
+    if (el.svgRoadDrawingLayer) el.svgRoadDrawingLayer.innerHTML = '';
+    if (el.btnFinishCurrentRoad) el.btnFinishCurrentRoad.style.display = 'none';
+
+    updateCustomRoadsUI();
+    renderCustomRoadHandles();
+    apiPreviewSite(true);
+
+    if (el.drawRoadHint) {
+      el.drawRoadHint.innerHTML = `<b>✓ Улица ${state.custom_roads.length} построена (${pts.length} точек)!</b> Кликните на чертеже для следующей улицы или нажмите <b>«Завершить черчение»</b>.`;
+    }
+  }
+
+  if (el.btnFinishCurrentRoad) {
+    el.btnFinishCurrentRoad.addEventListener('click', () => {
+      finishCurrentRoad();
+    });
+  }
+
   // Clear Custom Roads
   if (el.btnClearRoads) {
     el.btnClearRoads.addEventListener('click', () => {
-      state.custom_roads = [];
-      updateCustomRoadsUI();
-      if (state.road_preset === 'custom') {
-        state.road_preset = 'none';
-        el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === 'none'));
-        if (el.valPresetBadge) el.valPresetBadge.textContent = 'Без дорог';
-      }
-      apiPreviewSite(true);
+      resetAllRoads(true);
     });
   }
 
@@ -2547,17 +2883,30 @@
     let markup = '';
 
     state.custom_roads.forEach((road, rIdx) => {
-      const p1 = road.points[0];
-      const p2 = road.points[1];
-      const s1 = helpers.siteToSvg(p1[0], p1[1]);
-      const s2 = helpers.siteToSvg(p2[0], p2[1]);
-      const sMid = [(s1[0] + s2[0]) / 2, (s1[1] + s2[1]) / 2];
+      const pts = road.points || [];
+      if (pts.length < 2) return;
 
+      // Connecting guideline between vertices
+      const polyPts = pts.map(pt => helpers.siteToSvg(pt[0], pt[1])).map(s => `${s[0].toFixed(1)},${s[1].toFixed(1)}`).join(' ');
+      markup += `<polyline points="${polyPts}" fill="none" stroke="#0284c7" stroke-width="2.5" stroke-dasharray="5,3" opacity="0.7"/>`;
+
+      // Handles for each vertex
+      pts.forEach((pt, vIdx) => {
+        const s = helpers.siteToSvg(pt[0], pt[1]);
+        const isEnd = (vIdx === 0 || vIdx === pts.length - 1);
+        const col = isEnd ? '#38bdf8' : '#34d399';
+        markup += `
+          <circle class="road-handle" data-road-idx="${rIdx}" data-handle="vertex" data-vertex-idx="${vIdx}" cx="${s[0]}" cy="${s[1]}" r="${isEnd ? 7 : 6}" fill="${col}" stroke="#ffffff" stroke-width="2" title="Улица ${rIdx + 1}, вершина ${vIdx + 1}" />
+        `;
+      });
+
+      // Midpoint handle for translating the entire road
+      let sumX = 0, sumY = 0;
+      pts.forEach(p => { sumX += p[0]; sumY += p[1]; });
+      const midSite = [sumX / pts.length, sumY / pts.length];
+      const sMid = helpers.siteToSvg(midSite[0], midSite[1]);
       markup += `
-        <!-- Road ${rIdx + 1} Handles -->
-        <circle class="road-handle" data-road-idx="${rIdx}" data-handle="pt1" cx="${s1[0]}" cy="${s1[1]}" r="7" fill="#38bdf8" stroke="#ffffff" stroke-width="2" />
-        <circle class="road-handle" data-road-idx="${rIdx}" data-handle="pt2" cx="${s2[0]}" cy="${s2[1]}" r="7" fill="#38bdf8" stroke="#ffffff" stroke-width="2" />
-        <rect class="road-handle-mid" data-road-idx="${rIdx}" data-handle="mid" x="${sMid[0] - 6}" y="${sMid[1] - 6}" width="12" height="12" rx="2" fill="#f59e0b" stroke="#ffffff" stroke-width="2" />
+        <rect class="road-handle-mid" data-road-idx="${rIdx}" data-handle="mid" x="${sMid[0] - 6}" y="${sMid[1] - 6}" width="12" height="12" rx="2" fill="#f59e0b" stroke="#ffffff" stroke-width="2" title="Переместить улицу ${rIdx + 1} целиком" />
       `;
     });
 
@@ -2573,9 +2922,11 @@
         e.stopPropagation();
         const rIdx = parseInt(h.dataset.roadIdx, 10);
         const handleType = h.dataset.handle;
+        const vertexIdx = h.dataset.vertexIdx !== undefined ? parseInt(h.dataset.vertexIdx, 10) : null;
         state.activeHandleDrag = {
           roadIdx: rIdx,
           handleType: handleType,
+          vertexIdx: vertexIdx,
           initialMouseX: e.clientX,
           initialMouseY: e.clientY
         };
@@ -2638,47 +2989,88 @@
     const helpers = getCoordHelpers();
     const [siteX, siteY] = helpers.svgToSite(svgX, svgY);
 
-    if (!state.drawingRoadStart) {
-      // Point 1
-      state.drawingRoadStart = { siteX, siteY, svgX, svgY };
-      if (el.svgRoadDrawingLayer) {
-        el.svgRoadDrawingLayer.innerHTML = `
-          <circle cx="${svgX}" cy="${svgY}" r="6" fill="#34d399" stroke="#ffffff" stroke-width="2" />
-        `;
+    state.drawingRoadPoints = state.drawingRoadPoints || [];
+
+    // Avoid accidental duplicate points
+    if (state.drawingRoadPoints.length > 0) {
+      const last = state.drawingRoadPoints[state.drawingRoadPoints.length - 1];
+      const dist = Math.hypot(siteX - last.siteX, siteY - last.siteY);
+      if (dist < 1.0) return;
+    }
+
+    state.drawingRoadPoints.push({ siteX, siteY, svgX, svgY });
+
+    if (el.btnFinishCurrentRoad) {
+      el.btnFinishCurrentRoad.style.display = state.drawingRoadPoints.length >= 2 ? 'flex' : 'none';
+    }
+
+    if (el.drawRoadHint) {
+      if (state.drawingRoadPoints.length === 1) {
+        el.drawRoadHint.innerHTML = '<b>Точка 1 задана!</b> Кликайте по чертежу для построения ломаной улицы. <b>Enter</b>, 2-клик или зелёная кнопка — завершить улицу.';
+      } else {
+        el.drawRoadHint.innerHTML = `<b>Точек в улице: ${state.drawingRoadPoints.length}</b>. Кликните следующую точку, либо нажмите <b>Enter</b> / двойной клик / кнопку «Завершить улицу».`;
       }
-      if (el.drawRoadHint) {
-        el.drawRoadHint.innerHTML = '<b>Точка 1 задана!</b> Теперь кликните 2-ю точку для завершения коридора улицы.';
+    }
+
+    renderDrawingRoadLayer();
+  });
+
+  function renderDrawingRoadLayer(curSvgX, curSvgY) {
+    if (!el.svgRoadDrawingLayer) return;
+    const pts = state.drawingRoadPoints || [];
+    if (pts.length === 0) {
+      el.svgRoadDrawingLayer.innerHTML = '';
+      return;
+    }
+
+    let markup = '';
+    // Fixed segments
+    if (pts.length > 1) {
+      const polyPts = pts.map(p => `${p.svgX.toFixed(1)},${p.svgY.toFixed(1)}`).join(' ');
+      markup += `<polyline points="${polyPts}" fill="none" stroke="#34d399" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />`;
+    }
+
+    // Fixed vertex nodes
+    pts.forEach((p, idx) => {
+      const isStart = (idx === 0);
+      markup += `<circle cx="${p.svgX}" cy="${p.svgY}" r="${isStart ? 6.5 : 5.5}" fill="${isStart ? '#10b981' : '#34d399'}" stroke="#ffffff" stroke-width="2" />`;
+    });
+
+    // Dynamic rubberband to cursor
+    if (curSvgX !== undefined && curSvgY !== undefined) {
+      const last = pts[pts.length - 1];
+      markup += `
+        <line x1="${last.svgX}" y1="${last.svgY}" x2="${curSvgX}" y2="${curSvgY}" stroke="#38bdf8" stroke-width="2.5" stroke-dasharray="6,4" />
+        <circle cx="${curSvgX}" cy="${curSvgY}" r="5" fill="#38bdf8" stroke="#ffffff" stroke-width="1.5" />
+      `;
+
+      // Live distance readout
+      const helpers = getCoordHelpers();
+      const [curSiteX, curSiteY] = helpers.svgToSite(curSvgX, curSvgY);
+      let totalM = Math.hypot(curSiteX - last.siteX, curSiteY - last.siteY);
+      for (let i = 1; i < pts.length; i++) {
+        totalM += Math.hypot(pts[i].siteX - pts[i - 1].siteX, pts[i].siteY - pts[i - 1].siteY);
       }
-    } else {
-      // Point 2 -> Create Road
-      const p1 = [state.drawingRoadStart.siteX, state.drawingRoadStart.siteY];
-      const p2 = [siteX, siteY];
+      markup += `
+        <text x="${curSvgX + 12}" y="${curSvgY - 10}" fill="#38bdf8" font-size="12" font-weight="700" font-family="sans-serif" filter="drop-shadow(0 1px 3px rgba(0,0,0,0.9))">${Math.round(totalM)} м</text>
+      `;
+    }
 
-      const newRoad = {
-        name: `Улица ${state.custom_roads.length + 1}`,
-        category: state.road_category,
-        width: state.road_width,
-        setback: state.road_setback,
-        points: [p1, p2]
-      };
+    el.svgRoadDrawingLayer.innerHTML = markup;
+  }
 
-      state.custom_roads.push(newRoad);
-      state.road_preset = 'custom';
-      el.presetBtns.forEach(b => b.classList.toggle('active', b.dataset.preset === 'custom'));
-      if (el.valPresetBadge) el.valPresetBadge.textContent = 'На чертеже';
-
-      state.drawingRoadStart = null;
-      if (el.svgRoadDrawingLayer) el.svgRoadDrawingLayer.innerHTML = '';
-
-      updateCustomRoadsUI();
-      toggleDrawingMode(false);
-      apiPreviewSite(true);
+  // Double-click on canvas finishes current street
+  el.svgCanvas.addEventListener('dblclick', e => {
+    if (state.isDrawingRoad && state.drawingRoadPoints && state.drawingRoadPoints.length >= 2) {
+      e.preventDefault();
+      e.stopPropagation();
+      finishCurrentRoad();
     }
   });
 
   el.svgCanvas.addEventListener('mousemove', e => {
     // 1. Drawing rubberband line
-    if (state.isDrawingRoad && state.drawingRoadStart) {
+    if (state.isDrawingRoad && state.drawingRoadPoints && state.drawingRoadPoints.length > 0) {
       const rect = el.svgCanvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -2686,17 +3078,27 @@
       const curSvgX = (mouseX - panZoom.tx) / panZoom.scale;
       const curSvgY = (mouseY - panZoom.ty) / panZoom.scale;
 
-      const p1 = state.drawingRoadStart;
-      if (el.svgRoadDrawingLayer) {
-        el.svgRoadDrawingLayer.innerHTML = `
-          <line x1="${p1.svgX}" y1="${p1.svgY}" x2="${curSvgX}" y2="${curSvgY}" stroke="#34d399" stroke-width="3" stroke-dasharray="6,4" />
-          <circle cx="${p1.svgX}" cy="${p1.svgY}" r="6" fill="#34d399" stroke="#ffffff" stroke-width="2" />
-          <circle cx="${curSvgX}" cy="${curSvgY}" r="5" fill="#38bdf8" stroke="#ffffff" stroke-width="1.5" />
-        `;
-      }
+      renderDrawingRoadLayer(curSvgX, curSvgY);
     }
 
-    // 0. Dragging entry marker along boundary
+    // 0. Dragging road hub / corner
+    if (state.activeHubDrag) {
+      const rect = el.svgCanvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const svgX = (mouseX - panZoom.tx) / panZoom.scale;
+      const svgY = (mouseY - panZoom.ty) / panZoom.scale;
+
+      const helpers = getCoordHelpers();
+      const [siteX, siteY] = helpers.svgToSite(svgX, svgY);
+      state.active_hub = [round2(siteX), round2(siteY)];
+      state.road_shape = 'custom_hub';
+      updateRoadShapeButtonsUI();
+      rebuildRoadsFromEntryPoints(true);
+      return;
+    }
+
+    // 1. Dragging entry marker along boundary
     if (state.activeEntryDrag) {
       const drag = state.activeEntryDrag;
       const ep = state.entry_points[drag.idx];
@@ -2735,19 +3137,20 @@
       const helpers = getCoordHelpers();
       const [siteX, siteY] = helpers.svgToSite(svgX, svgY);
 
-      if (drag.handleType === 'pt1') {
-        road.points[0] = [siteX, siteY];
+      if (drag.handleType === 'vertex' && drag.vertexIdx !== null && road.points && road.points[drag.vertexIdx]) {
+        road.points[drag.vertexIdx] = [round2(siteX), round2(siteY)];
+      } else if (drag.handleType === 'pt1') {
+        road.points[0] = [round2(siteX), round2(siteY)];
       } else if (drag.handleType === 'pt2') {
-        road.points[1] = [siteX, siteY];
+        road.points[1] = [round2(siteX), round2(siteY)];
       } else if (drag.handleType === 'mid') {
-        const midSite = [
-          (road.points[0][0] + road.points[1][0]) / 2,
-          (road.points[0][1] + road.points[1][1]) / 2
-        ];
-        const dX = siteX - midSite[0];
-        const dY = siteY - midSite[1];
-        road.points[0] = [round2(road.points[0][0] + dX), round2(road.points[0][1] + dY)];
-        road.points[1] = [round2(road.points[1][0] + dX), round2(road.points[1][1] + dY)];
+        const pts = road.points;
+        let sumX = 0, sumY = 0;
+        pts.forEach(p => { sumX += p[0]; sumY += p[1]; });
+        const curMid = [sumX / pts.length, sumY / pts.length];
+        const dX = siteX - curMid[0];
+        const dY = siteY - curMid[1];
+        road.points = pts.map(p => [round2(p[0] + dX), round2(p[1] + dY)]);
       }
 
       renderCustomRoadHandles();
@@ -2755,6 +3158,10 @@
   });
 
   window.addEventListener('mouseup', () => {
+    if (state.activeHubDrag) {
+      state.activeHubDrag = false;
+      rebuildRoadsFromEntryPoints(false);
+    }
     if (state.activeEntryDrag) {
       state.activeEntryDrag = null;
       state.activePresetTemplate = null; // User fine-tuned positions manually on canvas -> custom
@@ -2768,11 +3175,27 @@
     }
   });
 
-  // Cancel drawing on Escape
+  // Cancel drawing on Escape or Finish on Enter
   window.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if (state.isDrawingRoad) toggleDrawingMode(false);
+      if (state.isDrawingRoad) {
+        if (state.drawingRoadPoints && state.drawingRoadPoints.length > 0) {
+          state.drawingRoadPoints = [];
+          if (el.svgRoadDrawingLayer) el.svgRoadDrawingLayer.innerHTML = '';
+          if (el.btnFinishCurrentRoad) el.btnFinishCurrentRoad.style.display = 'none';
+          if (el.drawRoadHint) {
+            el.drawRoadHint.innerHTML = 'Построение улицы отменено. Кликните для начала новой улицы или Esc для выхода.';
+          }
+        } else {
+          toggleDrawingMode(false);
+        }
+      }
       if (state.isAddingEntryPoint) toggleAddEntryPointMode(false);
+    } else if (e.key === 'Enter') {
+      if (state.isDrawingRoad && state.drawingRoadPoints && state.drawingRoadPoints.length >= 2) {
+        e.preventDefault();
+        finishCurrentRoad();
+      }
     }
   });
 
@@ -3050,16 +3473,32 @@
         const data = await res.json();
         if (data.success) {
           state.cad_query = cadNum;
+          if (data.address && el.inputSearchAddress) {
+            el.inputSearchAddress.value = data.address;
+          }
+          if (data.area_sqm && el.inputCustomArea) {
+            el.inputCustomArea.value = Math.round(data.area_sqm);
+            state.custom_area = Math.round(data.area_sqm);
+          }
           if (el.pkkBadge) {
             el.pkkBadge.style.display = 'block';
-            el.pkkBadge.textContent = '✓ Границы подтверждены ПКК Росреестра';
+            if (data.is_pkk) {
+              el.pkkBadge.style.color = 'var(--success)';
+              el.pkkBadge.textContent = '✓ Границы подтверждены ПКК Росреестра';
+            } else {
+              el.pkkBadge.style.color = 'var(--warning, #f59e0b)';
+              el.pkkBadge.textContent = '📍 Посажен по кадастровому округу (НСПД офлайн)';
+            }
           }
           apiPreviewSite(true);
         } else {
-          alert(data.error || 'Границы не найдены на Публичной кадастровой карте');
+          state.cad_query = cadNum;
+          apiPreviewSite(true);
         }
       } catch (e) {
         console.error('PKK lookup error:', e);
+        state.cad_query = cadNum;
+        apiPreviewSite(true);
       } finally {
         el.btnFetchPkk.textContent = '🌐 ПКК';
       }
@@ -3635,7 +4074,7 @@
 
     // 3. Предельная этажность
     if (el.modalGpzuChkFloors && el.modalGpzuValFloors && el.modalGpzuSnipFloors) {
-      if (sb.max_floors !== undefined && sb.max_floors !== null) {
+      if (sb.max_floors !== undefined && sb.max_floors !== null && sb.max_floors >= 3) {
         el.modalGpzuChkFloors.checked = true;
         el.modalGpzuValFloors.value = sb.max_floors;
         el.modalGpzuSnipFloors.textContent = snips.max_floors ? `«${snips.max_floors}»` : 'Найдено в регламентах ГПЗУ';
@@ -3648,7 +4087,7 @@
 
     // 4. Предельная высота зданий
     if (el.modalGpzuChkMaxH && el.modalGpzuValMaxH && el.modalGpzuSnipMaxH) {
-      if (sb.max_height_m !== undefined && sb.max_height_m !== null) {
+      if (sb.max_height_m !== undefined && sb.max_height_m !== null && sb.max_height_m >= 9.0) {
         el.modalGpzuChkMaxH.checked = true;
         el.modalGpzuValMaxH.value = sb.max_height_m;
         el.modalGpzuSnipMaxH.textContent = snips.max_height_m ? `«${snips.max_height_m}»` : 'Найдено в регламентах ГПЗУ';
@@ -3729,16 +4168,20 @@
 
       if (el.modalGpzuChkFloors && el.modalGpzuChkFloors.checked) {
         const val = parseInt(el.modalGpzuValFloors.value, 10);
-        if (!isNaN(val)) {
+        if (!isNaN(val) && val >= 3) {
           state.max_floors = val;
           if (el.inputMaxFloors) el.inputMaxFloors.value = val;
           if (el.valMaxFloors) el.valMaxFloors.textContent = `${val} эт.`;
+          if (el.sliderStep3Floors) el.sliderStep3Floors.value = val;
+          if (el.labelStep3Floors) el.labelStep3Floors.textContent = `${val} эт.`;
+          if (el.valStep3FloorsTag) el.valStep3FloorsTag.textContent = `${val} эт. (${val * 3} м)`;
+          if (el.step3CardFloors) el.step3CardFloors.textContent = `${val} эт. (${val * 3} м)`;
         }
       }
 
       if (el.modalGpzuChkMaxH && el.modalGpzuChkMaxH.checked) {
         const val = parseFloat(el.modalGpzuValMaxH.value);
-        if (!isNaN(val)) {
+        if (!isNaN(val) && val >= 9.0) {
           state.max_height_m = val;
           if (el.inputMaxHeight) el.inputMaxHeight.value = val;
           if (el.valMaxHeight) el.valMaxHeight.textContent = `${val} м`;
@@ -4108,7 +4551,9 @@
 
       closeStep3RegulationsModal();
       setStep(3);
-      apiGenerateLayout();
+      if (state.currentScenario && !state.isGenerating) {
+        apiGenerateLayout();
+      }
     });
   }
 
@@ -4199,14 +4644,44 @@
     });
   });
 
-  // Вспомогательный дебаунсер для живого отклика параметров и ползунков Шага 3
-  let step3DebounceTimer = null;
-  function triggerStep3LiveUpdate(delay = 250) {
+  // Вспомогательный механизм отложенного пересчета параметров Шага 3 (плавающая кнопка в углу)
+  let pendingChangesCount = 0;
+
+  function markPendingRecalculate() {
     if (state.currentStep !== 3 || !state.currentData || state.isGenerating) return;
-    clearTimeout(step3DebounceTimer);
-    step3DebounceTimer = setTimeout(() => {
-      apiGenerateLayout();
-    }, delay);
+    pendingChangesCount++;
+    showFloatingRecalcBtn();
+  }
+
+  function showFloatingRecalcBtn() {
+    const wrap = document.getElementById('floating-recalc-wrap');
+    const countEl = document.getElementById('floating-recalc-count');
+    if (wrap) {
+      wrap.style.display = 'block';
+      if (countEl && pendingChangesCount > 1) {
+        countEl.textContent = `(${pendingChangesCount})`;
+        countEl.style.display = 'inline-block';
+      } else if (countEl) {
+        countEl.style.display = 'none';
+      }
+    }
+    if (el.btnGenerateLayout && !state.isGenerating) {
+      el.btnGenerateLayout.classList.add('pulse-glow');
+    }
+  }
+
+  function hideFloatingRecalcBtn() {
+    pendingChangesCount = 0;
+    const wrap = document.getElementById('floating-recalc-wrap');
+    if (wrap) wrap.style.display = 'none';
+    if (el.btnGenerateLayout) {
+      el.btnGenerateLayout.classList.remove('pulse-glow');
+    }
+  }
+
+  function triggerStep3LiveUpdate(delay = 0) {
+    // Вместо навязчивого немедленного пересчета показываем лаконичную кнопку в углу экрана
+    markPendingRecalculate();
   }
 
   // Step 3: Принципы застройки (СанПиН инсоляция, Двор без машин, ориентация)
@@ -4581,7 +5056,7 @@
       car_free_courtyard: state.car_free_courtyard !== false,
       only_ground_parking: !!state.only_ground_parking,
       typology: state.typology === 'SECTIONAL' ? 'LINEAR' : (state.typology || 'AUTO'),
-      courtyard_orientation: state.courtyard_orientation || 'SOUTH',
+      courtyard_orientation: state.courtyard_orientation || 'STREET',
       preferred_section_ids: (state.preferred_section_ids && state.preferred_section_ids.length)
         ? state.preferred_section_ids.slice()
         : null,
@@ -4595,13 +5070,20 @@
       max_far: state.max_far || 2.5,
       max_bcr: (state.max_bcr ? state.max_bcr / 100.0 : 0.4),
       enable_red_line: state.enable_red_line || false,
-      road_preset: state.road_preset || 'none',
-      road_width: state.road_width || 16.0,
-      road_setback: state.road_setback || 4.0,
+      road_preset: (state.road_preset === 'none' && ((state.entry_points && state.entry_points.length > 0) || (state.custom_roads && state.custom_roads.length > 0))) ? 'custom' : (state.road_preset || 'none'),
+      road_width: state.road_width || 8.0,
+      road_setback: state.road_setback || 3.0,
+      road_fillet_radius: state.road_fillet || 8.0,
+      fillet_radius: state.road_fillet || 8.0,
       road_pos: state.road_pos != null ? state.road_pos : 0.5,
       road_pos_x: state.road_pos_x != null ? state.road_pos_x : 0.5,
       road_pos_y: state.road_pos_y != null ? state.road_pos_y : 0.5,
       custom_roads: state.custom_roads || [],
+      uds_mode: state.uds_mode || 'entries',
+      entry_road_mode: state.entry_road_mode || 'skeleton',
+      road_shape: state.road_shape || 'l1',
+      hub_point: (state.road_shape === 'straight') ? false : (state.active_hub || null),
+      entry_points: (state.entry_points && state.entry_points.length) ? state.entry_points : [],
       max_sections: state.max_sections || 8,
       stage: 2,
       site_locked: true,
@@ -4791,6 +5273,7 @@
   let optProgressInterval = null;
 
   async function apiGenerateLayout(options = {}) {
+    hideFloatingRecalcBtn();
     const isMaximize = options.gen_mode === 'maximize';
     state.isGenerating = true;
     try {
@@ -4872,6 +5355,7 @@
         el.btnRunMaximize.disabled = false;
         el.btnRunMaximize.textContent = '⚡ Выжать максимум по закону (Top-1)';
       }
+      hideFloatingRecalcBtn();
     }
   }
 
@@ -5349,7 +5833,7 @@
     if (el.svgRoadCorridorLayer) {
       let cMarkup = '';
       if (roads && roads.corridor_path) {
-        cMarkup = `<path id="cad-roads-corridor" d="${roads.corridor_path}" fill="rgba(30, 41, 59, 0.75)" stroke="#475569" stroke-width="1.5" />`;
+        cMarkup = `<path id="cad-roads-corridor" d="${roads.corridor_path}" fill="#1e293b" stroke="#94a3b8" stroke-width="2.5" />`;
       }
       el.svgRoadCorridorLayer.innerHTML = cMarkup;
     }
@@ -5357,7 +5841,7 @@
     if (el.svgRoadBufferLayer) {
       let bufMarkup = '';
       if (roads && roads.buffer_path) {
-        bufMarkup = `<path id="cad-roads-buffer" d="${roads.buffer_path}" fill="rgba(245, 158, 11, 0.06)" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="6,4" />`;
+        bufMarkup = `<path id="cad-roads-buffer" d="${roads.buffer_path}" fill="rgba(245, 158, 11, 0.08)" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="6,4" />`;
       }
       el.svgRoadBufferLayer.innerHTML = bufMarkup;
     }
@@ -5366,7 +5850,7 @@
       let clMarkup = '';
       if (roads && roads.centerlines_paths) {
         roads.centerlines_paths.forEach(p => {
-          clMarkup += `<path class="cad-centerline" d="${p}" fill="none" stroke="#f8fafc" stroke-width="2" stroke-dasharray="8,5" />`;
+          clMarkup += `<path class="cad-centerline" d="${p}" fill="none" stroke="#fbbf24" stroke-width="2" stroke-dasharray="8,5" />`;
         });
       }
       el.svgRoadCenterlinesLayer.innerHTML = clMarkup;
@@ -5465,6 +5949,7 @@
 
     // 8.5. Insolation (СанПиН 1.2.3685-21)
     renderInsolationResults(data.insolation || {});
+    applyLayerVisibility();
 
     // 9. Apartments Breakdown & Variants Matrix Sync
     renderApartmentsBreakdown(data.buildings || []);
@@ -5560,10 +6045,7 @@
       state.surrounding_height_overrides = state.surrounding_height_overrides || {};
       state.surrounding_height_overrides[bId] = newH;
       updateSurroundingOverridesBadge();
-      if (e.data.recalculate) {
-        setStep(3);
-        apiGenerateLayout();
-      }
+      markPendingRecalculate();
     }
   });
 
@@ -5756,7 +6238,7 @@
     );
 
     el.svgCanvas.addEventListener('mousedown', e => {
-      if (e.button !== 0 || state.isDrawingRoad || state.activeHandleDrag || state.isAddingEntryPoint || state.activeEntryDrag) return;
+      if (e.button !== 0 || state.isDrawingRoad || state.activeHandleDrag || state.isAddingEntryPoint || state.activeEntryDrag || state.activeHubDrag) return;
       panZoom.isDragging = true;
       panZoom.startX = e.clientX - panZoom.tx;
       panZoom.startY = e.clientY - panZoom.ty;
@@ -5937,15 +6419,20 @@
       if (tab3d && !tab3d.classList.contains('active')) {
         tab3d.click();
       }
-      setTimeout(() => {
-        if (el.iframe3d && el.iframe3d.contentWindow) {
-          el.iframe3d.contentWindow.postMessage({
-            type: 'toggleInsolation',
-            showProject: isProjectInsolActive,
-            showSurroundings: isSurrInsolActive
-          }, '*');
-        }
-      }, 100);
+      const sendMsg = () => {
+        try {
+          if (el.iframe3d && el.iframe3d.contentWindow) {
+            el.iframe3d.contentWindow.postMessage({
+              type: 'toggleInsolation',
+              showProject: isProjectInsolActive,
+              showSurroundings: isSurrInsolActive
+            }, '*');
+          }
+        } catch (_) {}
+      };
+      sendMsg();
+      setTimeout(sendMsg, 60);
+      setTimeout(sendMsg, 200);
     };
 
     const toggleProjectInsol = (e) => {
@@ -5965,6 +6452,25 @@
     if (btnOpen3dInsol) btnOpen3dInsol.addEventListener('click', toggleProjectInsol);
     if (btnRightOpen3dInsol) btnRightOpen3dInsol.addEventListener('click', toggleProjectInsol);
     if (btnShowSurrHeatmap) btnShowSurrHeatmap.addEventListener('click', toggleSurrInsol);
+
+    window.addEventListener('message', (e) => {
+      if (e.data && e.data.type === 'insolationToggled') {
+        if (typeof e.data.showProject === 'boolean') isProjectInsolActive = e.data.showProject;
+        if (typeof e.data.showSurroundings === 'boolean') isSurrInsolActive = e.data.showSurroundings;
+        updateInsolButtonsUI();
+      }
+    });
+  }
+
+  function setupFloatingRecalcButton() {
+    const btn = document.getElementById('btn-floating-recalc');
+    if (btn) {
+      btn.addEventListener('click', () => {
+        hideFloatingRecalcBtn();
+        setStep(3);
+        apiGenerateLayout();
+      });
+    }
   }
 
   // --- INITIALIZATION ---
@@ -5973,4 +6479,5 @@
   setupExportButtons();
   setupLayerToggleButtons();
   setupInsolationControls();
+  setupFloatingRecalcButton();
 })();

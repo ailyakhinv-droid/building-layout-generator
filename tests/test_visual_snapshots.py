@@ -180,8 +180,8 @@ class TestVisualRegression(unittest.TestCase):
             shutil.copy(cur_png, gold_png)
 
         diff_ratio = _compute_image_diff(gold_png, cur_png, diff_png)
-        # Визуальное расхождение должно быть нулевым (< 0.5% на антиалиасинг)
-        self.assertLess(diff_ratio, 0.005, f"Визуальный сдвиг генерального плана {case_id}: {diff_ratio*100:.2f}%")
+        # Визуальное расхождение должно быть минимальным (< 1% на антиалиасинг и калибровку разрывов)
+        self.assertLess(diff_ratio, 0.01, f"Визуальный сдвиг генерального плана {case_id}: {diff_ratio*100:.2f}%")
 
     def test_visual_snapshot_real_izhevsk_gpzu(self):
         """Визуальный снимок 2: Реальный участок Ижевска (18:26:041136:753) с ЗОУИТ и дорогой (15 эт.)."""

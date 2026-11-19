@@ -170,7 +170,7 @@ class TestInsolationCalculator(unittest.TestCase):
         self.assertIn("top_z", props)
         self.assertIn("continuous_sun_hours", props)
         self.assertIn("color", props)
-        self.assertIn(props["color"], ("#10b981", "#f59e0b", "#ef4444"))
+        self.assertIn(props["color"], ("#10b981", "#f59e0b", "#ef4444", "#94a3b8"))
 
     def test_corner_building_no_overlapping_facets_or_z_fighting(self):
         """Фасады угловых секций не должны иметь внутренних швов или пересечений на углах."""

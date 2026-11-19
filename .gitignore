@@ -40,6 +40,8 @@ data/osm_cache/
 # Temporary node & scratch dirs
 node_modules/
 scratch/
+dist/
+cookies.txt
 
 # OS specific
 Thumbs.db

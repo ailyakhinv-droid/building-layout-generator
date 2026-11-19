@@ -31,7 +31,7 @@ from shapely.geometry import (
     box,
     mapping,
 )
-from shapely.ops import unary_union
+from shapely.ops import nearest_points, unary_union
 from shapely.validation import make_valid
 
 from src.models.building import Building
@@ -169,6 +169,7 @@ class FireAccessEngine:
         site: Site,
         buildings: Sequence[Building],
         include_turnarounds: bool = True,
+        entry_points: Sequence[dict[str, Any] | Any] | None = None,
     ) -> FireAccessResult:
         """Сгенерировать комплексную сеть пожарных проездов для застройки участка.
 
@@ -176,6 +177,8 @@ class FireAccessEngine:
             site: Участок застройки с границей.
             buildings: Список размещенных зданий.
             include_turnarounds: Включать ли генерацию разворотных площадок 15х15 м.
+            entry_points: Опциональный список въездов на границе ЗУ для автоматического
+                подключения проездов к внешней дорожной сети.
 
         Returns:
             FireAccessResult с полигонами, метриками и нормативным контролем.
@@ -246,6 +249,32 @@ class FireAccessEngine:
         # Ограничиваем проезд границами участка
         clipped_lanes = raw_lanes.intersection(site_poly)
 
+        # 2b. Автоматическое подключение точек въезда к сети проездов (Симбиоз УДС и застройки)
+        entry_connectors: list[Polygon] = []
+        entry_centerlines: list[LineString] = []
+        if entry_points and not clipped_lanes.is_empty:
+            for ep_item in entry_points:
+                if hasattr(ep_item, "position"):
+                    pos = ep_item.position
+                elif isinstance(ep_item, dict):
+                    pos = Point(float(ep_item.get("x", 0.0)), float(ep_item.get("y", 0.0)))
+                else:
+                    continue
+
+                if not site_poly.buffer(1.0).contains(pos) and hasattr(site_poly, "exterior"):
+                    pos = nearest_points(site_poly.exterior, pos)[0]
+
+                p_conn = nearest_points(clipped_lanes, pos)[0]
+                if pos.distance(p_conn) >= 1.0:
+                    conn_line = LineString([pos, p_conn])
+                    entry_centerlines.append(conn_line)
+                    conn_poly = conn_line.buffer(3.0, cap_style="flat").intersection(site_poly)
+                    if not conn_poly.is_empty:
+                        entry_connectors.append(conn_poly)
+
+        if entry_connectors:
+            clipped_lanes = unary_union([clipped_lanes] + entry_connectors)
+
         # 3. Генерация разворотных площадок 15х15 м в ключевых тупиковых узлах
         turnarounds_list: list[Polygon] = []
         if include_turnarounds and not clipped_lanes.is_empty:
@@ -261,6 +290,8 @@ class FireAccessEngine:
         centerlines: list[LineString] = []
         if all_infra is not None and not all_infra.is_empty:
             centerlines = self._extract_approx_centerlines(all_infra, buildings)
+            if entry_centerlines:
+                centerlines.extend(entry_centerlines)
 
         total_area = all_infra.area if all_infra is not None else 0.0
         turn_area = turnarounds_poly.area if turnarounds_poly is not None else 0.0

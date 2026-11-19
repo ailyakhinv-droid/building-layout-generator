@@ -204,6 +204,9 @@ class SectionType:
         # Перемещаем в заданную позицию
         footprint = translate(footprint, xoff=x, yoff=y)
 
+        # ponytail: нормализация координат вершин (0.1 мм) для идеальной стыковки в GEOS/Shapely без float-артефактов
+        footprint = Polygon([(round(px, 4), round(py, 4)) for px, py in footprint.exterior.coords])
+
         return footprint
 
     def __repr__(self) -> str:

@@ -146,7 +146,105 @@ class StudioHandler(DashboardHandler):
         if parsed.path == "/api/upload-gpzu":
             self._handle_upload_gpzu()
             return
+        if parsed.path == "/api/pkk-lookup":
+            self._handle_pkk_lookup()
+            return
+        if parsed.path in ("/api/generate", "/api/variants", "/api/site-preview"):
+            self._handle_diagnostic_api_post(parsed.path)
+            return
         super().do_POST()
+
+    def _handle_pkk_lookup(self):
+        import json
+        from dashboard_prototype.generator_service import lookup_pkk_parcel
+        content_length = int(self.headers.get("Content-Length", 0))
+        post_data = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else "{}"
+        try:
+            data = json.loads(post_data) if post_data else {}
+            cad_num = (data.get("cadastral_number") or "").strip()
+            print(f"[Studio PKK] Запрос кадастрового номера: '{cad_num}'", flush=True)
+            res = lookup_pkk_parcel(cad_num)
+            print(f"[Studio PKK] Результат: success={res.get('success')}, source={res.get('source')}, address='{res.get('address')}'", flush=True)
+            response_bytes = json.dumps(res, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(response_bytes)))
+            self._send_cors_headers()
+            self.end_headers()
+            self._safe_write(response_bytes)
+        except Exception as e:
+            err_bytes = json.dumps({"success": False, "error": str(e)}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(err_bytes)))
+            self._send_cors_headers()
+            self.end_headers()
+            self._safe_write(err_bytes)
+
+    def _handle_diagnostic_api_post(self, api_path: str):
+        import json
+        content_length = int(self.headers.get("Content-Length", 0))
+        post_data = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else "{}"
+        try:
+            params = json.loads(post_data) if post_data else {}
+        except Exception as ex:
+            params = {}
+
+        # ── Диагностика входящего сетевого пакета (только для ключевых операций генерации) ──
+        is_preview = (api_path == "/api/site-preview")
+        if not is_preview:
+            entry_pts = params.get("entry_points") or []
+            custom_rds = params.get("custom_roads") or []
+            print("\n" + "=" * 65, flush=True)
+            print(f"[DIAG SERVER] Входящий запрос POST {api_path}", flush=True)
+            print(f"  stage: {params.get('stage')}, cad_query: {params.get('cad_query')}, site_mode: {params.get('site_mode')}", flush=True)
+            print(f"  uds_mode: '{params.get('uds_mode')}', entry_road_mode: '{params.get('entry_road_mode')}'", flush=True)
+            print(f"  entry_points ({len(entry_pts)}), custom_roads: {len(custom_rds)}, gen_mode: {params.get('gen_mode')}", flush=True)
+            print("-" * 65, flush=True)
+
+        try:
+            if api_path == "/api/site-preview":
+                from dashboard_prototype.generator_service import preview_site
+                result = preview_site(params)
+                resp_obj = result
+            elif api_path == "/api/generate":
+                result = gs_mod.run_pipeline(params)
+                resp_obj = result
+            elif api_path == "/api/variants":
+                from dashboard_prototype.generator_service import compute_variants_matrix
+                variants = compute_variants_matrix(params)
+                resp_obj = {"variants": variants}
+                result = {"roads": {}}
+            else:
+                resp_obj = {}
+                result = {}
+
+            # Диагностика результата расчета (для ключевых операций)
+            if not is_preview and isinstance(result, dict):
+                r_dict = result.get("roads", {}) or {}
+                sb_data = r_dict.get("sub_blocks_data") or []
+                print(f"[DIAG SERVER] Результат {api_path}:", flush=True)
+                print(f"  sub_blocks: {len(sb_data)}, buildings: {len(result.get('buildings') or [])}", flush=True)
+                print("=" * 65 + "\n", flush=True)
+
+            response_bytes = json.dumps(resp_obj, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(response_bytes)))
+            self._send_cors_headers()
+            self.end_headers()
+            self._safe_write(response_bytes)
+        except Exception as e:
+            import traceback
+            err_text = traceback.format_exc()
+            print(f"[DIAG SERVER ERROR] {api_path}: {e}\n{err_text}")
+            err_bytes = json.dumps({"error": str(e), "traceback": err_text}).encode("utf-8")
+            self.send_response(500)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(err_bytes)))
+            self._send_cors_headers()
+            self.end_headers()
+            self._safe_write(err_bytes)
 
     def _handle_upload_gpzu(self):
         import json, base64
@@ -171,10 +269,17 @@ class StudioHandler(DashboardHandler):
             if (not res.get("success") or res.get("points_count", 0) < 3) and filename.lower().endswith(".pdf"):
                 if is_scanned_pdf(file_bytes):
                     print(f"[Studio OCR] Запуск оптического распознавания скана '{filename}'...")
-                    ocr_res = process_scanned_gpzu(file_bytes, filename, msk_zone=msk_zone)
-                    if ocr_res.get("success"):
-                        res = ocr_res
-                        print(f"[Studio OCR] Успешно распознано {res.get('points_count')} точек, КН {res.get('cadastral_number')}")
+                    try:
+                        ocr_res = process_scanned_gpzu(file_bytes, filename, msk_zone=msk_zone)
+                        if ocr_res.get("success"):
+                            res = ocr_res
+                            print(f"[Studio OCR] Успешно распознано {res.get('points_count')} точек, КН {res.get('cadastral_number')}")
+                        elif ocr_res.get("error") and not res.get("success"):
+                            res = ocr_res
+                    except Exception as ocr_err:
+                        print(f"[Studio OCR Exception] {ocr_err}")
+                        if not res.get("success"):
+                            res = {"success": False, "error": f"Ошибка оптического распознавания скана: {ocr_err}"}
 
             response_bytes = json.dumps(res, ensure_ascii=False).encode("utf-8")
             self.send_response(200 if res.get("success") else 400)
@@ -225,6 +330,23 @@ class StudioHandler(DashboardHandler):
                 self._safe_write(content)
                 return
 
+        if parsed.path.startswith("/libs/"):
+            rel_file = parsed.path.replace("/libs/", "")
+            lib_path = STUDIO_DIR / "libs" / rel_file
+            if not lib_path.exists():
+                lib_path = PROTOTYPE_DIR / "libs" / rel_file
+            if lib_path.exists():
+                with open(lib_path, "rb") as f:
+                    content = f.read()
+                mime = "application/javascript" if rel_file.endswith(".js") else "text/css"
+                self.send_response(200)
+                self.send_header("Content-Type", f"{mime}; charset=utf-8")
+                self.send_header("Content-Length", str(len(content)))
+                self._send_cors_headers()
+                self.end_headers()
+                self._safe_write(content)
+                return
+
         super().do_GET()
 
 
@@ -235,18 +357,46 @@ def run_studio_server(port: int = PORT, open_browser: bool = True):
     print(f" Статика: {STUDIO_DIR}")
     print(f"========================================================\n")
 
-    server = ThreadingHTTPServer(("0.0.0.0", port), StudioHandler)
+    ThreadingHTTPServer.allow_reuse_address = True
+    server = None
+    for attempt in range(5):
+        try:
+            server = ThreadingHTTPServer(("0.0.0.0", port), StudioHandler)
+            break
+        except OSError:
+            import time
+            time.sleep(0.5)
+    if server is None:
+        server = ThreadingHTTPServer(("0.0.0.0", port), StudioHandler)
+
+    server.daemon_threads = True
 
     if open_browser:
         webbrowser.open(f"http://localhost:{port}")
 
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nСервер остановлен.")
-        server.server_close()
+    while True:
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            print("\nСервер остановлен пользователем.")
+            server.server_close()
+            break
+        except Exception as ex:
+            print(f"[Сервер Studio] Исключение в цикле serve_forever: {ex}")
+            import time
+            time.sleep(0.5)
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else PORT
-    run_studio_server(port=port, open_browser=False)
+    import traceback
+    try:
+        port = int(sys.argv[1]) if len(sys.argv) > 1 else PORT
+        run_studio_server(port=port, open_browser=False)
+    except BaseException as e:
+        try:
+            with open("scratch/server_crash.txt", "a", encoding="utf-8") as f:
+                f.write(f"\n--- CRASH: {type(e).__name__}: {e} ---\n")
+                traceback.print_exc(file=f)
+        except Exception:
+            pass
+        raise

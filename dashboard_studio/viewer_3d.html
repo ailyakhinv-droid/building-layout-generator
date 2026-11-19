@@ -4,8 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>3D-визуализация застройки участка</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">
-  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+  <link rel="stylesheet" href="libs/maplibre-gl.css">
+  <script src="libs/maplibre-gl.js"></script>
+  <script>
+    if (typeof maplibregl === 'undefined') {
+      document.write('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">');
+      document.write('<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js"><\/script>');
+    }
+  </script>
   <style>
     :root {
       --ink: #1e293b;
@@ -71,6 +77,10 @@
       box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
       font-size: 13px;
       transition: transform 0.25s ease, opacity 0.25s ease;
+      display: none !important;
+    }
+    .panel-toggle-btn {
+      display: none !important;
     }
     .ui-panel.collapsed {
       transform: translateX(-340px);
@@ -357,13 +367,13 @@
 
   <div id="loading-msg" class="loading-notice">Загрузка 3D-сцены...</div>
 
-  <button id="btn-show-panel" class="panel-toggle-btn" type="button">☰ Меню и ТЭП</button>
+  <button id="btn-show-panel" class="panel-toggle-btn" type="button" style="display: none !important;">☰ Меню и ТЭП</button>
 
   <div class="compass-hint">
     🖱️ ПКМ / Ctrl + ЛКМ — вращение и наклон | Колесико — зум
   </div>
 
-  <aside id="ui-panel" class="ui-panel">
+  <aside id="ui-panel" class="ui-panel collapsed" style="display: none !important;">
     <header class="panel-header">
       <div class="panel-header-top">
         <h1 class="panel-title">3D-визуализация застройки участка</h1>
@@ -607,6 +617,22 @@
   // в false из-за pending-операций, из-за чего подложка навсегда откладывалась (баг «пропавшей подложки»)
   let styleEverLoaded = false;
 
+  function show3dError(msg) {
+    let errEl = document.getElementById('v3d-error-banner');
+    if (!errEl) {
+      errEl = document.createElement('div');
+      errEl.id = 'v3d-error-banner';
+      errEl.style.cssText = 'position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); max-width:480px; width:90%; padding:24px 28px; background:#ffffff; border:1.5px solid #ef4444; border-radius:14px; box-shadow:0 16px 40px rgba(15,23,42,0.2); z-index:9999; text-align:center; font-family:sans-serif; color:#0f172a;';
+      document.body.appendChild(errEl);
+    }
+    errEl.innerHTML = `
+      <div style="font-size:36px; margin-bottom:10px;">⚠️</div>
+      <div style="font-weight:700; font-size:16px; color:#ef4444; margin-bottom:10px;">3D-сцена не может быть отображена</div>
+      <div style="font-size:13px; line-height:1.55; color:#334155;">${msg}</div>
+    `;
+    errEl.style.display = 'block';
+  }
+
   function initMapIfReady() {
     if (mapInitialized) return true;
     const container = document.getElementById('map');
@@ -615,6 +641,18 @@
     const cHeight = container.clientHeight;
     // Если контейнер скрыт (display: none или размер 0) — откладываем создание карты
     if (cWidth < 50 || cHeight < 50) {
+      return false;
+    }
+
+    if (typeof maplibregl === 'undefined') {
+      console.error('[3D Map] MapLibre GL JS не загружен!');
+      show3dError('Библиотека MapLibre GL не загружена. Проверьте файлы в папке libs/ или доступность сети.');
+      return false;
+    }
+
+    if (maplibregl.supported && !maplibregl.supported({ failIfMajorPerformanceCaveat: false })) {
+      console.error('[3D Map] WebGL не поддерживается в браузере!');
+      show3dError('В браузере отключено или недоступно аппаратное ускорение WebGL.<br><br><b>Как исправить:</b><br>1. В настройках браузера (Chrome / Edge / Яндекс) введите в поиск <b>«ускорение»</b>.<br>2. Включите параметр <i>«Использовать аппаратное ускорение (при наличии)»</i>.<br>3. Перезапустите браузер.');
       return false;
     }
 
@@ -641,14 +679,16 @@
         antialias: true
       });
     } catch (err) {
-      // WebGL-контекст мог не создаться (например, вкладка в фоне) —
-      // сбрасываем флаг и позволяем ResizeObserver/'activate' повторить попытку
-      console.error('[3D Map] Карта не создана, будет повторена попытка инициализации:', err);
+      console.error('[3D Map] Карта не создана:', err);
+      show3dError('Ошибка инициализации 3D-движка: ' + (err.message || err));
       mapInitialized = false;
       map = null;
       return false;
     }
     window.map = map;
+
+    const banner = document.getElementById('v3d-error-banner');
+    if (banner) banner.style.display = 'none';
 
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
     map.addControl(new maplibregl.ScaleControl({ maxWidth: 100, unit: 'metric' }), 'bottom-right');
@@ -1075,9 +1115,7 @@
     const cHeight = container ? container.clientHeight : window.innerHeight;
     if (cWidth < 50 || cHeight < 50) return;
 
-    const panel = document.getElementById('ui-panel');
-    const isPanelVisible = panel && !panel.classList.contains('collapsed');
-    const leftPad = isPanelVisible && cWidth > 680 ? Math.min(340, Math.floor(cWidth * 0.35)) : 30;
+    const leftPad = 30;
     const rightPad = Math.min(40, Math.floor(cWidth * 0.08));
     const vPad = Math.min(50, Math.floor(cHeight * 0.12));
 
@@ -1559,8 +1597,14 @@
     }
 
     if (!map) {
-      initMapIfReady();
-    } else if (styleEverLoaded) {
+      if (initMapIfReady()) {
+        installLayers();
+        if (hasBuildings || hasBoundary) {
+          setTimeout(() => fitToData(true), 60);
+        }
+      }
+    } else if (styleEverLoaded || (map && map.isStyleLoaded())) {
+      styleEverLoaded = true;
       installLayers();
       const badgeSurrUpd = document.getElementById('count-surroundings');
       if (badgeSurrUpd) {
@@ -1581,6 +1625,7 @@
       }
     } else {
       map.once('style.load', () => {
+        styleEverLoaded = true;
         installLayers();
         if (hasBuildings || hasBoundary) {
           setTimeout(() => fitToData(true), 60);

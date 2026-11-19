@@ -17,7 +17,7 @@
     })();
   </script>
   <link rel="stylesheet" href="radix-themes.css">
-  <link rel="stylesheet" href="style.css?v=2.5_20261115">
+  <link rel="stylesheet" href="style.css?v=2.7_20261115_recalc_pill">
 </head>
 <body class="radix-themes light-theme light" data-accent-color="slate">
 
@@ -382,13 +382,13 @@
           <div class="tool-section">
             <div class="tool-section-head">
               <span>Параметры улицы (СП 42.13330)</span>
-              <span class="val-tag" id="val-category-pill-tag">Внутриквартальная</span>
+              <span class="val-tag" id="val-category-pill-tag">Проезд 8м</span>
             </div>
 
             <div class="category-pills">
-              <button class="cat-pill active" data-cat="district" title="Внутриквартальная жилая улица (15 м / отступ 4 м)">Внутриквартальная 15м</button>
+              <button class="cat-pill active" data-cat="local" title="Пожарный проезд СП 4.13130 / двухполосный проезд СП 42.13330 (8 м / отступ 3 м)">Проезд 8м</button>
+              <button class="cat-pill" data-cat="district" title="Внутриквартальная жилая улица (15 м / отступ 4 м)">Внутриквартальная 15м</button>
               <button class="cat-pill" data-cat="arterial" title="Магистральная улица районного значения (22 м / отступ 6 м)">Магистральная 22м</button>
-              <button class="cat-pill" data-cat="local" title="Пожарный проезд СП 4.13130 (8 м / отступ 3 м)">Проезд 8м</button>
               <button class="cat-pill" data-cat="custom" title="Пользовательская ручная настройка">Настраиваемая</button>
             </div>
 
@@ -396,18 +396,27 @@
             <div class="form-group" style="margin-top: 10px;">
               <div class="form-label">
                 <span>Ширина коридора улицы</span>
-                <span class="val-tag" id="val-road-width">15.0 м</span>
+                <span class="val-tag" id="val-road-width">8.0 м</span>
               </div>
-              <input type="range" id="slider-road-width" min="6" max="30" step="0.5" value="15">
+              <input type="range" id="slider-road-width" min="6" max="30" step="0.5" value="8">
             </div>
 
             <!-- Строительный отступ от улицы -->
             <div class="form-group">
               <div class="form-label">
                 <span>Строительный отступ от УДС</span>
-                <span class="val-tag" id="val-road-setback">4.0 м</span>
+                <span class="val-tag" id="val-road-setback">3.0 м</span>
               </div>
-              <input type="range" id="slider-road-setback" min="3" max="10" step="0.5" value="4">
+              <input type="range" id="slider-road-setback" min="3" max="10" step="0.5" value="3">
+            </div>
+
+            <!-- Радиус скругления перекрестков и примыканий (СП 42.13330 п. 11.14) -->
+            <div class="form-group">
+              <div class="form-label">
+                <span>Радиус скругления УДС (СП 42.13330)</span>
+                <span class="val-tag" id="val-road-fillet">8.0 м</span>
+              </div>
+              <input type="range" id="slider-road-fillet" min="3" max="15" step="1" value="8">
             </div>
 
             <!-- Положение оси улицы (для продольной/поперечной) -->
@@ -461,8 +470,49 @@
                 <button class="angle-btn" id="btn-clear-entries" style="padding: 8px 10px; color: var(--danger); font-weight:600;" title="Очистить все въезды">↺ Сброс</button>
               </div>
 
+              <!-- Трассировка от въездов (Скелетная нарезка УДС / Контур) -->
+              <div style="margin-top: 8px;">
+                <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; display:flex; justify-content:space-between; align-items:center;">
+                  <span>Схема дорожной сети:</span>
+                  <span id="label-entry-mode-desc" style="color:var(--accent); font-weight:700; font-size:10.5px;">Нарезка кварталов (граф дорог)</span>
+                </div>
+                <div style="display: flex; gap: 4px; background: var(--bg-canvas); padding: 2px; border-radius: var(--radius-sm); border: 1px solid var(--border-default);">
+                  <button type="button" class="angle-btn active" id="btn-entry-mode-skeleton" style="flex: 1.4; justify-content: center; font-size: 10px; padding: 5px 2px; font-weight: 700;" title="Скелетная УДС: улицы между въездами связываются в граф и делят участок на кварталы">
+                    📐 Нарезка кварталов
+                  </button>
+                  <button type="button" class="angle-btn" id="btn-entry-mode-contour" style="flex: 1; justify-content: center; font-size: 10px; padding: 5px 2px; font-weight: 700;" title="Пожарный объезд по контуру застройки (без внутреннего рассечения)">
+                    🛡️ По контуру
+                  </button>
+                  <button type="button" class="angle-btn" id="btn-entry-mode-gates" style="flex: 1.2; justify-content: center; font-size: 10px; padding: 5px 2px; font-weight: 700;" title="Только входные створы у границы (без внутренних дорог, участок не нарезается)">
+                    🚪 Без дорог (створы)
+                  </button>
+                </div>
+              </div>
+
+              <!-- Форма трассы / излом проезда (для 2-х въездов) -->
+              <div id="road-shape-selector-container" style="margin-top: 8px;">
+                <div style="font-size: 11px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; display:flex; justify-content:space-between; align-items:center;">
+                  <span>Трассировка проезда:</span>
+                  <span id="label-road-shape-desc" style="color:var(--accent); font-weight:700; font-size:10.5px;">Г-образная ⬏</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 4px; background: var(--bg-canvas); padding: 2px; border-radius: var(--radius-sm); border: 1px solid var(--border-default);">
+                  <button type="button" class="angle-btn active" id="btn-road-shape-l1" style="justify-content:center; font-size:10px; padding:5px 2px; font-weight:700;" title="Г-образная трасса под прямым углом (поворот через угол 1)">
+                    ⬏ Г-образная 1
+                  </button>
+                  <button type="button" class="angle-btn" id="btn-road-shape-l2" style="justify-content:center; font-size:10px; padding:5px 2px; font-weight:700;" title="Г-образная трасса под прямым углом (поворот через угол 2)">
+                    ⬎ Г-образная 2
+                  </button>
+                  <button type="button" class="angle-btn" id="btn-road-shape-straight" style="justify-content:center; font-size:10px; padding:5px 2px; font-weight:700;" title="Прямая линия между въездами">
+                    📏 Прямая
+                  </button>
+                  <button type="button" class="angle-btn" id="btn-road-shape-center" style="justify-content:center; font-size:10px; padding:5px 2px; font-weight:700;" title="Излом через центр ЗУ">
+                    📐 Центр ЗУ
+                  </button>
+                </div>
+              </div>
+
               <div class="draw-road-hint" id="entry-road-hint" style="margin-top: 8px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.4; padding: 8px; background: rgba(56, 189, 248, 0.05); border: 1px dashed var(--accent-border); border-radius: var(--radius-sm);">
-                Кликните <b>«Поставить въезд»</b>, затем укажите 2–4 точки на границе участка. Алгоритм увяжет их в связную сеть улиц и нарежет кварталы.
+                Кликните <b>«Поставить въезд»</b>, затем укажите 2–4 точки на границе ЗУ. Желтый маркер излома <b>«⤹ Излом»</b> на чертеже можно свободно перетаскивать мышкой!
               </div>
 
               <div id="entry-points-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
@@ -480,8 +530,12 @@
                 <button class="angle-btn" id="btn-clear-roads" style="padding: 8px 10px; color: var(--danger); font-weight:600;" title="Очистить все начерченные улицы">↺ Сброс</button>
               </div>
 
+              <button class="btn-primary-action" id="btn-finish-current-road" type="button" style="display: none; width: 100%; margin-top: 6px; padding: 7px 10px; font-size: 12px; font-weight:600; background: var(--success); color: #020617; border-color: var(--success-border); justify-content: center; align-items: center; gap: 6px;">
+                <span>✓ Завершить улицу (Enter / 2-клик)</span>
+              </button>
+
               <div class="draw-road-hint" id="draw-road-hint" style="margin-top: 8px; font-size: 11.5px; color: var(--text-secondary); line-height: 1.4; padding: 8px; background: rgba(56, 189, 248, 0.05); border: 1px dashed var(--accent-border); border-radius: var(--radius-sm);">
-                Кликните <b>«Начертить улицу»</b>, затем укажите начальную и конечную точку на 2D CAD чертеже.
+                Кликните <b>«Начертить улицу»</b>, затем кликайте по чертежу для построения оси улицы (2 или более точек). Двойной клик или Enter — завершить улицу.
               </div>
 
               <div id="custom-roads-list" style="margin-top: 8px; display: flex; flex-direction: column; gap: 6px;">
@@ -639,8 +693,9 @@
               </label>
               <div style="display:flex; justify-content:space-between; align-items:center; margin-top:2px;">
                 <span style="font-size:11.5px; color:var(--text-secondary);">Ориентация дворов:</span>
-                <select id="select-step3-court-orient" style="font-size:11px; padding:3px 8px; width:155px; border-radius:var(--radius-sm);">
-                  <option value="SOUTH" selected>Юг (макс. инсоляция)</option>
+                <select id="select-step3-court-orient" style="font-size:11px; padding:3px 8px; width:175px; border-radius:var(--radius-sm);">
+                  <option value="STREET" selected>⚡ Вдоль улиц (авто-симбиоз)</option>
+                  <option value="SOUTH">Юг (макс. инсоляция)</option>
                   <option value="EAST">Восток</option>
                 </select>
               </div>
@@ -949,6 +1004,10 @@
         <!-- БЫСТРЫЕ ПЕРЕКЛЮЧАТЕЛИ ВИДИМОСТИ ИНЖЕНЕРНЫХ СЛОЕВ -->
         <div class="canvas-layers-bar" id="canvas-layers-bar" style="display: flex;">
           <span class="layers-bar-label">Слои:</span>
+          <button class="layer-pill-btn active" data-layer="road" id="btn-toggle-road" type="button" title="Показать / скрыть улично-дорожную сеть (УДС) и кварталы">
+            <span class="layer-pill-dot" style="background:#fbbf24;"></span>
+            <span>🛣️ УДС</span>
+          </button>
           <button class="layer-pill-btn active" data-layer="fire" id="btn-toggle-fire" type="button" title="Показать / скрыть пожарные проезды СП 4.13130">
             <span class="layer-pill-dot" style="background:#ef4444;"></span>
             <span>🚒 Пожарные</span>
@@ -1031,6 +1090,15 @@
             <div id="dock-scenario-buttons" style="display: flex; align-items: center; gap: 4px;"></div>
           </div>
         </div>
+      </div>
+
+      <!-- ВСПЛЫВАЮЩАЯ КНОПКА ПЕРЕСЧЕТА ПРИ ИЗМЕНЕНИИ ПАРАМЕТРОВ (В ПРАВОМ НИЖНЕМ УГЛУ) -->
+      <div class="floating-recalc-wrap" id="floating-recalc-wrap" style="display: none;">
+        <button type="button" class="floating-recalc-btn" id="btn-floating-recalc" title="Применить изменения параметров и пересчитать застройку">
+          <span class="recalc-pulse-dot"></span>
+          <span class="recalc-text">⚡ Пересчитать</span>
+          <span class="recalc-count" id="floating-recalc-count" style="display: none;"></span>
+        </button>
       </div>
 
       <!-- CANVAS LOADING PROGRESS OVERLAY -->
@@ -2087,6 +2155,6 @@
 </div> <!-- /.studio-app -->
 
 <!-- Client App Engine -->
-<script src="app.js?v=2.6_20261115_toggle"></script>
+<script src="app.js?v=2.13_uds_fix"></script>
 </body>
 </html>

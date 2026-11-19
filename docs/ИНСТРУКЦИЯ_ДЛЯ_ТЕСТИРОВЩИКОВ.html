@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>URBAN / TEP STUDIO — Руководство тестировщика</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 15mm 15mm 15mm 15mm;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #1e293b;
+      line-height: 1.5;
+      font-size: 10.5pt;
+      background: #ffffff;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .header-box {
+      border-bottom: 2px solid #2563eb;
+      padding-bottom: 12px;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .header-title {
+      font-size: 18pt;
+      font-weight: 800;
+      color: #0f172a;
+      letter-spacing: -0.5px;
+    }
+    .header-subtitle {
+      font-size: 11pt;
+      font-weight: 600;
+      color: #2563eb;
+      margin-top: 2px;
+    }
+    .header-badge {
+      font-size: 8.5pt;
+      font-weight: 700;
+      background: #eff6ff;
+      color: #1d4ed8;
+      border: 1px solid #bfdbfe;
+      padding: 4px 10px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .intro-card {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #2563eb;
+      padding: 10px 14px;
+      border-radius: 4px;
+      margin-bottom: 16px;
+      font-size: 10pt;
+      color: #334155;
+    }
+    .section-title {
+      font-size: 13pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 18px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      page-break-after: avoid;
+    }
+    .step-box {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      background: #ffffff;
+      page-break-inside: avoid;
+    }
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      font-weight: 700;
+      font-size: 11pt;
+      color: #1e3a8a;
+    }
+    .step-num {
+      background: #2563eb;
+      color: #ffffff;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9.5pt;
+      font-weight: 800;
+    }
+    ul, ol {
+      padding-left: 18px;
+      margin-bottom: 6px;
+    }
+    li {
+      margin-bottom: 4px;
+    }
+    b, strong {
+      color: #0f172a;
+    }
+    .tag {
+      display: inline-block;
+      font-size: 8.5pt;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+    }
+    .tag-blue { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+    .tag-green { background: #f0fdf4; color: #15803d; border-color: #bbf7d0; }
+    .tag-amber { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+    
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .card-mini {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: #f8fafc;
+      page-break-inside: avoid;
+    }
+    .card-mini-title {
+      font-weight: 700;
+      font-size: 10pt;
+      color: #0f172a;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .callout {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-top: 10px;
+      font-size: 9.5pt;
+      color: #166534;
+      page-break-inside: avoid;
+    }
+    .footer-note {
+      margin-top: 20px;
+      padding-top: 10px;
+      border-top: 1px solid #e2e8f0;
+      font-size: 8.5pt;
+      color: #64748b;
+      display: flex;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header-box">
+    <div>
+      <div class="header-title">URBAN / TEP STUDIO</div>
+      <div class="header-subtitle">Руководство тестировщика: Экспресс-мастерплан и расчет ТЭП</div>
+    </div>
+    <div class="header-badge">Версия 2.7 • Portable</div>
+  </div>
+
+  <div class="intro-card">
+    <b>Назначение комплекса:</b> автоматизированная разработка мастер-планов, компоновка жилых кварталов, нарезка улично-дорожной сети (УДС) и мгновенный расчет баланса территории и ТЭП в строгом соответствии с нормами РФ (<b>СП 42.13330, СП 4.13130, СП 113.13330, СанПиН 1.2.3685-21, региональные нормативы РНГП/МНГП</b>).
+  </div>
+
+  <div class="section-title">🚀 1. Быстрый запуск (без установки)</div>
+  <div class="step-box">
+    <ol>
+      <li>Распакуйте полученный ZIP-архив в любую удобную папку (например, на Рабочий стол).</li>
+      <li>Запустите файл <b>«Запустить Генератор.bat»</b> двойным кликом.</li>
+      <li>Через 2–3 секунды в браузере автоматически откроется интерфейс: <span class="tag tag-blue">http://localhost:8070</span>.</li>
+      <li>Черное окно командной строки не закрывайте во время работы (можно свернуть).</li>
+    </ol>
+  </div>
+
+  <div class="section-title">🖥️ 2. Структура интерфейса (3 рабочих зоны)</div>
+  <div class="grid-2">
+    <div class="card-mini">
+      <div class="card-mini-title">👈 Левая панель (Мастер 3 шагов)</div>
+      <p style="font-size:9.5pt; color:#475569;">
+        Последовательное создание проекта: <b>Шаг 1</b> (Посадка ЗУ и отступы) ➔ <b>Шаг 2</b> (Нарезка УДС и кварталов) ➔ <b>Шаг 3</b> (Генерация застройки, инсоляция и нормы).
+      </p>
+    </div>
+    <div class="card-mini">
+      <div class="card-mini-title">📐 Центр: Интерактивный холст</div>
+      <p style="font-size:9.5pt; color:#475569;">
+        Переключение между видами: <b>🛰️ Спутник OSM</b> (геопривязка), <b>📐 2D CAD План</b> (векторный генплан со слоями) и <b>🧊 3D Модель</b> (солнечные тени и тепловая карта).
+      </p>
+    </div>
+  </div>
+  <div class="card-mini" style="margin-bottom: 14px;">
+    <div class="card-mini-title">👉 Правая панель (Паспорт ЗУ, Баланс территории и ТЭП)</div>
+    <p style="font-size:9.5pt; color:#475569;">
+      Мгновенный пересчет параметров в реальном времени: общая площадь (GFA), жилье, коммерция, плотность (КПО / FAR), процент застройки (Кз / BCR), баланс парковок (СП 42), площадки благоустройства и инсоляция фасадов.
+    </p>
+  </div>
+
+  <div class="section-title">📋 3. Пошаговый сценарий работы</div>
+
+  <!-- ШАГ 1 -->
+  <div class="step-box">
+    <div class="step-header">
+      <span class="step-num">1</span>
+      <span>ШАГ 1. Посадка земельного участка</span>
+    </div>
+    <ul>
+      <li><b>Кадастровый номер (быстрее всего):</b> введите кадастровый номер ЗУ (например, <span class="tag">63:01:0415004:569</span> или <span class="tag">72:23:0216003:101</span>). Нажмите кнопку <b>«🌐 ПКК»</b> для запроса официальных границ Росреестра и затем <b>«Посадить участок»</b>.</li>
+      <li><b>Выписка ГПЗУ / ЕГРН:</b> перетащите файл выписки (.PDF или .XLSX) в поле загрузки — система автоматически извлечет поворотные точки и кадастровый номер.</li>
+      <li><b>Чертеж CAD (.DXF):</b> загрузите файл топосъемки — система распознает полилинии границы и местную систему координат (МСК).</li>
+      <li><b>Ориентация и отступы:</b> настройте угол поворота слайдером или кнопками <span class="tag">0° (Север)</span>, <span class="tag">±90°</span>. Установите строительный отступ от границ ЗУ (по умолчанию <b>6 м</b>) и от красных линий улиц (<b>5 м</b>). Зоны с особыми условиями (<b>ЗОУИТ</b> — ЛЭП, газопроводы, СЗЗ) автоматически исключаются из пятна застройки.</li>
+      <li>Нажмите кнопку <b>«🔒 Зафиксировать посадку и перейти к УДС →»</b>.</li>
+    </ul>
+  </div>
+
+  <!-- ШАГ 2 -->
+  <div class="step-box">
+    <div class="step-header">
+      <span class="step-num">2</span>
+      <span>ШАГ 2. Нарезка улично-дорожной сети (УДС) и кварталов</span>
+    </div>
+    <ul>
+      <li><b>Быстрые пресеты УДС:</b> выберите готовую схему: <span class="tag">Без дорог</span> (1 массив), <span class="tag">Продольная</span> или <span class="tag">Поперечная</span> улица (делит участок на 2 квартала), либо <span class="tag">Сетка 2×2</span> (4 квартала). Смещение оси улицы регулируется слайдером.</li>
+      <li><b>📍 Въезды на границе (моделирование):</b> нажмите кнопку и поставьте 2–4 клика на контуре ЗУ в местах примыкания к городским дорогам — алгоритм автоматически свяжет их в проезды и нарежет подкварталы.</li>
+      <li><b>Нормативная категория улицы (СП 42.13330):</b> выберите категорию профиля: <i>Внутриквартальная (15 м / отступ 4 м)</i>, <i>Магистральная районная (22 м / отступ 6 м)</i> или <i>Пожарный проезд (8 м / отступ 3 м)</i>.</li>
+      <li>В правой панели мгновенно формируется <b>Баланс территории</b>: площадь дорог, буфер отступов и чистая полезная площадь подкварталов. Нажмите <b>«✓ К застройке (Шаг 3) →»</b>.</li>
+    </ul>
+  </div>
+
+  <!-- ШАГ 3 -->
+  <div class="step-box">
+    <div class="step-header">
+      <span class="step-num">3</span>
+      <span>ШАГ 3. Застройка, нормы и расчет ТЭП</span>
+    </div>
+    <ul>
+      <li><b>Региональный норматив (РНГП / МНГП):</b> выберите регион (<span class="tag">СП 42 РФ</span>, <span class="tag">Москва МНГП №945-ПП</span>, <span class="tag">Московская обл.</span>, <span class="tag">СПб</span>, <span class="tag">Тюмень</span>). Норматив переключает обеспеченность машиноместами (м/м на 1000 жителей), норму жилой площади на человека (25–30 м²) и % озеленения.</li>
+      <li><b>Типология застройки:</b>
+        <ul>
+          <li><b>Квартальная (AUTO):</b> адаптивная периметрально-секционная застройка вдоль улиц.</li>
+          <li><b>П-образные дворы:</b> полузамкнутые комфортные дворы с ориентацией на юг/восток.</li>
+          <li><b>Башни (Towers):</b> точечные акценты с максимальным световым фронтом.</li>
+          <li><b>Секционная:</b> широтные корпуса с классической ориентацией.</li>
+        </ul>
+      </li>
+      <li><b>Принципы проектирования:</b>
+        <ul>
+          <li><i>Каскадная этажность:</i> понижение этажности секций с юга для инсоляции дворов и северных секций.</li>
+          <li><i>Двор без машин (СП 113):</i> вынос автостоянок на внешний периметр квартала.</li>
+          <li><i>Все парковки на участке (без подземного):</i> автоматическая калибровка этажности под размещение 100% требуемых машиномест на открытых стоянках.</li>
+        </ul>
+      </li>
+      <li><b>Инсоляция (СанПиН 1.2.3685-21):</b> под-вкладка «☀️ Инсоляция» рассчитывает солнечное освещение жилых комнат на расчетный день 22 апреля с учетом затенения окружающей застройкой (OSM).</li>
+      <li><b>Запуск расчета:</b> нажмите синюю кнопку <b>«⚡ Сгенерировать застройку»</b> или кнопку <b>«⚡ Выжать максимум по закону (Top-1)»</b> для запуска перебора вариантов с целью максимизации выхода продаваемой площади (GFA) без нарушения норм.</li>
+    </ul>
+  </div>
+
+  <div class="section-title">🔍 4. Анализ чертежа и 3D-модели</div>
+  <div class="grid-2">
+    <div class="card-mini">
+      <div class="card-mini-title">📐 Инженерные слои на 2D CAD</div>
+      <ul style="font-size:9pt; padding-left:14px; margin-top:4px;">
+        <li>🔴 <b>Пожарные:</b> проезды шириной 5–6 м на расстоянии 5–8 м от фасадов по СП 4.13130.</li>
+        <li>🔵 <b>Парковки:</b> разметка машиномест 2.5 × 5.3 м.</li>
+        <li>🟢 <b>ТКО:</b> контейнерные площадки с радиусом ≤ 100 м.</li>
+        <li>🟣 <b>Санразрывы:</b> разрывы от стоянок до окон (10–15 м).</li>
+        <li><i>Клик на корпус открывает паспорт секции с квартирографией.</i></li>
+      </ul>
+    </div>
+    <div class="card-mini">
+      <div class="card-mini-title">🧊 Интерактивная 3D-модель</div>
+      <ul style="font-size:9pt; padding-left:14px; margin-top:4px;">
+        <li>Вращение зажатой ЛКМ, панорамирование ПКК, зум колесом.</li>
+        <li><b>☀️ Тепловая карта инсоляции:</b> цветные расчетные точки на фасадах (зеленый = норма СанПиН выполнена, красный = затенение).</li>
+        <li>Реальные солнечные тени в течение светового дня.</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="section-title">💾 5. Экспорт документации (Левая панель, низ)</div>
+  <div class="step-box">
+    <ul style="margin-bottom:0;">
+      <li><b>📐 CAD (.DXF):</b> векторный чертеж со слоями для работы в AutoCAD, nanoCAD, ArchiCAD.</li>
+      <li><b>🧊 3D (.HTML):</b> интерактивная 3D-модель для демонстрации заказчику или руководству (открывается в браузере на любом ПК).</li>
+      <li><b>🗺️ GeoJSON:</b> пространственные гео-данные контуров для геоинформационных систем (QGIS).</li>
+      <li><b>📄 Отчет ТЭП:</b> сводная ведомость градостроительных показателей для пояснительной записки.</li>
+    </ul>
+  </div>
+
+  <div class="callout">
+    <b>💡 Совет для первого теста:</b> попробуйте ввести кадастровый номер своего реального проекта, выбрать норматив вашего региона, нажать «Квартальная (AUTO)» и оценить баланс машиномест и соблюдение инсоляции по СанПиН.
+  </div>
+
+  <div class="footer-note">
+    <span>URBAN / TEP STUDIO • Инструкция для архитектурных бюро и проектных институтов</span>
+    <span>Конфиденциально • Внутреннее тестирование</span>
+  </div>
+
+</body>
+</html>

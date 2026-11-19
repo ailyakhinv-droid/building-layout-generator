@@ -1,4 +1,4 @@
-"""Квартально-периметральный генератор застройки (R2-style).
+"""Квартально-периметральный генератор застройки.
 
 Реализует формирование улично-дорожного каркаса, деление территории на урбан-блоки
 и гибкую периметральную посадку секций с поддержкой различных конфигураций дворов
@@ -226,8 +226,8 @@ class PerimeterPlacementEngine:
         # так как их северный фасад получает 0 часов прямого солнца.
         from src.core.placement import MIN_MERIDIAN_INSOLATION_ANGLE_DEG, angle_to_horizontal
 
-        is_horiz_x = angle_to_horizontal(angle) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG
-        is_horiz_y = angle_to_horizontal(angle + 90.0) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG
+        is_horiz_x = angle_to_horizontal(angle) <= MIN_MERIDIAN_INSOLATION_ANGLE_DEG
+        is_horiz_y = angle_to_horizontal(angle + 90.0) <= MIN_MERIDIAN_INSOLATION_ANGLE_DEG
 
         pool_x = self._get_latitudinal_pool(middle_pool) if is_horiz_x else middle_pool
         pool_y = self._get_latitudinal_pool(middle_pool) if is_horiz_y else middle_pool
@@ -426,6 +426,11 @@ class PerimeterPlacementEngine:
         # ВАРИАНТ 3: П-ОБРАЗНЫЙ ДВОР (U_SHAPE) С ЧЕЛОВЕКО-СОРАЗМЕРНЫМИ ПРОПОРЦИЯМИ
         # =====================================================================
         else:
+            if orient in ("STREET", "AUTO", "ROADS", "STREET_ALIGNED"):
+                # Авто-ориентация по геометрии блока: раскрываемся на наиболее освещенную солнцем сторону (Юг или Восток)
+                from src.core.placement import angle_to_horizontal
+                orient = "SOUTH" if angle_to_horizontal(angle) <= 45.0 else "EAST"
+
             if orient in ("NORTH",):
                 # Раскрытие на Север (закрыт южный фронт)
                 space_x = len_x - 2 * wc
@@ -490,23 +495,25 @@ class PerimeterPlacementEngine:
                     curr_y += s.width
                 sections.append(PlacedSection(corner_sec, xb, curr_y + wc / 2.0, ang_top, fl_back, is_flipped=flip_top, floor_height=floor_height, ground_floor_height=ground_floor_height))
 
-                # Верхнее крыло
+                # Верхнее крыло (состыковано с верхним углом основания)
+                y_wing_top = curr_y + wc
                 curr_x = minx + dc if is_open_east else maxx - dc
                 for s in mids_top:
                     cx = curr_x + s.width / 2.0 if is_open_east else curr_x - s.width / 2.0
-                    sections.append(PlacedSection(s, cx, maxy - s.depth / 2.0, 0.0, fl_high, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                    sections.append(PlacedSection(s, cx, y_wing_top - s.depth / 2.0, 0.0, fl_high, floor_height=floor_height, ground_floor_height=ground_floor_height))
                     curr_x = curr_x + s.width if is_open_east else curr_x - s.width
                 cx_end = curr_x + we / 2.0 if is_open_east else curr_x - we / 2.0
-                sections.append(PlacedSection(end_sec_x, cx_end, maxy - end_sec_x.depth / 2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                sections.append(PlacedSection(end_sec_x, cx_end, y_wing_top - end_sec_x.depth / 2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
 
-                # Нижнее крыло
+                # Нижнее крыло (состыковано с нижним углом основания)
+                y_wing_bot = y_start
                 curr_x_bot = minx + dc if is_open_east else maxx - dc
                 for s in mids_top:
                     cx = curr_x_bot + s.width / 2.0 if is_open_east else curr_x_bot - s.width / 2.0
-                    sections.append(PlacedSection(s, cx, miny + s.depth / 2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                    sections.append(PlacedSection(s, cx, y_wing_bot + s.depth / 2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
                     curr_x_bot = curr_x_bot + s.width if is_open_east else curr_x_bot - s.width
                 cx_end2 = curr_x_bot + we / 2.0 if is_open_east else curr_x_bot - we / 2.0
-                sections.append(PlacedSection(end_sec_x, cx_end2, miny + end_sec_x.depth / 2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
+                sections.append(PlacedSection(end_sec_x, cx_end2, y_wing_bot + end_sec_x.depth / 2.0, 0.0, fl_low, floor_height=floor_height, ground_floor_height=ground_floor_height))
 
             else:
                 # По умолчанию: РАСКРЫТИЕ НА ЮГ (макс. инсоляция)

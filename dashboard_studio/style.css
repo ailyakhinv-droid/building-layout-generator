@@ -2375,7 +2375,7 @@ body.light-theme .loading-spinner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
+  gap: 8px;
   padding-top: 6px;
   border-top: 1px dashed var(--border-subtle, rgba(255, 255, 255, 0.08));
   width: 100%;
@@ -2390,7 +2390,7 @@ body.light-theme .loading-spinner {
 
 .entry-stepper {
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm, 6px);
@@ -2400,12 +2400,15 @@ body.light-theme .loading-spinner {
   height: 24px;
 }
 
-.entry-step-btn {
+body .entry-stepper .entry-step-btn {
   width: 24px;
   height: 24px;
   line-height: 22px;
   background: var(--bg-elevated);
-  border: none;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
   color: var(--text-primary);
   font-size: 13px;
   font-weight: 700;
@@ -2416,32 +2419,37 @@ body.light-theme .loading-spinner {
   transition: all 0.1s;
   flex-shrink: 0;
   padding: 0;
+  margin: 0;
 }
 
-.entry-step-btn:first-child {
-  border-right: 1px solid var(--border-default);
+body .entry-stepper .entry-step-btn:first-child {
+  border-right: 1px solid var(--border-default) !important;
 }
 
-.entry-step-btn:last-child {
-  border-left: 1px solid var(--border-default);
+body .entry-stepper .entry-step-btn:last-child {
+  border-left: 1px solid var(--border-default) !important;
 }
 
-.entry-step-btn:hover {
+body .entry-stepper .entry-step-btn:hover {
   background: var(--accent);
   color: #ffffff;
 }
 
-.entry-stepper-val {
+body .entry-stepper .entry-stepper-val {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 5px;
+  padding: 0 4px;
   min-width: 44px;
   gap: 2px;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
 }
 
-.entry-stepper input[type="number"],
-.entry-stepper input.entry-width-input {
+body .entry-stepper input[type="number"],
+body .entry-stepper input.entry-width-input {
   width: 28px !important;
   height: 22px !important;
   background: transparent !important;
@@ -2537,23 +2545,30 @@ body.light-theme .loading-spinner {
   border-color: #cbd5e1;
 }
 
-[data-theme="light"] .entry-step-btn {
+[data-theme="light"] .entry-stepper .entry-step-btn {
   background: #ffffff;
-  border: none;
+  border: none !important;
+  border-radius: 0 !important;
   color: #0f172a;
 }
 
-[data-theme="light"] .entry-step-btn:first-child {
-  border-right: 1px solid #cbd5e1;
+[data-theme="light"] .entry-stepper .entry-step-btn:first-child {
+  border-right: 1px solid #cbd5e1 !important;
 }
 
-[data-theme="light"] .entry-step-btn:last-child {
-  border-left: 1px solid #cbd5e1;
+[data-theme="light"] .entry-stepper .entry-step-btn:last-child {
+  border-left: 1px solid #cbd5e1 !important;
 }
 
-[data-theme="light"] .entry-step-btn:hover {
+[data-theme="light"] .entry-stepper .entry-step-btn:hover {
   background: #0284c7;
   color: #ffffff;
+}
+
+[data-theme="light"] .entry-stepper-val {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
 }
 
 [data-theme="light"] .entry-width-input,
@@ -2561,6 +2576,8 @@ body.light-theme .loading-spinner {
   color: #0f172a !important;
   background: transparent !important;
   border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 
 [data-theme="light"] .entry-width-row {
@@ -2670,4 +2687,100 @@ body.light-theme .loading-spinner {
   border-radius: 4px;
   white-space: nowrap;
 }
+
+/* ==========================================================================
+   ВСПЛЫВАЮЩАЯ КНОПКА ПЕРЕСЧЕТА (FLOATING ACTION PILL)
+   ========================================================================== */
+.floating-recalc-wrap {
+  position: absolute;
+  bottom: 20px;
+  right: 76px; /* Расположена в правом нижнем углу, левее кнопок зума */
+  z-index: 60;
+  pointer-events: auto;
+  animation: floatPillSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes floatPillSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.floating-recalc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 15px;
+  background: linear-gradient(135deg, #1d4ed8, #2563eb);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: var(--radius-pill, 20px);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.floating-recalc-btn:hover {
+  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.60), 0 0 0 2px rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+.floating-recalc-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 2px 10px rgba(37, 99, 235, 0.30);
+}
+
+.recalc-pulse-dot {
+  width: 8px;
+  height: 8px;
+  background: #fbbf24;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #f59e0b;
+  animation: dotPulse 1.4s infinite ease-in-out;
+  flex-shrink: 0;
+}
+
+@keyframes dotPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+    box-shadow: 0 0 12px #fbbf24;
+  }
+}
+
+.recalc-count {
+  background: rgba(255, 255, 255, 0.25);
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 10.5px;
+  font-weight: 800;
+  margin-left: 2px;
+}
+
+[data-theme="light"] .floating-recalc-btn {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 18px rgba(37, 99, 235, 0.35);
+}
+
+/* Мягкая подсветка кнопки в левой панели */
+.btn-primary-action.pulse-glow {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.35), 0 4px 14px rgba(37, 99, 235, 0.30) !important;
+}
+
 

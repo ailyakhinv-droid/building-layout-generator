@@ -530,6 +530,16 @@ class InsolationCalculator:
                     if b_fp is not None and b_fp.contains(test_out):
                         continue
 
+                    # Проверка на глухой торец секции (без жилых окон):
+                    # У рядовых секций (MIDDLE) торцы шириной = depth глухие стыковочные.
+                    # По СанПиН 1.2.3685-21 (п. 164) инсоляция нормируется для жилых комнат, а не для глухих торцов.
+                    is_blind_wall = False
+                    if getattr(sec.section_type, "category", "").upper() == "MIDDLE":
+                        sec_ang_rad = math.radians(sec.angle)
+                        dot_long = abs(nx * math.cos(sec_ang_rad) + ny * math.sin(sec_ang_rad))
+                        if dot_long > 0.8:
+                            is_blind_wall = True
+
                     # Шаг ячеек вдоль грани
                     n_steps = max(1, round(seg_len / self.grid_step))
                     d_in = 0.08   # 8 см от стены (исключает Z-fighting с телом здания)
@@ -600,6 +610,12 @@ class InsolationCalculator:
                                 sun_timeline, sun_path, dt_hour, self.required_hours, self.allow_intermittent
                             )
                             total_hours = sum(sun_timeline) * dt_hour
+
+                            if is_blind_wall:
+                                # Глухой торец секции без жилых окон (СанПиН 1.2.3685-21 не требует инсоляции глухих стен)
+                                is_ok = True
+                                col = "#94a3b8"
+                                insol_type = "blind_wall"
 
                             pt_res = FacadePointResult(
                                 building_id=b_id,

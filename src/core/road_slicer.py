@@ -22,6 +22,15 @@ from shapely.geometry import (
 )
 from shapely.ops import unary_union
 
+from src.core.road_graph import (
+    DEFAULT_CATEGORY_PARAMS,
+    ALLOWED_JUNCTIONS,
+    ENTRY_ALLOWED_INTERNAL_EDGES,
+    Edge,
+    Node,
+    RoadGraph,
+)
+
 
 ROAD_CATEGORIES: dict[str, dict[str, Any]] = {
     "arterial": {
@@ -73,14 +82,48 @@ class RoadSliceResult:
     road_setback: float = 4.0
     roads_items: list[dict[str, Any]] = field(default_factory=list)
     roads_geojson: dict[str, Any] = field(default_factory=dict)
+    # Новые поля графового слоя (RoadGraph):
+    road_graph: RoadGraph | None = None
+    block_fronts: dict[int, list[Edge]] = field(default_factory=dict)
+    validation_report: dict[str, Any] = field(default_factory=dict)
 
 
 class RoadSlicer:
     """Движок моделирования улично-дорожной сети и нарезки участка."""
 
-    DEFAULT_ROAD_WIDTH = 16.0
-    DEFAULT_SETBACK = 4.0  # СП 42.13330 (3–6 м до линии застройки)
+    DEFAULT_ROAD_WIDTH = 8.0
+    DEFAULT_SETBACK = 3.0  # СП 42.13330 / СП 4.13130 (3 м для внутриквартальных дорог)
+    DEFAULT_FILLET_RADIUS = 8.0  # СП 42.13330 п. 11.14: радиус закругления на перекрестках (5-12 м)
     MIN_BLOCK_AREA = 800.0  # Минимальная площадь жизнеспособного квартала в м²
+
+    @classmethod
+    def _apply_fillet(
+        cls,
+        geom: Polygon | MultiPolygon | None,
+        radius: float,
+    ) -> Polygon | MultiPolygon | None:
+        """Скругление внутренних вогнутых углов перекрестков и примыканий (СП 42.13330 п. 11.14).
+        
+        Выполняет морфологическое замыкание (closing): буферизация на +R с круглым стилем сопряжений,
+        затем сжатие на -R. Все перекрестки получают нормативные сопряжения радиуса R,
+        а прямые внешние участки межи остаются строгими и недеформированными.
+        """
+        if geom is None or geom.is_empty or radius <= 0.1:
+            return geom
+        try:
+            buffered = geom.buffer(radius, quad_segs=16, join_style="round").buffer(-radius, quad_segs=16, join_style="round")
+            if not buffered.is_empty:
+                if isinstance(buffered, (Polygon, MultiPolygon)):
+                    return buffered
+                if getattr(buffered, "geom_type", "") == "GeometryCollection":
+                    polys = [p for p in buffered.geoms if isinstance(p, (Polygon, MultiPolygon)) and not p.is_empty]
+                    if polys:
+                        u = unary_union(polys)
+                        if isinstance(u, (Polygon, MultiPolygon)):
+                            return u
+        except Exception:
+            pass
+        return geom
 
     @classmethod
     def create_preset_centerlines(
@@ -223,6 +266,7 @@ class RoadSlicer:
         pos_ratio_y: float = 0.5,
         min_block_area: float = MIN_BLOCK_AREA,
         extend_to_boundary: bool | None = None,
+        fillet_radius: float = DEFAULT_FILLET_RADIUS,
     ) -> RoadSliceResult:
         """Разрезать зону застройки дорожной сетью на урбан-блоки с отступом застройки.
 
@@ -387,6 +431,15 @@ class RoadSlicer:
         roads_raw_union = unary_union(asphalt_corridors)
         cut_raw_union = unary_union(cut_corridors)
 
+        # СП 42.13330 п. 11.14: скругление перекрестков и примыканий (филлеты)
+        if fillet_radius > 0:
+            r_curb = min(15.0, max(2.0, float(fillet_radius)))
+            if not roads_raw_union.is_empty:
+                roads_raw_union = cls._apply_fillet(roads_raw_union, r_curb) or roads_raw_union
+            if not cut_raw_union.is_empty:
+                r_cut = r_curb + max(0.0, road_setback)
+                cut_raw_union = cls._apply_fillet(cut_raw_union, r_cut) or cut_raw_union
+
         # Ограничиваем контуры границей участка
         roads_polygon = roads_raw_union.intersection(site_boundary)
         cut_polygon = cut_raw_union.intersection(site_boundary)
@@ -469,4 +522,260 @@ class RoadSlicer:
             road_setback=road_setback,
             roads_items=roads_items_metadata,
             roads_geojson=geojson,
+        )
+
+    @classmethod
+    def build_from_graph(
+        cls,
+        nodes: Sequence[Node] | RoadGraph,
+        edges: Sequence[Edge] | None = None,
+        buildable_area: Polygon | MultiPolygon | None = None,
+        site_boundary: Polygon | None = None,
+        min_block_area: float = MIN_BLOCK_AREA,
+        buildings: Sequence[Polygon] | None = None,
+        strict: bool = True,
+        fillet_radius: float = DEFAULT_FILLET_RADIUS,
+    ) -> RoadSliceResult:
+        """Построить УДС и нарезать урбан-блоки на основе топологического графа RoadGraph.
+
+        Выполняет:
+        1. Валидацию графа (связность, планарность, иерархия категорий СП 42.13330/СП 4.13130).
+        2. Проверку коллизий с существующими зданиями (дорога не должна рассекать пятна застройки).
+        3. Буферизацию ребер (асфальт + отступ застройки) и вычитание из зоны застройки.
+        4. Определение фронтов кварталов (block_fronts): ребер УДС, ограничивающих каждый sub_block.
+
+        Args:
+            nodes: Список узлов Node либо уже сконструированный объект RoadGraph.
+            edges: Список ребер Edge (если nodes передан списком).
+            buildable_area: Исходная зона допустимой застройки.
+            site_boundary: Граница земельного участка (для клипирования коридоров).
+            min_block_area: Минимальная площадь жизнеспособного урбан-блока (м²).
+            buildings: Опциональный список полигонов зданий для проверки ненарушения контуров.
+            strict: Если True — при непройденной валидации графа выбрасывать ValueError.
+                Если False — возвращать результат с заполненным validation_report.
+
+        Returns:
+            RoadSliceResult с нарезанными sub_blocks, block_fronts, road_graph и validation_report.
+        """
+        if isinstance(nodes, RoadGraph):
+            graph = nodes
+        else:
+            graph = RoadGraph(nodes=nodes, edges=edges or [])
+
+        validation_report = graph.validate()
+        if buildings:
+            conflicts = graph.check_building_intersections(buildings)
+            validation_report["building_conflicts"] = conflicts
+            if conflicts:
+                err_msg = f"Коридоры дорог рассекают контуры зданий ({len(conflicts)} коллизий)."
+                validation_report["errors"].append(err_msg)
+                validation_report["is_valid"] = False
+
+        if strict and not validation_report["is_valid"]:
+            errors_str = "; ".join(validation_report["errors"])
+            raise ValueError(f"Валидация графа УДС не пройдена: {errors_str}")
+
+        if not buildable_area or buildable_area.is_empty:
+            return RoadSliceResult(
+                sub_blocks=[],
+                roads_polygon=None,
+                buffer_polygon=None,
+                centerlines=[],
+                roads_area_sqm=0.0,
+                buffer_area_sqm=0.0,
+                roads_length_m=0.0,
+                road_setback=cls.DEFAULT_SETBACK,
+                roads_items=[],
+                roads_geojson=graph.to_geojson(),
+                road_graph=graph,
+                block_fronts={},
+                validation_report=validation_report,
+            )
+
+        asphalt_corridors: list[Polygon] = []
+        cut_corridors: list[Polygon] = []
+        centerlines: list[LineString] = []
+        roads_items_metadata: list[dict[str, Any]] = []
+        total_len = 0.0
+
+        for edge in graph.edges.values():
+            line = edge.line
+            total_len += edge.length
+
+            # Гарантированное сквозное продление лучей на внешних въездах ЗУ
+            # Предотвращает микро-перемычки и неразрезанные полигоны при косых углах межи
+            working_line = line
+            ext_len = edge.width / 2.0 + edge.setback + 10.0
+            coords = list(line.coords)
+            if len(coords) >= 2:
+                p_start, p_end = coords[0], coords[-1]
+                dx = p_end[0] - p_start[0]
+                dy = p_end[1] - p_start[1]
+                dist = math.hypot(dx, dy)
+                if dist > 1e-4:
+                    ux = dx / dist
+                    uy = dy / dist
+                    if edge.from_node.kind == "entry":
+                        p_start = (p_start[0] - ux * ext_len, p_start[1] - uy * ext_len)
+                    if edge.to_node.kind == "entry":
+                        p_end = (p_end[0] + ux * ext_len, p_end[1] + uy * ext_len)
+                    working_line = LineString([p_start] + coords[1:-1] + [p_end])
+
+            # Клипирование осевой линии границей участка
+            if site_boundary and not site_boundary.is_empty:
+                inter_cl = working_line.intersection(site_boundary)
+                if not inter_cl.is_empty:
+                    if isinstance(inter_cl, LineString):
+                        centerlines.append(inter_cl)
+                    elif isinstance(inter_cl, MultiLineString):
+                        centerlines.extend(list(inter_cl.geoms))
+                    elif getattr(inter_cl, "geom_type", "") == "GeometryCollection":
+                        for g in inter_cl.geoms:
+                            if isinstance(g, LineString):
+                                centerlines.append(g)
+                else:
+                    centerlines.append(line)
+            else:
+                centerlines.append(line)
+
+            half_w = max(1.5, edge.width / 2.0)
+            cut_half = half_w + max(0.0, edge.setback)
+            poly_asphalt = working_line.buffer(half_w, cap_style="flat", join_style="mitre")
+            poly_cut = working_line.buffer(cut_half, cap_style="flat", join_style="mitre")
+            asphalt_corridors.append(poly_asphalt)
+            cut_corridors.append(poly_cut)
+
+            roads_items_metadata.append({
+                "id": edge.id,
+                "name": f"Участок {edge.id} ({edge.category})",
+                "category": edge.category,
+                "width": edge.width,
+                "setback": edge.setback,
+                "length_m": round(edge.length, 1),
+                "from_node": edge.from_node.id,
+                "to_node": edge.to_node.id,
+                "points": list(line.coords),
+            })
+
+        roads_raw_union = unary_union(asphalt_corridors) if asphalt_corridors else Polygon()
+        cut_raw_union = unary_union(cut_corridors) if cut_corridors else Polygon()
+
+        # СП 42.13330 п. 11.14: скругление перекрестков и примыканий (филлеты)
+        if fillet_radius > 0:
+            r_curb = min(15.0, max(2.0, float(fillet_radius)))
+            if not roads_raw_union.is_empty:
+                roads_raw_union = cls._apply_fillet(roads_raw_union, r_curb) or roads_raw_union
+            if not cut_raw_union.is_empty:
+                avg_setback = (
+                    max((e.setback for e in graph.edges.values()), default=cls.DEFAULT_SETBACK)
+                    if isinstance(nodes, RoadGraph) or (edges and len(edges) > 0)
+                    else cls.DEFAULT_SETBACK
+                )
+                r_cut = r_curb + max(0.0, avg_setback)
+                cut_raw_union = cls._apply_fillet(cut_raw_union, r_cut) or cut_raw_union
+
+        def _clean_poly(g: Any) -> Polygon | MultiPolygon | None:
+            if not g or g.is_empty:
+                return None
+            if isinstance(g, (Polygon, MultiPolygon)):
+                return g
+            if getattr(g, "geom_type", "") == "GeometryCollection":
+                polys = [p for p in g.geoms if isinstance(p, (Polygon, MultiPolygon))]
+                if polys:
+                    u = unary_union(polys)
+                    return u if not u.is_empty else None
+            return None
+
+        if site_boundary and not site_boundary.is_empty:
+            roads_polygon = _clean_poly(roads_raw_union.intersection(site_boundary)) if not roads_raw_union.is_empty else None
+            cut_polygon = _clean_poly(cut_raw_union.intersection(site_boundary)) if not cut_raw_union.is_empty else None
+        else:
+            roads_polygon = _clean_poly(roads_raw_union) if not roads_raw_union.is_empty else None
+            cut_polygon = _clean_poly(cut_raw_union) if not cut_raw_union.is_empty else None
+
+        buffer_polygon = (
+            _clean_poly(cut_polygon.difference(roads_polygon))
+            if cut_polygon and not cut_polygon.is_empty and roads_polygon and not roads_polygon.is_empty
+            else None
+        )
+
+        # Вычитание коридоров дорог из зоны застройки
+        if not cut_raw_union.is_empty:
+            diff = buildable_area.difference(cut_raw_union)
+        else:
+            diff = buildable_area
+
+        sub_blocks: list[Polygon] = []
+        if isinstance(diff, Polygon):
+            if diff.area >= min_block_area:
+                sub_blocks.append(diff)
+        elif isinstance(diff, MultiPolygon):
+            for part in diff.geoms:
+                if part.area >= min_block_area:
+                    sub_blocks.append(part)
+        elif getattr(diff, "geom_type", "") == "GeometryCollection":
+            for part in diff.geoms:
+                if isinstance(part, Polygon) and part.area >= min_block_area:
+                    sub_blocks.append(part)
+
+        if not sub_blocks and buildable_area and not buildable_area.is_empty:
+            sub_blocks = [buildable_area] if isinstance(buildable_area, Polygon) else list(buildable_area.geoms)
+
+        # Определение фронтов для каждого урбан-блока
+        block_fronts: dict[int, list[Edge]] = {}
+        for b_idx, block in enumerate(sub_blocks):
+            front_edges: list[Edge] = []
+            b_boundary = block.boundary
+            for edge in graph.edges.values():
+                p_cut = edge.poly_cut()
+                # Пересечение или смежность коридора ребра с границей блока
+                if p_cut.buffer(0.05).intersects(b_boundary) or b_boundary.distance(edge.line) <= (edge.width / 2.0 + edge.setback + 0.2):
+                    front_edges.append(edge)
+            block_fronts[b_idx] = front_edges
+
+        # GeoJSON представление
+        features = list(graph.to_geojson().get("features", []))
+        if roads_polygon and not roads_polygon.is_empty:
+            features.append({
+                "type": "Feature",
+                "geometry": mapping(roads_polygon),
+                "properties": {
+                    "type": "internal_road",
+                    "name": "Внутриквартальная дорожная сеть (RoadGraph)",
+                    "area": round(roads_polygon.area, 1),
+                },
+            })
+        if buffer_polygon and not buffer_polygon.is_empty:
+            features.append({
+                "type": "Feature",
+                "geometry": mapping(buffer_polygon),
+                "properties": {
+                    "type": "road_buffer",
+                    "name": "Буферная зона отступа дороги",
+                    "area": round(buffer_polygon.area, 1),
+                },
+            })
+
+        geojson = {
+            "type": "FeatureCollection",
+            "features": features,
+        }
+
+        roads_area = round(roads_polygon.area, 1) if roads_polygon and not roads_polygon.is_empty else 0.0
+        buffer_area = round(buffer_polygon.area, 1) if buffer_polygon and not buffer_polygon.is_empty else 0.0
+
+        return RoadSliceResult(
+            sub_blocks=sub_blocks,
+            roads_polygon=roads_polygon,
+            buffer_polygon=buffer_polygon,
+            centerlines=centerlines,
+            roads_area_sqm=roads_area,
+            buffer_area_sqm=buffer_area,
+            roads_length_m=round(total_len, 1),
+            road_setback=cls.DEFAULT_SETBACK,
+            roads_items=roads_items_metadata,
+            roads_geojson=geojson,
+            road_graph=graph,
+            block_fronts=block_fronts,
+            validation_report=validation_report,
         )

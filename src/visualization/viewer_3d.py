@@ -96,6 +96,7 @@ def build_3d_geojson_data(
     parking_slots: list[Any] | None = None,
     insolation_report: Any | None = None,
     surrounding_height_overrides: dict[str, float] | None = None,
+    fire_res: Any | None = None,
 ) -> dict[str, Any]:
     """Сформировать словарь GeoJSON-слоев для 3D-визуализации."""
     center_lat, center_lon = _get_site_geo_center(site)
@@ -259,6 +260,30 @@ def build_3d_geojson_data(
                     },
                 })
 
+    # 5.1. Пожарные и внутридворовые проезды вокруг застройки (СП 4.13130)
+    if fire_res and getattr(fire_res, "all_infra", None) and not fire_res.all_infra.is_empty:
+        fire_wgs = _to_wgs84(fire_res.all_infra, center_lat, center_lon)
+        road_features.append({
+            "type": "Feature",
+            "geometry": mapping(fire_wgs),
+            "properties": {
+                "type": "road_corridor",
+                "name": "Пожарный и подъездной проезд к застройке (СП 4.13130)",
+                "area": round(fire_res.all_infra.area, 1),
+            },
+        })
+        for f_idx, cl in enumerate(getattr(fire_res, "centerlines", [])):
+            if not cl.is_empty:
+                cl_wgs = _to_wgs84(cl, center_lat, center_lon)
+                road_features.append({
+                    "type": "Feature",
+                    "geometry": mapping(cl_wgs),
+                    "properties": {
+                        "type": "road_centerline",
+                        "name": f"Ось проезда {f_idx + 1}",
+                    },
+                })
+
     # 5.5. Наземные автостоянки и машиноместа (СП 113.13330)
     parking_features = []
     if parking_slots:
@@ -397,14 +422,31 @@ def generate_3d_viewer_html(
     else:
         height_style = f"{height}px"
 
+    libs_dir = Path(__file__).resolve().parent.parent.parent / "dashboard_studio" / "libs"
+    local_js = libs_dir / "maplibre-gl.js"
+    local_css = libs_dir / "maplibre-gl.css"
+
+    if standalone and local_js.exists() and local_css.exists():
+        css_content = local_css.read_text(encoding="utf-8")
+        js_content = local_js.read_text(encoding="utf-8")
+        maplibre_head = f"""  <style>\n{css_content}\n  </style>\n  <script>\n{js_content}\n  </script>"""
+    else:
+        maplibre_head = """  <link rel="stylesheet" href="libs/maplibre-gl.css">
+  <script src="libs/maplibre-gl.js"></script>
+  <script>
+    if (typeof maplibregl === 'undefined') {
+      document.write('<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">');
+      document.write('<script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js"><\\/script>');
+    }
+  </script>"""
+
     html = f"""<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title}</title>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.css">
-  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+{maplibre_head}
   <style>
     :root {{
       --ink: #1e293b;
@@ -924,27 +966,46 @@ def generate_3d_viewer_html(
       return false;
     }}
 
+    if (typeof maplibregl === 'undefined') {{
+      return false;
+    }}
+
+    if (maplibregl.supported && !maplibregl.supported({{ failIfMajorPerformanceCaveat: false }})) {{
+      const msg = document.getElementById('loading-msg');
+      if (msg) {{
+        msg.style.display = 'block';
+        msg.innerHTML = '⚠️ В браузере отключено аппаратное ускорение WebGL.<br>Включите аппаратное ускорение в настройках браузера (Настройки → Система → Использовать аппаратное ускорение) и перезагрузите страницу.';
+      }}
+      return false;
+    }}
+
     mapInitialized = true;
 
-    map = new maplibregl.Map({{
-      container: 'map',
-      style: {{
-        version: 8,
-        sources: {{}},
-        layers: [
-          {{
-            id: 'blank-bg',
-            type: 'background',
-            paint: {{ 'background-color': '#f4f2ed' }}
-          }}
-        ]
-      }},
-      center: [centerLon, centerLat],
-      zoom: initZoom,
-      pitch: 45,
-      bearing: 0,
-      antialias: true
-    }});
+    try {{
+      map = new maplibregl.Map({{
+        container: 'map',
+        style: {{
+          version: 8,
+          sources: {{}},
+          layers: [
+            {{
+              id: 'blank-bg',
+              type: 'background',
+              paint: {{ 'background-color': '#f4f2ed' }}
+            }}
+          ]
+        }},
+        center: [centerLon, centerLat],
+        zoom: initZoom,
+        pitch: 45,
+        bearing: 0,
+        antialias: true
+      }});
+    }} catch (err) {{
+      mapInitialized = false;
+      map = null;
+      return false;
+    }}
     window.map = map;
 
     map.addControl(new maplibregl.NavigationControl({{ visualizePitch: true }}), 'top-right');
@@ -1163,8 +1224,20 @@ def generate_3d_viewer_html(
         source: 'roads',
         filter: ['==', ['get', 'type'], 'road_corridor'],
         paint: {{
-          'fill-color': '#334155',
+          'fill-color': '#1e293b',
           'fill-opacity': 0.95
+        }}
+      }}, beforeVectorId);
+    }}
+    if (!map.getLayer('roads-casing')) {{
+      map.addLayer({{
+        id: 'roads-casing',
+        type: 'line',
+        source: 'roads',
+        filter: ['==', ['get', 'type'], 'road_corridor'],
+        paint: {{
+          'line-color': '#94a3b8',
+          'line-width': 2.5
         }}
       }}, beforeVectorId);
     }}
@@ -1175,9 +1248,9 @@ def generate_3d_viewer_html(
         source: 'roads',
         filter: ['==', ['get', 'type'], 'road_centerline'],
         paint: {{
-          'line-color': '#ffffff',
-          'line-width': 2.0,
-          'line-dasharray': [3, 3]
+          'line-color': '#fbbf24',
+          'line-width': 2.5,
+          'line-dasharray': [4, 4]
         }}
       }}, beforeVectorId);
     }}
@@ -1369,7 +1442,7 @@ def generate_3d_viewer_html(
     }}
     setupToggle('toggle-buildings', ['buildings-3d']);
     setupToggle('toggle-surroundings', ['surroundings-3d']);
-    setupToggle('toggle-roads', ['roads-fill', 'roads-line', 'roads-buffer-fill']);
+    setupToggle('toggle-roads', ['roads-fill', 'roads-casing', 'roads-line', 'roads-buffer-fill']);
     setupToggle('toggle-boundary', ['boundary-line', 'boundary-fill']);
     const surrCntInit = (DATA.surroundings && DATA.surroundings.features) ? DATA.surroundings.features.length : 0;
     const badgeSurrInit = document.getElementById('count-surroundings');

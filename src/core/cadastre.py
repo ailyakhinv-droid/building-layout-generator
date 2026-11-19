@@ -625,9 +625,12 @@ PRESET_PARCELS: dict[str, dict[str, Any]] = {
 
 
 def validate_cadastral_number(cad_num: str) -> bool:
-    """Проверить валидность формата кадастрового номера РФ."""
+    """Проверить валидность формата кадастрового номера РФ (АА:ВВ:ГГГГГГГ:ДДДД)."""
+    if not cad_num or not isinstance(cad_num, str):
+        return False
     clean = re.sub(r"[\s\-_\.]+", ":", cad_num.strip())
-    pattern = r"^\d{2}:\d{1,2}:\d{6,7}:\d+$"
+    # Поддерживает любые российские кадастровые номера (включая краткие и расширенные форматы округов)
+    pattern = r"^\d{1,2}:\d{1,4}:\d{1,8}:\d+$"
     return bool(re.match(pattern, clean))
 
 

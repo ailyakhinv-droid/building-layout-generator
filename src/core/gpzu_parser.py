@@ -707,25 +707,42 @@ def extract_gpzu_parameters(text: str) -> dict[str, Any]:
         params["red_line_setback"] = float(m_rl.group(2).replace(",", "."))
         snippets["red_line_setback"] = m_rl.group(1).strip()
 
+    def _extract_upper_bound(snippet: str) -> float | None:
+        """Извлечь верхний предел (максимум) из формулировок диапазона ГПЗУ (от X до Y, X-Y, не более Y)."""
+        m_range = re.search(r"(?:до|по|не\s+более)\s+(\d+[\.,]?\d*)", snippet, re.IGNORECASE)
+        if m_range:
+            return float(m_range.group(1).replace(",", "."))
+        m_dash = re.search(r"\d+[\.,]?\d*\s*[-–—]\s*(\d+[\.,]?\d*)", snippet)
+        if m_dash:
+            return float(m_dash.group(1).replace(",", "."))
+        nums = [float(x.replace(",", ".")) for x in re.findall(r"\b\d+[\.,]?\d*\b", snippet)]
+        return max(nums) if nums else None
+
     # 3. Предельная высота зданий (в метрах)
     m_h = re.search(
-        r"(предельн\w+\s+высот\w+[^\d]*(\d+[\.,]?\d*)\s*м)",
+        r"(предельн\w+\s+высот\w+[^;\.\n]*)",
         text,
         re.IGNORECASE,
     )
     if m_h:
-        params["max_building_height_m"] = float(m_h.group(2).replace(",", "."))
-        snippets["max_building_height_m"] = m_h.group(1).strip()
+        snip_h = m_h.group(1).strip()
+        h_val = _extract_upper_bound(snip_h)
+        if h_val is not None and h_val >= 9.0:
+            params["max_building_height_m"] = h_val
+            snippets["max_building_height_m"] = snip_h
 
     # 4. Предельная этажность
     m_fl = re.search(
-        r"(предельн\w+\s+(?:этажност\w+|количеств\w+\s+этаж\w+)[^\d]*(\d+))",
+        r"(предельн\w+\s+(?:этажност\w+|количеств\w+\s+(?:надземн\w+\s+)?этаж\w+)[^;\.\n]*)",
         text,
         re.IGNORECASE,
     )
     if m_fl:
-        params["max_floors"] = int(m_fl.group(2))
-        snippets["max_floors"] = m_fl.group(1).strip()
+        snip_fl = m_fl.group(1).strip()
+        fl_val = _extract_upper_bound(snip_fl)
+        if fl_val is not None and fl_val >= 3.0:
+            params["max_floors"] = int(fl_val)
+            snippets["max_floors"] = snip_fl
 
     # 5. Максимальный процент застройки (BCR)
     m_bcr = re.search(

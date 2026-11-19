@@ -130,6 +130,20 @@ def geom_to_svg_path(geom, minx, miny, maxx, maxy, width=1000, height=700, pad=4
     elif geom.geom_type in ("LineString", "LinearRing"):
         pts = [pt(x, y) for x, y in geom.coords]
         return "M " + " L ".join(pts)
+    elif geom.geom_type == "MultiLineString":
+        parts = []
+        for line in geom.geoms:
+            if not line.is_empty:
+                pts = [pt(x, y) for x, y in line.coords]
+                parts.append("M " + " L ".join(pts))
+        return " ".join(parts)
+    elif geom.geom_type == "GeometryCollection":
+        parts = []
+        for sub_g in geom.geoms:
+            sub_d = geom_to_svg_path(sub_g, minx, miny, maxx, maxy, width, height, pad)
+            if sub_d:
+                parts.append(sub_d)
+        return " ".join(parts)
     return ""
 
 
@@ -531,7 +545,7 @@ def _create_site_from_params(
         cad_query = (params.get("cad_query") or "").strip()
         custom_area = float(params.get("custom_area") or 32000)
         enable_red_line = bool(params.get("enable_red_line", False))
-        gpzu_coords_text = (params.get("gpzu_coordinates") or "").strip()
+        gpzu_coords_text = (params.get("gpzu_coordinates") or params.get("points_text") or "").strip()
 
         if cad_query:
             reg_name, dist_name, resolved_norm_id, auto_lat, auto_lon = smart_resolve_location(cad_query)
@@ -832,36 +846,101 @@ def _create_site_from_params(
     except Exception:
         pass
 
-    # Улично-дорожная сеть и нарезка кварталов (RoadSlicer)
+    _apply_roads_to_site(site, params)
+
+    return site, selected_norm, parcel_region_name, parcel_district_name, parcel_address, config
+
+
+def _apply_roads_to_site(site: Any, params: dict[str, Any]) -> None:
+    """Применить параметры улично-дорожной сети (RoadGraph / RoadSlicer) к участку.
+
+    Поддерживает:
+    - Вариант А: Контурная сеть вдоль кварталов от точек въезда (RoadGraph.build_contour_network);
+    - Порталы въезда (только входные створы без внутреннего транзита);
+    - Стандартные пресеты и свободное черчение через RoadSlicer.slice_buildable_area.
+    """
     road_preset = params.get("road_preset", "none")
-    road_width = float(params.get("road_width", 16.0))
-    road_setback = float(params.get("road_setback", 4.0))
+    road_width = float(params.get("road_width", 8.0))
+    road_setback = float(params.get("road_setback", 3.0))
     road_pos = float(params.get("road_pos", 0.5))
     road_pos_x = float(params.get("road_pos_x", 0.5))
     road_pos_y = float(params.get("road_pos_y", 0.5))
     custom_roads = params.get("custom_roads") or []
+    entry_points = params.get("entry_points") or []
+    entry_road_mode = params.get("entry_road_mode", "contour")
+    uds_mode = params.get("uds_mode", "entries" if entry_points else "free_draw")
+    fillet_radius = float(params.get("road_fillet_radius", params.get("fillet_radius", 8.0)))
 
     try:
+        from src.core.road_graph import RoadGraph
         from src.core.road_slicer import RoadSlicer
-        road_res = RoadSlicer.slice_buildable_area(
-            site.buildable_area,
-            site.boundary,
-            road_lines=custom_roads,
-            preset=road_preset,
-            road_width=road_width,
-            road_setback=road_setback,
-            pos_ratio=road_pos,
-            pos_ratio_x=road_pos_x,
-            pos_ratio_y=road_pos_y,
-        )
+
+        # 1. Естественная нарезка на кварталы по точкам въезда (Natural Urban Network)
+        if entry_points and uds_mode == "entries" and entry_road_mode in ("skeleton", "through", "split", "natural", None):
+            hub = params.get("hub_point")
+            if params.get("road_shape") == "straight":
+                hub = False
+            rg = RoadGraph.build_natural_network(
+                site_boundary=site.boundary,
+                buildable_area=site.buildable_area,
+                entry_points=entry_points,
+                hub_point=hub,
+                default_category=params.get("road_category", "district"),
+                default_width=road_width,
+                default_setback=road_setback,
+                fillet_radius=fillet_radius,
+            )
+            min_area = min(RoadSlicer.MIN_BLOCK_AREA, (site.buildable_area.area if site.buildable_area else 10000.0) * 0.05)
+            road_res = RoadSlicer.build_from_graph(
+                rg,
+                buildable_area=site.buildable_area,
+                site_boundary=site.boundary,
+                min_block_area=min_area,
+                strict=False,
+                fillet_radius=fillet_radius,
+            )
+        # 2. Режим контурного объезда вокруг застройки:
+        elif entry_points and uds_mode == "entries" and entry_road_mode in ("contour", "gates_only"):
+            connect_perimeter = (entry_road_mode == "contour")
+            rg = RoadGraph.build_contour_network(
+                site_boundary=site.boundary,
+                buildable_area=site.buildable_area,
+                entry_points=entry_points,
+                connect_perimeter=connect_perimeter,
+                default_category=params.get("road_category", "local"),
+                default_width=road_width,
+                default_setback=road_setback,
+            )
+            min_area = min(RoadSlicer.MIN_BLOCK_AREA, (site.buildable_area.area if site.buildable_area else 10000.0) * 0.05)
+            road_res = RoadSlicer.build_from_graph(
+                rg,
+                buildable_area=site.buildable_area,
+                site_boundary=site.boundary,
+                min_block_area=min_area,
+                strict=False,
+                fillet_radius=fillet_radius,
+            )
+        else:
+            # 3. Стандартная нарезка по пресетам или начерченным линиям:
+            road_res = RoadSlicer.slice_buildable_area(
+                site.buildable_area,
+                site.boundary,
+                road_lines=custom_roads,
+                preset=road_preset,
+                road_width=road_width,
+                road_setback=road_setback,
+                pos_ratio=road_pos,
+                pos_ratio_x=road_pos_x,
+                pos_ratio_y=road_pos_y,
+                fillet_radius=fillet_radius,
+            )
+
         site.roads_result = road_res
         if road_res.roads_polygon is not None and not road_res.roads_polygon.is_empty and road_res.sub_blocks:
             site.buildable_area = unary_union(road_res.sub_blocks)
     except Exception as e:
         print(f"Ошибка нарезки дорожной сетью: {e}")
         site.roads_result = None
-
-    return site, selected_norm, parcel_region_name, parcel_district_name, parcel_address, config
 
 
 def preview_site(params: dict[str, Any]) -> dict[str, Any]:
@@ -1069,7 +1148,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
 
     # 4. Конфигурация расстановки
     typology = params.get("typology", "AUTO")
-    courtyard_orientation = params.get("courtyard_orientation", "SOUTH")
+    courtyard_orientation = params.get("courtyard_orientation", "STREET")
     variable_insolation = bool(params.get("variable_insolation", True))
     cascade_floors = bool(params.get("cascade_floors", True))
     asymmetric_wings = bool(params.get("asymmetric_wings", True))
@@ -1091,6 +1170,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
     only_ground_parking = bool(params.get("only_ground_parking", False))
     car_free_courtyard = bool(params.get("car_free_courtyard", True))
     allow_parking_in_zouit = bool(params.get("allow_parking_in_zouit", False))
+    entry_points = params.get("entry_points") or []
 
     placement_cfg = PlacementConfig(
         target_floors=target_floors,
@@ -1183,10 +1263,122 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         m_modified = False
         rechecked_buildings = []
 
+        def _replace_sec_in_building(b_obj: Building, s_idx: int, chosen_pool: list[Any]) -> list[PlacedSection]:
+            s_tgt = b_obj.sections[s_idx]
+            w_old = s_tgt.section_type.width
+            w_new = sum(c.width for c in chosen_pool)
+            delta = w_new - w_old
+            ang_r = math.radians(s_tgt.angle)
+            ux, uy = math.cos(ang_r), math.sin(ang_r)
+            delta_x = ux * delta
+            delta_y = uy * delta
+
+            start_x = s_tgt.x - ux * (w_old / 2.0)
+            start_y = s_tgt.y - uy * (w_old / 2.0)
+
+            corners_idx = [i for i, sec in enumerate(b_obj.sections) if getattr(sec.section_type, "category", "").upper() == "CORNER"]
+            is_u_shape = len(corners_idx) >= 2 and corners_idx[0] == 0 and corners_idx[1] > 0
+
+            res = []
+            for i in range(s_idx):
+                res.append(b_obj.sections[i])
+
+            cur_x, cur_y = start_x, start_y
+            for st_i in chosen_pool:
+                nf = max(st_i.min_floors, min(st_i.max_floors, s_tgt.floors))
+                cx = cur_x + ux * st_i.width / 2.0
+                cy = cur_y + uy * st_i.width / 2.0
+                res.append(PlacedSection(
+                    section_type=st_i,
+                    x=round(cx, 4),
+                    y=round(cy, 4),
+                    angle=s_tgt.angle,
+                    floors=nf,
+                    is_flipped=s_tgt.is_flipped,
+                    floor_height=s_tgt.floor_height,
+                    ground_floor_height=s_tgt.ground_floor_height,
+                ))
+                cur_x += ux * st_i.width
+                cur_y += uy * st_i.width
+
+            if is_u_shape:
+                c2_idx = corners_idx[1]
+                c2_sec = b_obj.sections[c2_idx]
+                if s_idx < c2_idx:
+                    for i in range(s_idx + 1, c2_idx):
+                        sec = b_obj.sections[i]
+                        res.append(PlacedSection(
+                            section_type=sec.section_type,
+                            x=round(sec.x + delta_x, 4),
+                            y=round(sec.y + delta_y, 4),
+                            angle=sec.angle,
+                            floors=sec.floors,
+                            is_flipped=sec.is_flipped,
+                            floor_height=sec.floor_height,
+                            ground_floor_height=sec.ground_floor_height,
+                        ))
+                    res.append(PlacedSection(
+                        section_type=c2_sec.section_type,
+                        x=round(c2_sec.x + delta_x, 4),
+                        y=round(c2_sec.y + delta_y, 4),
+                        angle=c2_sec.angle,
+                        floors=c2_sec.floors,
+                        is_flipped=c2_sec.is_flipped,
+                        floor_height=c2_sec.floor_height,
+                        ground_floor_height=c2_sec.ground_floor_height,
+                    ))
+                    for i in range(c2_idx + 1, len(b_obj.sections)):
+                        sec = b_obj.sections[i]
+                        d_c1 = (sec.x - b_obj.sections[0].x) * ux + (sec.y - b_obj.sections[0].y) * uy
+                        d_c2 = (sec.x - c2_sec.x) * ux + (sec.y - c2_sec.y) * uy
+                        shift = abs(d_c2) < abs(d_c1)
+                        dx = delta_x if shift else 0.0
+                        dy = delta_y if shift else 0.0
+                        res.append(PlacedSection(
+                            section_type=sec.section_type,
+                            x=round(sec.x + dx, 4),
+                            y=round(sec.y + dy, 4),
+                            angle=sec.angle,
+                            floors=sec.floors,
+                            is_flipped=sec.is_flipped,
+                            floor_height=sec.floor_height,
+                            ground_floor_height=sec.ground_floor_height,
+                        ))
+                else:
+                    for i in range(s_idx + 1, len(b_obj.sections)):
+                        sec = b_obj.sections[i]
+                        res.append(PlacedSection(
+                            section_type=sec.section_type,
+                            x=round(sec.x + delta_x, 4),
+                            y=round(sec.y + delta_y, 4),
+                            angle=sec.angle,
+                            floors=sec.floors,
+                            is_flipped=sec.is_flipped,
+                            floor_height=sec.floor_height,
+                            ground_floor_height=sec.ground_floor_height,
+                        ))
+            else:
+                for i in range(s_idx + 1, len(b_obj.sections)):
+                    sec = b_obj.sections[i]
+                    res.append(PlacedSection(
+                        section_type=sec.section_type,
+                        x=round(sec.x + delta_x, 4),
+                        y=round(sec.y + delta_y, 4),
+                        angle=sec.angle,
+                        floors=sec.floors,
+                        is_flipped=sec.is_flipped,
+                        floor_height=sec.floor_height,
+                        ground_floor_height=sec.ground_floor_height,
+                    ))
+            return res
+
         for b_i, b in enumerate(b_list):
             b_id = f"b{b_i + 1}"
-            new_secs = []
-            for s_i, s in enumerate(b.sections):
+            curr_b = b
+            for s_i in range(len(b.sections)):
+                if s_i >= len(curr_b.sections):
+                    break
+                s = curr_b.sections[s_i]
                 pts = sec_points_map.get((b_id, s_i), [])
                 if getattr(s.section_type, "is_meridian", False) and pts and universal_pool:
                     ang_rad = math.radians(s.angle)
@@ -1206,37 +1398,40 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
                     ratio1 = (sum(1 for p in side1_pts if p.is_compliant) / len(side1_pts)) if side1_pts else 1.0
                     ratio2 = (sum(1 for p in side2_pts if p.is_compliant) / len(side2_pts)) if side2_pts else 1.0
 
-                    # Если хотя бы один из продольных фасадов затенен (< 60% соответствия)
-                    if (side1_pts and ratio1 < 0.60) or (side2_pts and ratio2 < 0.60):
-                        # Ищем подходящую замену в universal_pool (Ш1 / Ш2)
-                        best_st = None
-                        for cand in universal_pool:
-                            if cand.min_floors <= s.floors <= cand.max_floors:
-                                best_st = cand
-                                break
-                        if not best_st:
-                            best_st = min(universal_pool, key=lambda c: abs(c.default_floors - s.floors))
+                    # Если хотя бы один из продольных фасадов затенен (< 80% соответствия по СанПиН)
+                    if (side1_pts and ratio1 < 0.80) or (side2_pts and ratio2 < 0.80):
+                        # Ищем подходящую замену в universal_pool (Ш1 / Ш2) с сохранением монолитности и непрерывности фасада
+                        w_orig = s.section_type.width
+                        valid_cands = [c for c in universal_pool if c.min_floors <= s.floors <= c.max_floors] or universal_pool
+                        if w_orig >= 38.0:
+                            c_sh2 = [c for c in valid_cands if "sh2" in c.id]
+                            chosen = (c_sh2 * 2)[:2] if c_sh2 else (valid_cands * 2)[:2]
+                        else:
+                            best_single = min(valid_cands, key=lambda c: abs(c.width - w_orig))
+                            chosen = [best_single]
 
-                        new_f = max(best_st.min_floors, min(best_st.max_floors, s.floors))
-                        new_secs.append(PlacedSection(
-                            section_type=best_st,
-                            x=s.x, y=s.y, angle=s.angle,
-                            floors=new_f,
-                            is_flipped=s.is_flipped,
-                            floor_height=s.floor_height,
-                            ground_floor_height=s.ground_floor_height,
-                        ))
+                        new_b_secs = _replace_sec_in_building(curr_b, s_i, chosen)
+                        curr_b = Building(sections=new_b_secs, typology=getattr(curr_b, "typology", "LINEAR"))
                         m_modified = True
-                        continue
+                        break
 
-                new_secs.append(s)
-            rechecked_buildings.append(Building(sections=new_secs, typology=getattr(b, "typology", "LINEAR")))
+            rechecked_buildings.append(curr_b)
 
         if m_modified:
             b_list = rechecked_buildings
             rep = insol_calc.calculate_masterplan_insolation(b_list, include_surroundings=insol_include_surr, compute_surrounding_heatmap=False)
 
-        if rep.compliance_rate_percent >= 75.0 or not insol_auto_cascade:
+        has_building_deficit = False
+        for b_i in range(len(b_list)):
+            b_id = f"b{b_i + 1}"
+            b_pts = [p for p in rep.facade_points if p.building_id == b_id]
+            if b_pts:
+                b_ratio = sum(1 for p in b_pts if p.is_compliant) / len(b_pts)
+                if b_ratio < 0.75:
+                    has_building_deficit = True
+                    break
+
+        if (rep.compliance_rate_percent >= 80.0 and not has_building_deficit) or not insol_auto_cascade:
             return b_list, rep
 
         site_cy = site.boundary.centroid.y
@@ -1362,14 +1557,31 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         roads_res = getattr(target_site, "roads_result", None)
         if roads_res and getattr(roads_res, "roads_polygon", None) is not None and getattr(roads_res, "sub_blocks", None) and len(roads_res.sub_blocks) >= 1:
             all_b = []
+            accent_idx = 0
+            if len(roads_res.sub_blocks) >= 2:
+                # Находим квартал с максимальной координатой Y (северный уличный фронт)
+                accent_idx = max(
+                    range(len(roads_res.sub_blocks)),
+                    key=lambda i: roads_res.sub_blocks[i].centroid.y
+                )
+
             for s_idx, s_poly in enumerate(roads_res.sub_blocks):
                 sub_site = Site(boundary=s_poly)
                 sub_site.buildable_area = s_poly
                 sub_site.address = target_site.address
                 sub_site.cadastral_number = target_site.cadastral_number
                 sub_engine = PlacementEngine(sub_site, library, config)
+
+                sub_cfg = p_cfg
+                # Если квартал акцентный и режим AUTO / MIXED, активируем доминанту
+                if s_idx == accent_idx and p_cfg.typology in ("AUTO", "MIXED"):
+                    import copy
+                    sub_cfg = copy.copy(p_cfg)
+                    sub_cfg.allow_towers_in_mixed = True
+                    sub_cfg.typology = "MIXED"
+
                 try:
-                    all_b.extend(sub_engine.generate(p_cfg))
+                    all_b.extend(sub_engine.generate(sub_cfg))
                 except Exception as ex:
                     print(f"Ошибка размещения в под-блоке {s_idx + 1}: {ex}")
             res = all_b
@@ -1481,6 +1693,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
         allow_parking_in_zouit=allow_parking_in_zouit,
         insolation_report=v1_insol,
         surrounding_height_overrides=surr_height_overrides,
+        entry_points=entry_points,
     )
 
     # Вариант 2 (Максимум GFA)
@@ -1535,6 +1748,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
             allow_parking_in_zouit=allow_parking_in_zouit,
             insolation_report=v2_insol,
             surrounding_height_overrides=surr_height_overrides,
+            entry_points=entry_points,
         )
     except Exception as e:
         print(f"Ошибка расчета Варианта 2: {e}")
@@ -1594,6 +1808,7 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
             allow_parking_in_zouit=allow_parking_in_zouit,
             insolation_report=v3_insol,
             surrounding_height_overrides=surr_height_overrides,
+            entry_points=entry_points,
         )
     except Exception as e:
         print(f"Ошибка расчета Варианта 3: {e}")
@@ -1642,6 +1857,7 @@ def _package_single_variant(
     allow_parking_in_zouit: bool = False,
     insolation_report: Any | None = None,
     surrounding_height_overrides: dict[str, float] | None = None,
+    entry_points: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Сформировать сериализуемый словарь данных для конкретного варианта застройки."""
     b_minx, b_miny, b_maxx, b_maxy = site.boundary.bounds
@@ -1709,7 +1925,12 @@ def _package_single_variant(
     try:
         from src.core.fire_safety import FireAccessEngine
         fire_engine = FireAccessEngine()
-        fire_res = fire_engine.generate_fire_routes(site, buildings, include_turnarounds=True)
+        fire_res = fire_engine.generate_fire_routes(
+            site,
+            buildings,
+            include_turnarounds=True,
+            entry_points=entry_points,
+        )
         if fire_res.fire_lanes_polygon and not fire_res.fire_lanes_polygon.is_empty:
             fire_roads_path = geom_to_svg_path(fire_res.fire_lanes_polygon, minx, miny, maxx, maxy, svg_w, svg_h)
         if fire_res.turnarounds_polygon and not fire_res.turnarounds_polygon.is_empty:
@@ -1796,12 +2017,14 @@ def _package_single_variant(
         "CORNER": "Угловая",
         "END": "Торцевая",
         "TOWER": "Точечная (башня)",
+        "UNIVERSAL": "Широтная",
     }
     category_colors = {
         "MIDDLE": "#538db2",
         "CORNER": "#c5a35b",
         "END": "#8d9f6b",
         "TOWER": "#924ff7",
+        "UNIVERSAL": "#c5a35b",
     }
 
     buildings_data = []
@@ -1879,6 +2102,7 @@ def _package_single_variant(
             parking_slots=parking_res.slots if parking_res else None,
             insolation_report=insolation_report,
             surrounding_height_overrides=surrounding_height_overrides,
+            fire_res=fire_res,
         )
         # Studio передает viewer_3d_data через postMessage в готовый viewer_3d.html (iframe)
         # Исключение дублирования 2.3 MB HTML-строки снижает размер JSON с 18 МБ до 1.2 МБ
@@ -2093,39 +2317,6 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
                     s_obj.max_floors = max(s_obj.min_floors, val)
 
     site, selected_norm, _, _, _, config = _create_site_from_params(params, config)
-    try:
-        compute_buildable_area(site, config)
-    except Exception:
-        pass
-
-    # Улично-дорожная сеть и нарезка кварталов (RoadSlicer)
-    road_preset = params.get("road_preset", "none")
-    road_width = float(params.get("road_width", 16.0))
-    road_setback = float(params.get("road_setback", 4.0))
-    road_pos = float(params.get("road_pos", 0.5))
-    road_pos_x = float(params.get("road_pos_x", 0.5))
-    road_pos_y = float(params.get("road_pos_y", 0.5))
-    custom_roads = params.get("custom_roads") or []
-
-    try:
-        from src.core.road_slicer import RoadSlicer
-        road_res = RoadSlicer.slice_buildable_area(
-            site.buildable_area,
-            site.boundary,
-            road_lines=custom_roads,
-            preset=road_preset,
-            road_width=road_width,
-            road_setback=road_setback,
-            pos_ratio=road_pos,
-            pos_ratio_x=road_pos_x,
-            pos_ratio_y=road_pos_y,
-        )
-        site.roads_result = road_res
-        if road_res.roads_polygon is not None and not road_res.roads_polygon.is_empty and road_res.sub_blocks:
-            site.buildable_area = unary_union(road_res.sub_blocks)
-    except Exception as e:
-        print(f"Ошибка нарезки дорожной сетью: {e}")
-        site.roads_result = None
 
     target_floors = int(params.get("target_floors", 14))
     floor_height = float(params.get("floor_height", config.get("floor_height", 3.0)))
@@ -2136,7 +2327,7 @@ def compute_variants_matrix(params: dict[str, Any]) -> list[dict[str, Any]]:
         floor_height=floor_height,
         max_building_height_m=max_building_height_m if max_building_height_m > 0 else None,
         typology=params.get("typology", "AUTO"),
-        courtyard_orientation=params.get("courtyard_orientation", "SOUTH"),
+        courtyard_orientation=params.get("courtyard_orientation", "STREET"),
         cascade_floors=bool(params.get("cascade_floors", True)),
         asymmetric_wings=bool(params.get("asymmetric_wings", True)),
         max_sections_per_building=int(params.get("max_sections", 8)),
@@ -2221,19 +2412,50 @@ def export_file_report(output_path: Path | None = None) -> str:
 
 
 def lookup_pkk_parcel(cad_number: str) -> dict[str, Any]:
-    """Запросить публичные кадастровые данные по номеру (с кешированием)."""
-    pkk = fetch_pkk_parcel_data(cad_number)
-    if not pkk:
-        return {"success": False, "error": "Участок не найден в публичном слое НСПД / Росреестра"}
-    return {
-        "success": True,
-        "cadastral_number": pkk.get("cadastral_number"),
-        "points_count": pkk.get("points_count", 0),
-        "area_sqm": pkk.get("area_sqm"),
-        "address": pkk.get("address"),
-        "coordinates_wgs84": pkk.get("coordinates_wgs84"),
-        "source": "pkk_rosreestr",
-    }
+    """Запросить публичные кадастровые данные по номеру (с кешированием и умным фоллбэком)."""
+    clean = (cad_number or "").strip()
+    if not clean:
+        return {"success": False, "error": "Не указан кадастровый номер"}
+
+    # 1. Попытка запроса из локального кеша либо публичного слоя ПКК / НСПД
+    pkk = fetch_pkk_parcel_data(clean)
+    if pkk and pkk.get("coordinates_wgs84"):
+        return {
+            "success": True,
+            "cadastral_number": pkk.get("cadastral_number") or clean,
+            "points_count": pkk.get("points_count", 0),
+            "area_sqm": pkk.get("area_sqm"),
+            "address": pkk.get("address"),
+            "coordinates_wgs84": pkk.get("coordinates_wgs84"),
+            "source": "pkk_rosreestr",
+            "is_pkk": True,
+        }
+
+    # 2. Умный фоллбэк: автоматическое определение региона, округа и геометрии
+    try:
+        from src.core.cadastre import get_cadastral_parcel, smart_resolve_location
+        from src.core.geo_utils import metric_to_wgs84_coords
+
+        reg_name, dist_name, norm_id, def_lat, def_lon = smart_resolve_location(clean)
+        parcel = get_cadastral_parcel(clean)
+        metric_pts = list(parcel.boundary_metric.exterior.coords)
+        wgs_pts = metric_to_wgs84_coords(metric_pts, parcel.center_lat, parcel.center_lon).tolist()
+
+        addr = parcel.address or f"{reg_name}, {dist_name} ({clean})"
+        return {
+            "success": True,
+            "cadastral_number": clean,
+            "points_count": len(wgs_pts),
+            "area_sqm": round(parcel.area_sqm, 1),
+            "address": addr,
+            "coordinates_wgs84": wgs_pts,
+            "source": "cadastre_resolved",
+            "is_pkk": False,
+            "pkk_offline": True,
+            "warning": "Границы не найдены на публичном слое НСПД (или сервер Росреестра временно недоступен). Участок посажен в границах кадастрового квартала.",
+        }
+    except Exception as ex:
+        return {"success": False, "error": f"Ошибка определения кадастрового участка: {ex}"}
 
 
 def parse_gpzu_table(
