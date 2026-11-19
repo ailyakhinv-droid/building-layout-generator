@@ -160,6 +160,17 @@ def geom_centroid_svg(geom, minx, miny, maxx, maxy, width=1000, height=700, pad=
     return round(ox + (c.x - minx) * scale, 1), round(oy + (maxy - c.y) * scale, 1)
 
 
+def _get_geom_vertices_count(geom: Any) -> int:
+    """Безопасный подсчет вершин контура (поддерживает Polygon, MultiPolygon и др.)."""
+    if geom is None or getattr(geom, "is_empty", True):
+        return 0
+    if hasattr(geom, "exterior"):
+        return max(0, len(geom.exterior.coords) - 1)
+    if hasattr(geom, "geoms"):
+        return sum(_get_geom_vertices_count(g) for g in geom.geoms)
+    return 0
+
+
 # Кешированное состояние последней генерации
 _LAST_STATE = {
     "site": None,
@@ -301,7 +312,9 @@ def _create_site_from_params(
     params: dict[str, Any], config: dict[str, Any]
 ) -> tuple[Site, Any, str, str, str, dict[str, Any]]:
     """Создать и подготовить объект Site по входным параметрам запроса."""
-    site_mode = params.get("site_mode", "cadastre")  # 'cadastre' или 'cad'
+    site_mode = params.get("site_mode")
+    if not site_mode:
+        site_mode = "cad" if (params.get("cad_file_base64") or params.get("cad_file")) else "cadastre"
     site_rotation = float(params.get("site_rotation", 0.0))
     override_lat = float(params.get("override_lat", 0.0))
     override_lon = float(params.get("override_lon", 0.0))
@@ -326,7 +339,23 @@ def _create_site_from_params(
     # =========================================================================
     if site_mode == "cad":
         assigned_cad = (params.get("assigned_cad_query") or "").strip()
-        file_bytes = base64.b64decode(cad_file_b64) if cad_file_b64 else None
+        file_bytes = None
+        if cad_file_b64:
+            if isinstance(cad_file_b64, bytes):
+                file_bytes = cad_file_b64
+            elif isinstance(cad_file_b64, str):
+                p_cand = Path(cad_file_b64)
+                if p_cand.exists() and p_cand.is_file():
+                    try:
+                        file_bytes = p_cand.read_bytes()
+                        cad_filename = p_cand.name
+                    except Exception:
+                        pass
+                if not file_bytes:
+                    try:
+                        file_bytes = base64.b64decode(cad_file_b64)
+                    except Exception:
+                        file_bytes = None
 
         # Если file_bytes не переданы через base64, проверяем cad_filename как локальный путь к файлу
         if not file_bytes and cad_filename:
@@ -475,7 +504,7 @@ def _create_site_from_params(
                 "cadastral_number": final_cad_num,
                 "boundary_layer": boundary_layer or cad_meta.get("boundary_layer") or "0",
                 "red_lines_layer": red_lines_layer or cad_meta.get("red_lines_layer") or "",
-                "vertices_count": len(site.boundary.exterior.coords) - 1,
+                "vertices_count": _get_geom_vertices_count(site.boundary),
                 "dimensions": {
                     "width_m": round(site.boundary.bounds[2] - site.boundary.bounds[0], 1),
                     "depth_m": round(site.boundary.bounds[3] - site.boundary.bounds[1], 1),
@@ -636,18 +665,33 @@ def _create_site_from_params(
         # Если прикреплен файл CAD поверх кадастра
         if cad_file_b64:
             try:
-                sub_bytes = base64.b64decode(cad_file_b64)
-                sub_site, sub_meta = parse_cad_site(
-                    sub_bytes,
-                    filename=cad_filename,
-                    boundary_layer=boundary_layer,
-                    red_lines_layer=red_lines_layer,
-                    normalize_origin=True,
-                )
-                site.boundary = sub_site.boundary
-                site.base_offset = sub_site.base_offset
-                if sub_site.red_lines:
-                    site.red_lines = sub_site.red_lines
+                sub_bytes = None
+                if isinstance(cad_file_b64, bytes):
+                    sub_bytes = cad_file_b64
+                elif isinstance(cad_file_b64, str):
+                    p_cand = Path(cad_file_b64)
+                    if p_cand.exists() and p_cand.is_file():
+                        try:
+                            sub_bytes = p_cand.read_bytes()
+                        except Exception:
+                            pass
+                    if not sub_bytes:
+                        try:
+                            sub_bytes = base64.b64decode(cad_file_b64)
+                        except Exception:
+                            sub_bytes = None
+                if sub_bytes:
+                    sub_site, sub_meta = parse_cad_site(
+                        sub_bytes,
+                        filename=cad_filename,
+                        boundary_layer=boundary_layer,
+                        red_lines_layer=red_lines_layer,
+                        normalize_origin=True,
+                    )
+                    site.boundary = sub_site.boundary
+                    site.base_offset = sub_site.base_offset
+                    if sub_site.red_lines:
+                        site.red_lines = sub_site.red_lines
 
                 # Если чертеж содержит геодезические координаты МСК и не задан ручной override
                 is_sub_msk = abs(sub_site.base_offset[0]) > 500 or abs(sub_site.base_offset[1]) > 500
@@ -693,7 +737,7 @@ def _create_site_from_params(
                     "filename": cad_filename,
                     "boundary_layer": boundary_layer or sub_meta.get("boundary_layer") or "0",
                     "red_lines_layer": red_lines_layer or sub_meta.get("red_lines_layer") or "",
-                    "vertices_count": len(site.boundary.exterior.coords) - 1,
+                    "vertices_count": _get_geom_vertices_count(site.boundary),
                     "dimensions": {
                         "width_m": round(site.boundary.bounds[2] - site.boundary.bounds[0], 1),
                         "depth_m": round(site.boundary.bounds[3] - site.boundary.bounds[1], 1),
@@ -1061,7 +1105,7 @@ def preview_site(params: dict[str, Any]) -> dict[str, Any]:
         "georef_source": getattr(site, "georef_source", ""),
         "base_offset": list(getattr(site, "base_offset", (0.0, 0.0))),
         "cad_info": getattr(site, "cad_info", None),
-        "vertices_count": len(site.boundary.exterior.coords) - 1,
+        "vertices_count": _get_geom_vertices_count(site.boundary),
         "site_dimensions": [
             round(site.boundary.bounds[2] - site.boundary.bounds[0], 1),
             round(site.boundary.bounds[3] - site.boundary.bounds[1], 1),
@@ -1400,20 +1444,44 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
 
                     # Если хотя бы один из продольных фасадов затенен (< 80% соответствия по СанПиН)
                     if (side1_pts and ratio1 < 0.80) or (side2_pts and ratio2 < 0.80):
-                        # Ищем подходящую замену в universal_pool (Ш1 / Ш2) с сохранением монолитности и непрерывности фасада
-                        w_orig = s.section_type.width
-                        valid_cands = [c for c in universal_pool if c.min_floors <= s.floors <= c.max_floors] or universal_pool
-                        if w_orig >= 38.0:
-                            c_sh2 = [c for c in valid_cands if "sh2" in c.id]
-                            chosen = (c_sh2 * 2)[:2] if c_sh2 else (valid_cands * 2)[:2]
-                        else:
-                            best_single = min(valid_cands, key=lambda c: abs(c.width - w_orig))
-                            chosen = [best_single]
+                        from src.core.placement import angle_to_horizontal, MIN_MERIDIAN_INSOLATION_ANGLE_DEG
+                        ah = angle_to_horizontal(s.angle)
 
-                        new_b_secs = _replace_sec_in_building(curr_b, s_i, chosen)
-                        curr_b = Building(sections=new_b_secs, typology=getattr(curr_b, "typology", "LINEAR"))
-                        m_modified = True
-                        break
+                        if ah <= MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
+                            # Секция стоит на широтном фронте, где северный фасад физически в тени — заменяем на Ш-секции (распашонки)
+                            w_orig = s.section_type.width
+                            valid_cands = [c for c in universal_pool if c.min_floors <= s.floors <= c.max_floors] or universal_pool
+                            if w_orig >= 38.0:
+                                c_sh2 = [c for c in valid_cands if "sh2" in c.id]
+                                chosen = (c_sh2 * 2)[:2] if c_sh2 else (valid_cands * 2)[:2]
+                            else:
+                                best_single = min(valid_cands, key=lambda c: abs(c.width - w_orig))
+                                chosen = [best_single]
+
+                            new_b_secs = _replace_sec_in_building(curr_b, s_i, chosen)
+                            curr_b = Building(sections=new_b_secs, typology=getattr(curr_b, "typology", "LINEAR"))
+                            m_modified = True
+                            break
+                        else:
+                            # ponytail: секция на меридиональном фронте ориентирована верно (восток-запад), тень от соседа!
+                            # Отыгрываем этажностью локально: ступенчато понижаем этажность секции на 2-3 этажа,
+                            # не сбрасывая 25-этажный корпус М2 до 9-этажного паспорта Ш1
+                            min_f = getattr(s.section_type, "min_floors", 10) or 10
+                            if s.floors > min_f:
+                                drop = 3 if (s.floors - min_f) >= 3 else 1
+                                new_f = max(min_f, s.floors - drop)
+                                new_secs = list(curr_b.sections)
+                                new_secs[s_i] = PlacedSection(
+                                    section_type=s.section_type,
+                                    x=s.x, y=s.y, angle=s.angle,
+                                    floors=new_f,
+                                    is_flipped=s.is_flipped,
+                                    floor_height=s.floor_height,
+                                    ground_floor_height=s.ground_floor_height,
+                                )
+                                curr_b = Building(sections=new_secs, typology=getattr(curr_b, "typology", "LINEAR"))
+                                m_modified = True
+                                break
 
             rechecked_buildings.append(curr_b)
 
@@ -1460,8 +1528,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
                 new_secs = []
                 for s_i, s in enumerate(b.sections):
                     min_f = getattr(s.section_type, "min_floors", 1) or 1
-                    # Секция считается затеняющей, если она расположена южнее хотя бы одной дефицитной секции (или южнее центра участка)
-                    is_shading = any(s.y < (sc_y - 2.0) and abs(s.x - sc_x) < 80.0 for sc_x, sc_y in shaded_coords) or (s.y < site_cy)
+                    # Секция считается затеняющей только при наличии конкретных затененных точек к северу от нее
+                    is_shading = bool(shaded_coords) and any(s.y < (sc_y - 2.0) and abs(s.x - sc_x) < 80.0 for sc_x, sc_y in shaded_coords)
                     if is_shading and s.floors > min_f:
                         drop = 2 if (s.floors - min_f) >= 2 else 1
                         new_f = max(min_f, s.floors - drop)
@@ -1751,6 +1819,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
             entry_points=entry_points,
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Ошибка расчета Варианта 2: {e}")
         v2_buildings, v2_tep, v2_balance = buildings, tep, balance
         var2 = dict(var1)
@@ -1811,6 +1881,8 @@ def run_pipeline(params: dict[str, Any]) -> dict[str, Any]:
             entry_points=entry_points,
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"Ошибка расчета Варианта 3: {e}")
         v3_buildings, v3_tep, v3_balance = buildings, tep, balance
         var3 = dict(var1)
@@ -2140,7 +2212,7 @@ def _package_single_variant(
         "georef_source": getattr(site, "georef_source", ""),
         "base_offset": list(getattr(site, "base_offset", (0.0, 0.0))),
         "cad_info": getattr(site, "cad_info", None),
-        "vertices_count": len(site.boundary.exterior.coords) - 1,
+        "vertices_count": _get_geom_vertices_count(site.boundary),
         "site_dimensions": [
             round(site.boundary.bounds[2] - site.boundary.bounds[0], 1),
             round(site.boundary.bounds[3] - site.boundary.bounds[1], 1),

@@ -307,7 +307,7 @@ class Optimizer:
             base_ang = self.base_placement_config.placement_angle
             if angles is not None:
                 # ponytail: гарантируем включение базового угла в перебор для монотонности оптимизатора — upgrade path: адаптивный шаг сетки углов
-                angles_to_check = [base_ang] if base_ang not in angles else []
+                angles_to_check = [base_ang] if (base_ang is not None and base_ang not in angles) else []
                 angles_to_check.extend(angles)
             else:
                 if self.base_placement_config.placement_angle is not None:
@@ -380,7 +380,7 @@ class Optimizer:
             for ang in angles_to_check:
                 effective_angle = ang
                 if typ == "LINEAR" and ang is not None and angle_to_horizontal(ang) < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
-                    effective_angle = 28.0
+                    effective_angle = MIN_MERIDIAN_INSOLATION_ANGLE_DEG
 
                 for floors in coarse_floors:
                     key = (typ, effective_angle, floors)

@@ -73,6 +73,65 @@ def angle_to_horizontal(angle_deg: float) -> float:
     return a
 
 
+def analyze_front_profile(poly: Polygon) -> dict[str, Any]:
+    """Определить профиль ориентации фронтов участка/квартала и инсоляционные диапазоны по СанПиН.
+
+    Диапазоны:
+    - Широтный фронт (Latitudinal): наклон оси к горизонтали <= 30° (фасады ориентированы на Север/Юг).
+      Здесь ставятся широтные секции (Ш1, Ш2) с квартирами на две стороны, этажностью 7-9 эт.,
+      формируя уютный масштаб улицы и открывая солнце во внутренний двор.
+    - Меридиональный фронт (Meridional): наклон оси к горизонтали > 30° (фасады на Восток/Запад).
+      Здесь ставятся меридиональные секции (М2, М5), поднимающиеся вплоть до 25 этажей,
+      так как утреннее и вечернее солнце гарантирует 100% выполнение СанПиН.
+    """
+    if isinstance(poly, MultiPolygon):
+        coords_lists = [list(p.exterior.coords) for p in poly.geoms]
+    elif hasattr(poly, "exterior"):
+        coords_lists = [list(poly.exterior.coords)]
+    else:
+        coords_lists = []
+
+    edges: list[dict[str, Any]] = []
+    total_len = 0.0
+
+    for coords in coords_lists:
+        for i in range(len(coords) - 1):
+            p1, p2 = coords[i], coords[i + 1]
+            dx = p2[0] - p1[0]
+            dy = p2[1] - p1[1]
+            length = math.hypot(dx, dy)
+            if length < 10.0:
+                continue
+            ang_deg = math.degrees(math.atan2(dy, dx)) % 180.0
+            ah = angle_to_horizontal(ang_deg)
+            cat = "LATITUDINAL" if ah <= MIN_MERIDIAN_INSOLATION_ANGLE_DEG else "MERIDIONAL"
+            edges.append({
+                "p1": p1, "p2": p2,
+                "length": round(length, 1),
+                "angle": round(ang_deg, 1),
+                "angle_to_horizontal": round(ah, 1),
+                "category": cat
+            })
+            total_len += length
+
+    lat_edges = [e for e in edges if e["category"] == "LATITUDINAL"]
+    mer_edges = [e for e in edges if e["category"] == "MERIDIONAL"]
+
+    dom_lat_angle = max(lat_edges, key=lambda e: e["length"])["angle"] if lat_edges else 0.0
+    dom_mer_angle = max(mer_edges, key=lambda e: e["length"])["angle"] if mer_edges else 90.0
+    longest_edge = max(edges, key=lambda e: e["length"]) if edges else None
+    primary_edge_angle = longest_edge["angle"] if longest_edge else dom_mer_angle
+
+    return {
+        "edges_count": len(edges),
+        "total_perimeter": round(total_len, 1),
+        "dominant_lat_angle": dom_lat_angle,
+        "dominant_mer_angle": dom_mer_angle,
+        "primary_edge_angle": primary_edge_angle,
+        "edges": edges,
+    }
+
+
 @dataclass
 class PlacementConfig:
     """Параметры для алгоритма расстановки.
@@ -328,27 +387,12 @@ class PlacementEngine:
 
         buildable = self.site.buildable_area
 
-        # 1. Основная ось участка
+        # 1. Основная ось участка (профиль уличного фронта и границ)
         if placement_config.placement_angle is not None:
             primary_angle = placement_config.placement_angle
         else:
-            primary_angle, perp_angle = get_primary_axes(buildable)
-            # Ограничение инсоляции: меридиональные секции нельзя размещать горизонтально (СанПиН 1.2.3685-21).
-            # Предельный угол к горизонтали должен быть не менее 25-30°, чтобы инсолировать северный фасад.
-            ah = angle_to_horizontal(primary_angle)
-            if ah < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
-                typ_up = placement_config.typology.upper()
-                if typ_up in ("PERIMETER", "URBAN_BLOCK", "COURTYARD"):
-                    # Периметральная застройка урбан-блоками следует красным линиям и УДС;
-                    # широтные крылья периметра автоматически комплектуются широтными секциями (Ш1, Ш2)
-                    pass
-                elif typ_up == "LINEAR":
-                    if angle_to_horizontal(perp_angle) >= MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
-                        primary_angle = perp_angle
-                    else:
-                        primary_angle = RECOMMENDED_MERIDIAN_ANGLE_DEG
-                else:
-                    primary_angle = RECOMMENDED_MERIDIAN_ANGLE_DEG
+            front_prof = analyze_front_profile(buildable)
+            primary_angle = front_prof["primary_edge_angle"]
 
         self._last_primary_angle = primary_angle
 
@@ -477,19 +521,12 @@ class PlacementEngine:
         if not block_poly or block_poly.is_empty or block_poly.area < 500.0:
             return []
 
-        # 1. Индивидуальная ось ориентации для этого конкретного квартала
+        # 1. Индивидуальный профиль уличных фронтов для этого конкретного квартала
+        front_prof = analyze_front_profile(block_poly)
         if placement_config.placement_angle is not None:
             primary_angle = placement_config.placement_angle
         else:
-            block_angle, perp_angle = get_primary_axes(block_poly)
-            ah = angle_to_horizontal(block_angle)
-            if ah < MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
-                if angle_to_horizontal(perp_angle) >= MIN_MERIDIAN_INSOLATION_ANGLE_DEG:
-                    primary_angle = perp_angle
-                else:
-                    primary_angle = RECOMMENDED_MERIDIAN_ANGLE_DEG
-            else:
-                primary_angle = block_angle
+            primary_angle = front_prof["primary_edge_angle"]
 
         middle = sections["middle"]
         end = sections.get("end", middle)
@@ -500,9 +537,10 @@ class PlacementEngine:
 
         # Для AUTO определяем оптимальную форму застройки под пропорции конкретного квартала
         if typology in ("AUTO", "MIXED"):
-            # Если пользователь в подборке секций выбрал только башни
+            # Если пользователь в подборке секций выбрал определенные типы
             all_pref_are_towers = False
-            if placement_config.preferred_section_ids:
+            user_has_pref = bool(placement_config.preferred_section_ids)
+            if user_has_pref:
                 pref_types = [self.library.get_by_id(sid) for sid in placement_config.preferred_section_ids]
                 pref_types = [s for s in pref_types if s is not None]
                 if pref_types and all(s.category.upper() == "TOWER" or (not s.can_act_as("MIDDLE") and not s.can_act_as("CORNER")) for s in pref_types):
@@ -515,9 +553,9 @@ class PlacementEngine:
                 b_len, b_w, _ = get_obb_dimensions(block_poly)
                 b_aspect = b_len / max(1.0, b_w)
                 b_area = block_poly.area
-                if b_area >= 3500.0 and b_w >= 48.0 and b_aspect <= 2.2:
-                    # Просторный квадратный/прямоугольный квартал — П-образный двор
-                    effective_typology = "U_SHAPE"
+                if b_area >= 3000.0 and b_w >= 45.0 and b_aspect <= 2.5:
+                    # Просторный квартал: гибридный ансамбль (П-двор + уличный фронт + высотные акценты)
+                    effective_typology = "MIXED"
                 elif b_aspect >= 2.0 or b_w < 45.0:
                     # Вытянутый или узкий квартал — строчная (линейная) посадка
                     effective_typology = "LINEAR"
@@ -715,7 +753,7 @@ class PlacementEngine:
                         new_sections: list[PlacedSection] = []
                         for s in b.sections:
                             min_f = getattr(s.section_type, "min_floors", 1)
-                            target_f = max(min_f, int(math.floor(s.floors * ratio)))
+                            target_f = max(min_f, int(round(s.floors * ratio)))
                             if ceiling_fl is not None:
                                 target_f = min(target_f, ceiling_fl)
                             new_sections.append(
@@ -976,9 +1014,9 @@ class PlacementEngine:
         drop_l = max(0, wing_start_l - min_wing_floors) if wing_start_l > min_wing_floors else 0
         for j in range(num_wing_left):
             if cascade_floors:
-                step_ratio = (j + 1) / K_l
-                fl_j = round(wing_start_l - step_ratio * drop_l)
-                fl_j = max(1, min(wing_start_l, fl_j))
+                step_ratio = j / max(1, num_wing_left) if num_wing_left > 1 else 0.0
+                fl_j = round(wing_start_l - step_ratio * (drop_l * 0.5))
+                fl_j = max(min_wing_floors, min(wing_start_l, fl_j))
                 sec_j = self._find_best_section(mid_candidates, fl_j, role="MIDDLE", facade_angle=building_angle + 90.0) or middle
             else:
                 sec_j = self._find_best_section(mid_candidates, floors, role="MIDDLE", facade_angle=building_angle + 90.0) or middle
@@ -1010,9 +1048,9 @@ class PlacementEngine:
         drop_r = max(0, wing_start_r - min_wing_floors) if wing_start_r > min_wing_floors else 0
         for k in range(num_wing_right):
             if cascade_floors:
-                step_ratio = (k + 1) / K_r
-                fl_k = round(wing_start_r - step_ratio * drop_r)
-                fl_k = max(1, min(wing_start_r, fl_k))
+                step_ratio = k / max(1, num_wing_right) if num_wing_right > 1 else 0.0
+                fl_k = round(wing_start_r - step_ratio * (drop_r * 0.5))
+                fl_k = max(min_wing_floors, min(wing_start_r, fl_k))
                 sec_k = self._find_best_section(mid_candidates, fl_k, role="MIDDLE", facade_angle=building_angle + 90.0) or middle
             else:
                 sec_k = self._find_best_section(mid_candidates, floors, role="MIDDLE", facade_angle=building_angle + 90.0) or middle
@@ -2084,7 +2122,7 @@ class PlacementEngine:
             for part in parts:
                 if self._is_limit_reached(buildings, placement_config):
                     break
-                if part.is_empty or part.area < 1800.0:
+                if not hasattr(part, "exterior") or part.is_empty or part.area < 1800.0:
                     continue
                 p_len, p_w, _ = get_obb_dimensions(part)
                 if p_len < 40.0 or p_w < 30.0:
@@ -2110,64 +2148,102 @@ class PlacementEngine:
                         break
 
         # 2. ponytail: адаптивный гибрид «П + башни» — приоритетная посадка высотных башен-акцентов на просторных свободных флангах
+        towers_allowed = getattr(placement_config, "allow_towers_in_mixed", True)
+        if placement_config.preferred_section_ids:
+            # Если пользователь задал фильтр секций, проверяем, разрешил ли он башни
+            has_explicit_tower_in_pref = any(
+                sid in [s.id for s in self.library.get_tower_sections()]
+                for sid in placement_config.preferred_section_ids
+            )
+            if not has_explicit_tower_in_pref:
+                towers_allowed = False
+            pref_tower_secs = [
+                s for s in (self._tower_pool or self.library.get_tower_sections())
+                if s.id in placement_config.preferred_section_ids
+            ]
+            tower_secs = pref_tower_secs
+        else:
+            tower_secs = self._tower_pool if getattr(self, "_tower_pool", None) else self.library.get_tower_sections()
+
         if (
-            getattr(placement_config, "allow_towers_in_mixed", True)
+            towers_allowed
             and getattr(placement_config, "typology", "AUTO") in ("AUTO", "MIXED")
             and not self._is_limit_reached(buildings, placement_config)
+            and tower_secs
         ):
-            tower_secs = self._tower_pool if getattr(self, "_tower_pool", None) else self.library.get_tower_sections()
-            if tower_secs:
-                max_extra_towers = 4
-                towers_added = 0
-                while towers_added < max_extra_towers and not self._is_limit_reached(buildings, placement_config):
-                    t_parts = remaining.geoms if isinstance(remaining, MultiPolygon) else [remaining]
-                    placed_in_iteration = False
-                    for p in t_parts:
-                        if self._is_limit_reached(buildings, placement_config):
-                            break
-                        for tower_sec in tower_secs:
-                            t_min_a = tower_sec.width * tower_sec.depth * 1.05
-                            if p.is_empty or p.area < t_min_a:
+            # Динамический расчет числа доминант по масштабу территории (без искусственного зажима в 4 шт.)
+            max_extra_towers = max(2, int(buildable.area // 4500))
+            towers_added = 0
+            while towers_added < max_extra_towers and not self._is_limit_reached(buildings, placement_config):
+                t_parts = remaining.geoms if isinstance(remaining, MultiPolygon) else [remaining]
+                placed_in_iteration = False
+                for p in t_parts:
+                    if self._is_limit_reached(buildings, placement_config):
+                        break
+                    if not hasattr(p, "exterior") or p.is_empty:
+                        continue
+                    for tower_sec in tower_secs:
+                        t_min_a = tower_sec.width * tower_sec.depth * 1.05
+                        if p.is_empty or p.area < t_min_a:
+                            continue
+
+                        pts_to_test = [p.representative_point(), p.centroid]
+                        half_w = max(tower_sec.width, tower_sec.depth) / 2.0
+                        safe_p = p.buffer(-half_w)
+                        if not safe_p.is_empty:
+                            pts_to_test.append(safe_p.representative_point())
+                            pts_to_test.append(safe_p.centroid)
+                            p_minx, p_miny, p_maxx, p_maxy = safe_p.bounds
+                            step_grid = max(28.0, tower_sec.width + 12.0)
+                            gx = p_minx + step_grid * 0.5
+                            while gx < p_maxx:
+                                gy = p_miny + step_grid * 0.5
+                                while gy < p_maxy:
+                                    g_pt = Point(gx, gy)
+                                    if safe_p.contains(g_pt):
+                                        pts_to_test.append(g_pt)
+                                    gy += step_grid
+                                gx += step_grid
+
+                        p_len_t, p_w_t, p_ang_t = get_obb_dimensions(p)
+                        if p_len_t >= (tower_sec.width + min_clearance) * 1.5:
+                            rad_a = math.radians(p_ang_t)
+                            u_dx, u_dy = math.cos(rad_a), math.sin(rad_a)
+                            c_x, c_y = p.centroid.x, p.centroid.y
+                            d_span = p_len_t * 0.25
+                            pts_to_test.extend([
+                                Point(c_x + d_span * u_dx, c_y + d_span * u_dy),
+                                Point(c_x - d_span * u_dx, c_y - d_span * u_dy),
+                            ])
+
+                        # Этажность башни: поднимается до максимума секции (до 25 эт. для tower_b1)
+                        target_t_f = max(floors, getattr(tower_sec, "default_floors", 24))
+                        t_floors = self._clamp_floors(tower_sec, target_t_f)
+                        for pt in pts_to_test:
+                            if not p.contains(pt):
                                 continue
-
-                            pts_to_test = [p.representative_point(), p.centroid]
-                            p_l, p_w, p_ang = get_obb_dimensions(p)
-                            if p_l >= (tower_sec.width + min_clearance) * 1.5:
-                                rad_a = math.radians(p_ang)
-                                u_dx, u_dy = math.cos(rad_a), math.sin(rad_a)
-                                c_x, c_y = p.centroid.x, p.centroid.y
-                                d_span = p_l * 0.25
-                                pts_to_test.extend([
-                                    Point(c_x + d_span * u_dx, c_y + d_span * u_dy),
-                                    Point(c_x - d_span * u_dx, c_y - d_span * u_dy),
-                                ])
-
-                            t_floors = max(floors, getattr(tower_sec, "default_floors", 16))
-                            for pt in pts_to_test:
-                                if not p.contains(pt):
-                                    continue
-                                cand_tower = self._create_single_tower(pt.x, pt.y, angle, tower_sec, t_floors)
-                                if self._fits_in_buildable(cand_tower) and self._check_constraints(
-                                    cand_tower, buildings, placement_config
-                                ):
-                                    buildings.append(cand_tower)
-                                    occupied = unary_union([occupied, cand_tower.footprint.buffer(min_clearance)])
-                                    remaining = inner_buildable.difference(occupied)
-                                    placed_in_iteration = True
-                                    towers_added += 1
-                                    break
-                            if placed_in_iteration:
+                            cand_tower = self._create_single_tower(pt.x, pt.y, angle, tower_sec, t_floors)
+                            if self._fits_in_buildable(cand_tower) and self._check_constraints(
+                                cand_tower, buildings, placement_config
+                            ):
+                                buildings.append(cand_tower)
+                                occupied = unary_union([occupied, cand_tower.footprint.buffer(min_clearance)])
+                                remaining = inner_buildable.difference(occupied)
+                                placed_in_iteration = True
+                                towers_added += 1
                                 break
                         if placed_in_iteration:
                             break
-                    if not placed_in_iteration:
+                    if placed_in_iteration:
                         break
+                if not placed_in_iteration:
+                    break
 
         # 3. Дозаполнение оставшихся полос и узких участков линейными корпусами
         for cand_ang in angles_to_try:
             parts = remaining.geoms if isinstance(remaining, MultiPolygon) else [remaining]
             for part in parts:
-                if part.is_empty or part.area < min_area:
+                if not hasattr(part, "exterior") or part.is_empty or part.area < min_area:
                     continue
 
                 rad = math.radians(cand_ang)
@@ -2533,44 +2609,49 @@ class PlacementEngine:
             or (len(building.sections) == 1 and getattr(building.sections[0].section_type, "category", "") == "TOWER")
         )
         fp = building.footprint
-        coords = list(fp.exterior.coords)
-        if not fp.exterior.is_ccw:
-            coords = coords[::-1]
+        polys = list(fp.geoms) if isinstance(fp, MultiPolygon) else [fp]
 
         edges: list[dict[str, Any]] = []
-        for i in range(len(coords) - 1):
-            pA, pB = coords[i], coords[i + 1]
-            dx = pB[0] - pA[0]
-            dy = pB[1] - pA[1]
-            length = math.hypot(dx, dy)
-            if length < 0.1:
+        for poly in polys:
+            if not hasattr(poly, "exterior") or poly.is_empty:
                 continue
-            line = LineString([pA, pB])
-            # В CCW контуре внешняя нормаль направлена вправо: (dy/length, -dx/length)
-            nx = dy / length
-            ny = -dx / length
-            mid_pt = ((pA[0] + pB[0]) / 2.0, (pA[1] + pB[1]) / 2.0)
+            coords = list(poly.exterior.coords)
+            if not poly.exterior.is_ccw:
+                coords = coords[::-1]
 
-            if is_tower:
-                edge_type = "FACADE"
-            else:
-                edge_angle = math.degrees(math.atan2(dy, dx)) % 180.0
-                closest_sec = min(building.sections, key=lambda s: Point(s.x, s.y).distance(line))
-                sec_angle = closest_sec.angle % 180.0
-                diff = abs(edge_angle - sec_angle)
-                if diff > 90.0:
-                    diff = 180.0 - diff
-                edge_type = "END" if diff >= 45.0 else "FACADE"
+            for i in range(len(coords) - 1):
+                pA, pB = coords[i], coords[i + 1]
+                dx = pB[0] - pA[0]
+                dy = pB[1] - pA[1]
+                length = math.hypot(dx, dy)
+                if length < 0.1:
+                    continue
+                line = LineString([pA, pB])
+                # В CCW контуре внешняя нормаль направлена вправо: (dy/length, -dx/length)
+                nx = dy / length
+                ny = -dx / length
+                mid_pt = ((pA[0] + pB[0]) / 2.0, (pA[1] + pB[1]) / 2.0)
 
-            edges.append({
-                "line": line,
-                "pA": pA,
-                "pB": pB,
-                "normal": (nx, ny),
-                "mid": mid_pt,
-                "length": length,
-                "type": edge_type,
-            })
+                if is_tower:
+                    edge_type = "FACADE"
+                else:
+                    edge_angle = math.degrees(math.atan2(dy, dx)) % 180.0
+                    closest_sec = min(building.sections, key=lambda s: Point(s.x, s.y).distance(line))
+                    sec_angle = closest_sec.angle % 180.0
+                    diff = abs(edge_angle - sec_angle)
+                    if diff > 90.0:
+                        diff = 180.0 - diff
+                    edge_type = "END" if diff >= 45.0 else "FACADE"
+
+                edges.append({
+                    "line": line,
+                    "pA": pA,
+                    "pB": pB,
+                    "normal": (nx, ny),
+                    "mid": mid_pt,
+                    "length": length,
+                    "type": edge_type,
+                })
         return edges
 
     def classify_fire_gap(
@@ -2717,9 +2798,10 @@ class PlacementEngine:
                 v_dy = l_c.y - h_c.y
 
                 # Если высотная башня расположена к югу от жилого дома (v_dy > 0),
-                # ее полуденная тень падает на северный жилой фасад (СП 42.13330 п. 7.1)
+                # точечная башня имеет узкий угол затенения, солнце огибает ее за 30-45 минут (СанПиН 1.2.3685-21).
+                # Разрыв max(gap_parallel, higher_b.height * 0.40) гарантирует соблюдение СП 4 и норм освещенности
                 if higher_b.height >= 35.0 and v_dy > 0 and v_dy > abs(v_dx) * 0.50:
-                    req_south_shadow_gap = max(gap_parallel, higher_b.height * 1.10)
+                    req_south_shadow_gap = max(gap_parallel, higher_b.height * 0.40)
                     if distance < req_south_shadow_gap - 1e-3:
                         return False
 
@@ -2728,7 +2810,7 @@ class PlacementEngine:
                 has_m_lower = any(getattr(s.section_type, "is_meridian", False) for s in lower_b.sections)
                 has_m_higher = any(getattr(s.section_type, "is_meridian", False) for s in higher_b.sections)
                 if (has_m_lower or has_m_higher) and higher_b.height >= 28.0 and abs(v_dx) > abs(v_dy) * 0.70:
-                    req_lateral_meridian_gap = max(gap_parallel, higher_b.height * 0.75)
+                    req_lateral_meridian_gap = max(gap_parallel, higher_b.height * 0.35)
                     if distance < req_lateral_meridian_gap - 1e-3:
                         return False
 

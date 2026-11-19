@@ -227,7 +227,7 @@ class RoadSlicer:
             return line
 
         coords = list(line.coords)
-        exterior = site_boundary.exterior
+        exterior = site_boundary.exterior if hasattr(site_boundary, "exterior") else site_boundary.boundary
         ext_out = 20.0
 
         # Проверка начала (p0)

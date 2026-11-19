@@ -100,7 +100,7 @@ class NaturalRoadGenerator:
     ) -> list[NormalizedEntry]:
         """Снеппит точки въезда на межу и вычисляет ортогональные створы."""
         normalized: list[NormalizedEntry] = []
-        ext = site_boundary.exterior
+        ext = site_boundary.exterior if hasattr(site_boundary, "exterior") else (site_boundary.geoms[0].exterior if hasattr(site_boundary, "geoms") and site_boundary.geoms else site_boundary.convex_hull.exterior)
 
         for i, ep_item in enumerate(entry_points):
             if isinstance(ep_item, Node):

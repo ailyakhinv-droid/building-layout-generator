@@ -504,7 +504,7 @@ def parse_cad_site(
         "first_point": first_pt,
         "base_offset": base_offset,
         "area": site.area,
-        "vertices_count": len(site.boundary.exterior.coords) - 1,
+        "vertices_count": len(site.boundary.exterior.coords) - 1 if hasattr(site.boundary, "exterior") else sum(len(p.exterior.coords) - 1 for p in getattr(site.boundary, "geoms", []) if hasattr(p, "exterior")),
         "red_lines_count": len(red_lines),
         "cadastral_numbers": detected_cads,
         "detected_cadastre": det_cad,
